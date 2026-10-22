@@ -100,7 +100,7 @@ TEMPLATE = """<!doctype html>
 #s360-loading .avion {
   position: absolute; left: -45%; bottom: 12%; width: min(42rem, 70vw); aspect-ratio: 4 / 1;
   background: var(--img-avion) center / contain no-repeat; filter: drop-shadow(0 18px 18px rgba(0, 0, 0, .4));
-  animation: s360-vol 9s linear infinite;
+  animation: s360-vol 18s linear infinite;  /* vitesse réduite de moitié */
 }
 @keyframes s360-glisse { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 @keyframes s360-vol { from { transform: translateX(0); } to { transform: translateX(260vw); } }

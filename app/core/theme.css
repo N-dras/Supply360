@@ -30,7 +30,7 @@
   --ko: #C62828;
   --radius: 14px;
   --shadow: 0 8px 28px rgba(15, 35, 70, .18);
-  --header-h: 4.5rem;
+  --header-h: 3.6rem;
   --font: "Manrope", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   --img-logo: asset(logo_afi.png);
   --img-fond: asset(fond_aeroport.webp);
@@ -64,22 +64,22 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-header {
   position: fixed; inset: 0 0 auto 0; z-index: 999990;
   height: var(--header-h);
-  display: flex; align-items: center; gap: 1.1rem;
-  padding: 0 1.5rem;
+  display: flex; align-items: center; gap: .9rem;
+  padding: 0 1.25rem;
   background: rgba(255, 255, 255, .97);
   box-shadow: 0 2px 14px rgba(15, 35, 70, .16);
 }
 /* Logo sur fond transparent, texte bleu marine : toujours posé sur fond clair. */
 .s360-logo {
-  width: 11.5rem; height: 2.7rem; flex: none;
+  width: 9rem; height: 2.1rem; flex: none;
   background: var(--img-logo) left center / contain no-repeat;
 }
-.s360-sep { width: 1px; height: 2.2rem; background: var(--border); flex: none; }
-.s360-brand { font-size: 1.75rem; font-weight: 800; color: var(--navy); letter-spacing: -.01em; white-space: nowrap; }
+.s360-sep { width: 1px; height: 1.8rem; background: var(--border); flex: none; }
+.s360-brand { font-size: 1.45rem; font-weight: 800; color: var(--navy); letter-spacing: -.01em; white-space: nowrap; }
 .s360-brand span { color: var(--accent); }
 .s360-today {
-  margin-left: auto; padding: .35rem .85rem; border-radius: 99px;
-  background: var(--tile); color: var(--muted); font-size: .875rem; font-weight: 600; white-space: nowrap;
+  margin-left: auto; padding: .3rem .75rem; border-radius: 99px;
+  background: var(--tile); color: var(--muted); font-size: .8125rem; font-weight: 600; white-space: nowrap;
 }
 /* Barre de progression : visible tant que Python calcule. */
 .s360-header::after {
@@ -100,33 +100,33 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 @keyframes s360-calc { from { background-position: 200% 0; } to { background-position: 0 0; } }
 @keyframes s360-pop { from { opacity: 0; transform: translateY(-4px); } }
 
-/* Navigation (st.segmented_control) placée dans le header. */
+/* Navigation (st.segmented_control) placée dans le header, à toutes les largeurs (elle ne s'en détache jamais). */
 .st-key-s360_nav {
-  position: fixed; z-index: 999991; top: 0; left: 25.5rem;   /* juste après logo + Supply360 */
-  height: var(--header-h); width: auto !important; max-width: calc(100% - 37rem); display: flex; align-items: center;
+  position: fixed; z-index: 999991; top: 0; left: 21rem;   /* juste après logo + Supply360 */
+  height: var(--header-h); width: auto !important; max-width: calc(100% - 30rem); display: flex; align-items: center;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
-.st-key-s360_nav [data-testid="stButtonGroup"] > div { gap: .35rem; flex-wrap: nowrap; }
+.st-key-s360_nav::-webkit-scrollbar { display: none; }
+.st-key-s360_nav [data-testid="stButtonGroup"] > div { gap: .2rem; flex-wrap: nowrap; }
 .st-key-s360_nav button {
-  min-height: 2.9rem; padding: 0 1.15rem; border: 0 !important; border-radius: 99px !important;
+  min-height: 2.15rem; padding: 0 .8rem; border: 0 !important; border-radius: 99px !important;
   background: transparent; color: #44556E; box-shadow: none;
 }
-.st-key-s360_nav button p { font-size: 1rem; font-weight: 600; color: inherit; white-space: nowrap; }
+.st-key-s360_nav button p { font-size: .9375rem; font-weight: 600; color: inherit; white-space: nowrap; }
 .st-key-s360_nav button:hover { background: #F1F5FA; color: var(--navy); }
 .st-key-s360_nav button[aria-checked="true"] { background: #E8F0FD; color: var(--navy); }
 .st-key-s360_nav button[aria-checked="true"] p { font-weight: 700; }
-@media (max-width: 1280px) {
-  .st-key-s360_nav {
-    position: static; transform: none; height: auto; margin-bottom: .25rem;
-    background: rgba(255, 255, 255, .95); border-radius: 99px; padding: .3rem; box-shadow: var(--shadow);
-    width: fit-content !important; max-width: 100%;
-  }
-  .st-key-s360_nav [data-testid="stButtonGroup"] > div { flex-wrap: wrap; }
+/* Écran moyen : la date laisse sa place aux onglets. */
+@media (max-width: 1100px) {
+  .s360-today { display: none; }
+  .st-key-s360_nav { max-width: calc(100% - 22rem); }
 }
 @media (max-width: 760px) {
-  .s360-header { gap: .7rem; padding: 0 1rem; }
-  .s360-logo { width: 8rem; height: 2rem; }
-  .s360-brand { font-size: 1.35rem; }
-  .s360-today { display: none; }
+  .s360-header { gap: .5rem; padding: 0 .75rem; }
+  .s360-logo { width: 6.5rem; height: 1.6rem; }
+  .s360-brand { font-size: 1.15rem; }
+  .st-key-s360_nav { left: 15.5rem; max-width: calc(100% - 16rem); }
+  .st-key-s360_nav button p { font-size: .875rem; }
   [data-testid="stMainBlockContainer"], .block-container { padding-left: 1rem; padding-right: 1rem; }
 }
 

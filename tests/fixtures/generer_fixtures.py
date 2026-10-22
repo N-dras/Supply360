@@ -115,6 +115,35 @@ def references():
     wb.save(ICI / "references_textile.xlsx")
 
 
+# Pièces par avion (prévision) : 2 groupes fictifs, avions F-XA01… (immatriculations inventées)
+GROUPES = {("A320", "A320 Group 1"): [f"F-XA{i:02d}" for i in range(1, 11)], ("A350", "A350 Group 1"): [f"F-XB{i:02d}" for i in range(1, 6)]}
+PIECES = [  # equipment, area, pn, description, qté par avion
+    ("HOUSSE", "Y", "FX-1002", "Housse seat back Y", 30), ("HOUSSE", "Y", "FX-1003", "Housse bottom cushion Y", 30),
+    ("HOUSSE", "J", "FX-1012", "Housse headrest J", 8), ("MOUSSE", "Y", "FX-1005", "Mousse seat cushion Y", 30),
+    ("MOUSSE", "Y", "FX-1006", "Mousse back Y", 30), ("CEINTURE", "Y", "FX-1001", "Ceinture Y", 60),
+    ("RIDEAUX", "NA", "FX-1004", "Rideau galley", 4), ("HOUSSE", "Y", "FX-2001", "Housse dormante", 2),
+]
+
+
+def pieces():
+    lignes = []
+    for (typ, grp), regs in GROUPES.items():
+        for reg in regs:
+            for eq, area, pn, desc, q in PIECES:
+                lignes.append([eq, typ, grp, reg, area, 25, pn, desc, q])
+    pd = __import__("pandas")
+    pd.DataFrame(lignes, columns=["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description",
+                                  "qty_per_ac"]).to_csv(ICI / "pieces_par_avion.csv", index=False)
+
+
+def planning():
+    wb = Workbook()
+    _feuille(wb, "Planning", ["Immatriculation", "Date prochaine PE"],
+             [["F-XA01", datetime(2026, 12, 1)], ["F-XA02", datetime(2027, 3, 1)], ["F-XB01", datetime(2027, 1, 15)]])
+    wb.remove(wb["Sheet"])
+    wb.save(ICI / "planning_pe.xlsx")
+
+
 def stock():
     wb = Workbook()
     wb.remove(wb.active)
@@ -188,4 +217,6 @@ if __name__ == "__main__":
     stock()
     commandes()
     references()
+    pieces()
+    planning()
     print("Fixtures générées dans", ICI)

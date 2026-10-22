@@ -28,7 +28,8 @@ WINDOW_COLUMNS = ["QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M"]
 LATE_BUFFER_DAYS = 10  # tolérance avant de déclarer une ligne en retard
 
 # Noms de colonnes de l'État du stock tels qu'affichés dans l'onglet (et dans l'export).
-STOCK_RENOMMAGE = {"PN": "PNR", "Description_stock": "DESCRIPTION", "QTY_STOCK": "QTE SUR ÉTAGÈRE", "QTY_CDE": "QTE EN CDE"}
+STOCK_RENOMMAGE = {"PN": "PNR", "Description_stock": "DESCRIPTION", "QTY_STOCK": "QTE SUR ÉTAGÈRE", "QTY_CDE": "QTE EN CDE",
+                   "CODE_FOURNISSEUR": "CODE FOURNISSEUR", "DERNIER_FOURNISSEUR": "DERNIER FOURNISSEUR"}
 
 
 # --------------------------------------------------------------------------
@@ -174,7 +175,8 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
     pbi = stock_lignes.rename(columns=STOCK_RENOMMAGE)
     garder = ["PNR", "CCN", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", *WINDOW_COLUMNS, "TDD 6M", "TDD 12M",
               *[f"QTE CONSO {a}" for a in annees_conso(pbi)], "QTE COUVERTURE", "QTE SAR", "Stock réservé", "B/O",
-              "Dernier PU (achat) Euros", "RP", "EOQ", "LT observé moyen sur 2 ans", "DATE DERNIERE CONSO"]
+              "Dernier PU (achat) Euros", "RP", "EOQ", "LT observé moyen sur 2 ans", "DATE DERNIERE CONSO",
+              "CODE FOURNISSEUR", "DERNIER FOURNISSEUR"]
     pbi = pbi[[c for c in garder if c in pbi.columns]].copy()
 
     catalogue = catalogue if catalogue is not None else pd.DataFrame(columns=["PN", "Equipement", "Description", "CCN"])
@@ -316,35 +318,39 @@ def tableau_retards(o: pd.DataFrame) -> pd.DataFrame:
     return g.reset_index().rename(columns={"index": "Classe de retard"})[["Classe de retard", "Lignes", "Part (%)", "Retard moyen (j)", "Fournisseurs"]]
 
 
-def commandes_emises_par_mois(o: pd.DataFrame, today) -> pd.DataFrame:
-    """Lignes émises par mois (depuis janvier de l'année précédente) et par catégorie."""
+def commandes_emises_par_mois(o: pd.DataFrame) -> pd.DataFrame:
+    """Lignes émises par mois (index = début de mois) et par catégorie."""
     d = o.dropna(subset=["Date emission commande"])
     if d.empty:
         return pd.DataFrame()
-    debut = pd.Period(f"{pd.Timestamp(today).year - 1}-01", "M")
-    d = d.assign(m=d["Date emission commande"].dt.to_period("M"), c=categorie(d))
-    d = d[d["m"] >= debut]
-    if d.empty:
-        return pd.DataFrame()
-    mois = pd.period_range(d["m"].min(), d["m"].max(), freq="M")
+    d = d.assign(m=d["Date emission commande"].dt.to_period("M").dt.start_time, c=categorie(d))
+    mois = pd.date_range(d["m"].min(), d["m"].max(), freq="MS")
     ct = d.groupby(["m", "c"]).size().unstack(fill_value=0).reindex(mois, fill_value=0)
-    ct.index = [m.strftime("%m/%y") for m in mois]
     return ct[[c for c in categories(d) if c in ct.columns]]
 
 
-def planning_livraisons(o: pd.DataFrame, today, passe=3, horizon=9) -> pd.DataFrame:
-    """Lignes à livrer par mois : date promise si connue, sinon date demandée. Hors fenêtre : « Avant » / « Après »."""
+def fenetre_emissions(today):
+    """Période affichée au départ : depuis janvier de l'année précédente (on peut dézoomer)."""
     t = pd.Timestamp(today)
-    debut, fin = (t - pd.DateOffset(months=passe)).to_period("M"), (t + pd.DateOffset(months=horizon)).to_period("M")
-    axe = ["Avant"] + [m.strftime("%m/%y") for m in pd.period_range(debut, fin, freq="M")] + ["Après"]
+    return pd.Timestamp(t.year - 1, 1, 1), t + pd.DateOffset(months=1)
 
-    def mois(dates):
-        p = dates.dt.to_period("M")
-        return p.map(lambda x: "Avant" if x < debut else ("Après" if x > fin else x.strftime("%m/%y")))
 
-    pro = mois(o["Date livraison promise"].dropna()).value_counts().reindex(axe, fill_value=0)
-    dem = mois(o.loc[o["Date livraison promise"].isna(), "Date livraison demandee"].dropna()).value_counts().reindex(axe, fill_value=0)
-    return pd.DataFrame({"Avec date promise": pro, "Sans date promise (date demandée)": dem})
+def planning_livraisons(o: pd.DataFrame) -> pd.DataFrame:
+    """Lignes à livrer par mois (index = début de mois) : date promise si connue, sinon date demandée."""
+    pro = o["Date livraison promise"].dropna().dt.to_period("M").dt.start_time.value_counts()
+    dem = o.loc[o["Date livraison promise"].isna(), "Date livraison demandee"].dropna().dt.to_period("M").dt.start_time.value_counts()
+    if pro.empty and dem.empty:
+        return pd.DataFrame()
+    debut, fin = min(pro.index.min() if len(pro) else dem.index.min(), dem.index.min() if len(dem) else pro.index.min()), \
+        max(pro.index.max() if len(pro) else dem.index.max(), dem.index.max() if len(dem) else pro.index.max())
+    mois = pd.date_range(debut, fin, freq="MS")
+    return pd.DataFrame({"Avec date promise": pro.reindex(mois, fill_value=0),
+                         "Sans date promise (date demandée)": dem.reindex(mois, fill_value=0)})
+
+
+def fenetre_planning(today, passe=3, horizon=9):
+    t = pd.Timestamp(today)
+    return (t - pd.DateOffset(months=passe)).to_period("M").start_time, (t + pd.DateOffset(months=horizon)).to_period("M").start_time
 
 
 def chaleur_livraisons(o: pd.DataFrame, today, top=12, passe=2, horizon=10) -> pd.DataFrame:

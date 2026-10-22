@@ -45,17 +45,42 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 | État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `DESCRIPTION`, `QTE CONSO 12M / 18M / 24M`, `QTE CONSO <année>`, `Dernier PU (achat) Euros`, `DATE DERNIERE CONSO`, `B/O`, `RP`, `EOQ`, `TDD` |
 | Commandes (SAP) | `PN`, `Commande` | `Fournisseur`, `Code fournisseur`, `Date d'émission de la commande`, `Date de livraison demandée / promise`, `Quantité restant à livrer` |
 | Références textile — feuille « PN Catalog » | `pn`, `equipment` | `description`, `ccn` |
+| Pièces par avion (prévision) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
+| Planning PE (facultatif) | `Immatriculation`, `Date prochaine PE` | `Equipement`, `Classe`, `Composant`, `Cycle PE (ans)` |
 
-Seul l'État du stock est indispensable ; les deux autres fichiers complètent l'analyse.
+Seul l'État du stock est indispensable ; les autres fichiers complètent l'analyse. La Prévision
+demande en plus le fichier Pièces par avion.
 
 **Sous-onglets** : Synthèse (relances fournisseurs, valeur et activité du stock par catégorie),
-Commandes (statuts, livraisons, profondeur des retards, toutes les lignes), Fournisseurs (Pareto,
-retards, délais promis, BFE, vue par fournisseur), Consommation (par année, 12/18/24 mois, top PN, par PN).
-Un filtre par catégorie s'applique à toutes les vues. Export `Supply360_textiles_AAAAMMJJ.xlsx`.
+Prévision (commandes à passer, par fournisseur), Commandes (statuts, livraisons, profondeur des retards,
+toutes les lignes), Fournisseurs (Pareto, retards, délais promis, BFE, vue par fournisseur),
+Consommation (par année, 12/18/24 mois, top PN, par PN). Un filtre par catégorie s'applique à toutes
+les vues. Export `Supply360_textiles_AAAAMMJJ.xlsx` (avec les feuilles de prévision si elle est calculée).
 
 **Règles** : retard = date promise − date demandée au-delà de 10 jours de tolérance ; date promise 2001,
 2030 ou plus (ou vide) = sans date promise ; 2049 = en attente de BFE. PN **dormant** = du stock mais
 aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni commande.
+
+**Prévision de commandes** (détail dans « Comment le besoin est calculé ») :
+
+- **stock minimum** d'un PN = quantité par avion × objectif d'avance (10 % des avions du groupe, au
+  moins 1), additionné sur les groupes d'avions qui l'utilisent ;
+- avec le **Planning PE**, chaque PE à venir consomme les pièces des avions concernés et se répète selon
+  le cycle d'entretien (réglable par équipement, classe et composant) ;
+- **commande** au plus tard à la date de besoin moins le délai fournisseur ; si le délai est trop long,
+  la commande part maintenant ;
+- les PN dormants ou inactifs ne sont jamais recommandés ;
+- vue **par fournisseur** : PN à commander, quantité et valeur maintenant et sur l'horizon, prochaine
+  commande, plan mensuel. Fournisseur d'un PN : celui de ses commandes, à défaut le dernier fournisseur
+  de l'État du stock, puis le code fournisseur.
+
+Les paramètres (objectif d'avance, horizon, délai par défaut, cycles PE…) sont dans
+« ⚙️ Paramètres de la prévision ».
+
+### Graphiques
+
+Survol d'un élément : infobulle avec les valeurs. Menu « ⋯ » du graphe : plein écran, export PNG / SVG,
+affichage des données.
 
 ### Fournisseur manquant (tous les onglets)
 

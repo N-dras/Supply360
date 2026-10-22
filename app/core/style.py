@@ -11,7 +11,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-# Couleurs de la charte, réutilisées côté Python (graphes SVG, export Excel).
+# Couleurs de la charte, réutilisées côté Python (graphes Altair, export Excel).
 COLORS = {
     "navy": "#002157",
     "navy_2": "#1F4E9C",
@@ -30,10 +30,13 @@ COLORS = {
     "gris": "#9AA5B1",
 }
 
-FONT_STACK = '"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif'
+# Manrope (police du prototype) est embarquée dans le thème : aucun appel à Google Fonts.
+FONT = "Manrope"
+FONT_STACK = '"Manrope", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif'
 
 THEME = Path(__file__).with_name("theme.css")
-MIME = {".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml"}
+MIME = {".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml",
+        ".woff2": "font/woff2"}
 
 
 @lru_cache(maxsize=2)

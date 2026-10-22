@@ -12,6 +12,7 @@ import pytest
 from openpyxl import load_workbook
 
 from core import charts, xlsx
+from core import prevision as pv
 from core import io as sio
 from core import textile as tx
 from core import transforms as tf
@@ -104,7 +105,10 @@ def test_syntheses(tables):
     poids = tx.poids_par_categorie(s, o)
     assert poids.loc["PN"].sum() == 11
     assert tx.tableau_retards(o)["Lignes"].sum() == (o["Statut commande"] == "En retard").sum()
-    assert not tx.planning_livraisons(o, TODAY).empty
+    pl = tx.planning_livraisons(o)
+    assert not pl.empty and isinstance(pl.index, pd.DatetimeIndex)
+    assert pl.sum().sum() == o["Date livraison promise"].notna().sum() + (o["Date livraison promise"].isna()
+                                                                           & o["Date livraison demandee"].notna()).sum()
 
 
 def test_filtre_catalogue_identique():
@@ -132,15 +136,62 @@ def test_joindre_par_groupe_equivalent():
 
 
 # --------------------------------------------------------------------------
-# Graphes
+# Graphes (Altair) : spécifications Vega-Lite valides, infobulles
 # --------------------------------------------------------------------------
-def test_graphes_html():
-    h = charts.barres(["A", "B"], {"x": [3, np.nan]}, ligne={"l": [10, 20]}, fmt_ligne=charts.pourcent)
-    assert "<svg" in h and h.count("<rect") == 2 and "20 %" in h
-    assert "s360-rotpad" in charts.barres([f"Fournisseur {i}" for i in range(9)], {"x": list(range(9))})
-    assert "<svg" not in charts.parts(pd.DataFrame({"a": [1, 3]}, index=["L1", "L2"]), {"a": "#000"})
-    assert charts.vide() in charts.parts(pd.DataFrame(), {})
+def test_graphes_altair():
+    spec = charts.barres(["A", "B"], {"x": [3, np.nan]}, ligne={"l": [10, 20]}, fmt_ligne=charts.pourcent).to_dict()
+    assert "layer" in spec and "tooltip" in str(spec) and "20 %" in str(spec)
+    temporel = charts.barres(pd.date_range("2026-01-01", periods=3, freq="MS"), {"x": [1, 2, 3]}, temporel=True).to_dict()
+    assert "'type': 'temporal'" in str(temporel)
+    fenetre = charts.barres(pd.date_range("2026-01-01", periods=6, freq="MS"), {"x": range(6)}, temporel=True,
+                            fenetre=("2026-02-01", "2026-03-01")).to_dict()
+    assert len(next(iter(fenetre["datasets"].values()))) == 2       # seuls les mois de la fenêtre
+    for ch in [charts.parts(pd.DataFrame({"a": [1, 3]}, index=["L1", "L2"]), {"a": "#000"}),
+               charts.barres_h([("a", 3), ("b", 1, "1 j", "#f00")]), charts.multiples({"A": (["2021"], [1])}),
+               charts.chaleur(pd.DataFrame({"01/26": [1]}, index=["F"])), charts.courbes(pd.date_range("2026-01-01", periods=2, freq="MS"),
+                                                                                         {"a": [1, 2]}), charts.vide()]:
+        ch.to_dict()
     assert charts.euros(1_234_567) == "1,2 M€" and charts.court(12_345) == "12k" and charts.entier(1234) == "1 234"
+
+
+# --------------------------------------------------------------------------
+# Prévision de commandes (portage de textile_policy.py)
+# --------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def prevision(tables):
+    s, o = tables
+    p = pv.Params()
+    parts, fleet, sans_pn = pv.preparer_pieces(pv.lire_pieces(octets("pieces_par_avion.csv"), "pieces_par_avion.csv"), p)
+    plan = pv.lire_planning(octets("planning_pe.xlsx"), "planning_pe.xlsx")
+    return pv.run_policy(s, o, parts, fleet, plan, pv.regles_pe_defaut(parts), p, TODAY)
+
+
+def test_prevision_besoin_et_statuts(prevision):
+    pbi, res = prevision
+    r = pbi.set_index("PNR")
+    # Housse Y : 30 par avion ; A320 (10 avions → 1 d'avance) + A350 (5 avions → 1 d'avance) = 60
+    assert r.loc["FX-1002", "Besoin minimum (qté)"] == 60
+    assert r.loc["FX-1002", "Statut prévision"] == "A commander"
+    assert r.loc["FX-2001", "Statut prévision"] == "Dormant / inactif : pas de commande"
+    assert r.loc["FX-1007", "Statut prévision"] == "Hors groupe avion"
+    assert res["events"]["registration"].nunique() == 3
+    assert set(res["gs"]["Statut groupe"]) <= set(pv.GROUP_STATUS_ORDER)
+
+
+def test_prevision_par_fournisseur(prevision):
+    pbi, res = prevision
+    f = pv.par_fournisseur(pbi, res["plan"]).set_index("Fournisseur")
+    assert "Fournisseur Bravo" in f.index          # PN sans commande : dernier fournisseur de l'État du stock
+    assert f["PN à commander"].sum() == ((pbi["Qté à commander maintenant"] > 0) & pbi["Dans un groupe avion"]
+                                         & (pbi["Statut activité"] == "Actif")).sum()
+    assert res["plan"]["Fournisseur"].notna().all()
+
+
+def test_fournisseur_prevision_ordre():
+    d = pd.DataFrame({"Fournisseur principal": ["Alpha", "Code F9", np.nan, np.nan, np.nan],
+                      "DERNIER FOURNISSEUR": [np.nan, "Bravo", "Charlie", np.nan, np.nan],
+                      "CODE FOURNISSEUR": ["F1", "F9", "F3", "F4", np.nan]})
+    assert pv.fournisseur_prevision(d).tolist() == ["Alpha", "Bravo", "Charlie", "Code F4", pv.FOURNISSEUR_ABSENT]
 
 
 # --------------------------------------------------------------------------

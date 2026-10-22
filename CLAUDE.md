@@ -52,19 +52,21 @@ supply360/
 ├── assets/
 │   ├── logo_afi.png          # logo Air France Industries (fourni par l'auteur, ne pas redessiner ; fond transparent)
 │   ├── fond_aeroport.webp    # fond d'écran (prototype v3)
-│   └── avion_a350.webp       # avion Air France (décor : titres d'onglet, écran de chargement)
+│   ├── avion_a350.webp       # avion Air France (décor : titres d'onglet, écran de chargement)
+│   └── fonts/                # Manrope (woff2, licence OFL), embarquée dans le thème
 ├── app/
 │   ├── main.py               # point d'entrée : page_config, style, header, navigation
 │   ├── core/
 │   │   ├── theme.css         # thème (tokens, header, cartes, graphes) ; images via asset(nom)
 │   │   ├── style.py          # couleurs de la charte + injection du thème (dev local uniquement)
 │   │   ├── components.py     # header, section, kpi_card, fichier, tableau, graphe, sous_onglets…
-│   │   ├── charts.py         # graphes SVG / HTML légers (barres, courbes, 100 %, chaleur, anneaux)
+│   │   ├── charts.py         # graphes Altair (barres, courbes, 100 %, chaleur) : infobulles au survol
 │   │   ├── io.py             # lecture xlsx (calamine), normalisation et validation des colonnes, export Excel
 │   │   ├── xlsx.py           # écriture .xlsx mise en forme, bibliothèque standard
 │   │   ├── cache.py          # lectures communes mises en cache, partagées entre onglets
 │   │   ├── transforms.py     # fonctions de croisement réutilisables (stock × besoins × commandes)
-│   │   └── textile.py        # calculs de l'onglet Textile cabine
+│   │   ├── textile.py        # calculs de l'onglet Textile cabine
+│   │   └── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
 │   └── modules/
 │       ├── __init__.py       # REGISTRE des onglets (ordre d'affichage)
 │       ├── stock_chantier.py
@@ -121,7 +123,8 @@ Tant qu'aucun fichier n'est importé, afficher un **état vide soigné** (`compo
 - **Paquets autorisés** : uniquement ceux de la **distribution Pyodide** (servis par jsdelivr, aucun accès PyPI à prévoir). Base : `pandas`, `numpy`, `python-calamine`.
   - Lecture Excel : moteur **calamine** (~10× plus rapide qu'openpyxl sous Pyodide).
   - Export Excel : `core/xlsx.py` (bibliothèque standard) — openpyxl et xlsxwriter ne sont pas dans Pyodide.
-  - Graphes : `core/charts.py` (SVG / HTML) — plotly (9,7 Mo) n'est plus chargé.
+  - Graphes : `core/charts.py` avec **Altair** (déjà chargé par stlite, aucun paquet en plus) — plotly (9,7 Mo) n'est pas chargé. Pas de zoom (choix de l'auteur) ; ne pas combiner `cornerRadius` et `selection_interval(bind="scales")` sur un axe temporel (barres invisibles).
+  - `st.data_editor` est **inutilisable sous stlite** (il exige pyarrow) : utiliser des `number_input` / `selectbox`.
 - **Garder `requirements.txt` minimal** : chaque paquet allonge le premier chargement. Ne pas ajouter `plotly`, `openpyxl`, `scikit-learn`, `scipy`, `matplotlib`… sans vraie nécessité.
 - **Interdit** : `requests` et tout accès réseau, `subprocess`, `multiprocessing`, threads, boucles avec `time.sleep`, lecture ou écriture sur le disque de l'utilisateur, connexion à une base de données.
 - **Fichiers importés** : lus depuis l'objet `UploadedFile` (`pd.read_excel(uploaded, engine="openpyxl")`), jamais via un chemin.
@@ -174,12 +177,12 @@ Rendu attendu : **corporate, épuré, lisible**, cohérent avec le prototype Sup
 - **Badges de statut** : chantiers uniquement **Terminé / En cours / À venir**.
 - **Boutons** bien visibles, style identique partout (« Voir tout », « Détail », « Télécharger »).
 - **Tableaux** : `st.dataframe` avec `column_config` (formats €, dates JJ/MM/AAAA, barres de progression), en-têtes figés, actions à lancer en haut.
-- **Graphiques** (`core/charts.py`, style du prototype v3) : couleurs de la charte, **valeurs affichées sur les graphes**, fond transparent, légende en bas, police cohérente. Affichage via `components.graphe` (`st.markdown`, car `st.html` supprime le SVG).
+- **Graphiques** (`core/charts.py`, style du prototype v3) : couleurs de la charte, **valeurs affichées sur les graphes**, fond transparent, légende en bas, police cohérente. Affichage via `components.graphe` (`st.altair_chart(..., theme=None)`) : infobulle au survol, plein écran, export PNG / SVG.
 - **Peu de texte** : titre + une ligne de description ; les détails (colonnes attendues, règles de calcul, tableaux annexes) vont dans des `st.popover`.
 
 **Typographie et responsive :**
 
-- Pile système (`"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif`), sans police externe : le fichier doit pouvoir fonctionner derrière le proxy.
+- Police **Manrope** (celle du prototype), embarquée en woff2 dans le HTML (aucun appel à Google Fonts), puis pile système (`"Segoe UI", system-ui, …`).
 - Tailles en `rem` (base 16 px, jamais en dessous de 14 px) pour que **le texte grossisse avec le zoom navigateur**.
 - Mise en page **responsive** : colonnes qui passent à la ligne sur écran étroit, espacements constants.
 - **Masquer l'habillage Streamlit** : menu, footer, bouton Deploy, barre d'outils du header.

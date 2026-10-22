@@ -39,6 +39,7 @@
 
 /* ---------------------------------------------------------------- fond */
 html, body { background: #0B1A33; }
+html { font-size: 15px; }  /* base légèrement réduite (16 px par défaut) ; tout est en rem et suit le zoom */
 .stApp {
   background:
     linear-gradient(180deg, rgba(11, 26, 51, .18), rgba(11, 26, 51, .38)),
@@ -227,6 +228,87 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 [data-testid="stExpander"] details { border-color: var(--border); border-radius: 10px; background: #fff; }
 [data-testid="stCaptionContainer"] { color: var(--muted); font-size: .875rem; }
 .st-key-s360sub button p { font-weight: 700; }
+
+/* ---------------------------------------------------------------- graphes (core/charts.py) */
+.s360-chart { position: relative; width: 100%; margin-bottom: .4rem; }
+.s360-chart h5 { margin: 0 0 .6rem; padding: 0; color: var(--text); font-size: 1rem; font-weight: 700; }
+.s360-vide { margin: .6rem 0; color: var(--muted); }
+.s360-plot { position: relative; border-bottom: 1px solid #C9D3E3; }
+.s360-plot.nob { border-bottom: 0; }
+.s360-plot .cols { position: absolute; inset: 0; display: grid; }
+.s360-plot .col { position: relative; display: flex; justify-content: center; align-items: flex-end; border-radius: 6px 6px 0 0;
+  transition: background .12s; }
+.s360-plot .col:hover { background: rgba(31, 78, 156, .07); }
+.s360-plot .cols:hover .col:not(:hover) .grp { opacity: .55; }
+.s360-plot .grp { display: flex; align-items: flex-end; justify-content: center; gap: 3px; height: 100%; transition: opacity .12s; }
+.s360-plot .bw { flex: 1 1 0; min-width: 0; max-width: 4.5rem; display: flex; flex-direction: column; justify-content: flex-end;
+  align-items: stretch; height: 100%; }
+.s360-plot .bw > b { display: block; text-align: center; color: var(--text); font-size: .8125rem; font-weight: 800;
+  white-space: nowrap; line-height: 1.5; overflow: visible; }
+.s360-plot .b { display: block; border-radius: 4px 4px 0 0; min-height: 0; }
+.s360-plot .stk { display: flex; flex-direction: column-reverse; }
+.s360-plot .stk i { display: grid; place-items: center; color: #fff; font-size: .75rem; font-weight: 700; font-style: normal;
+  overflow: hidden; white-space: nowrap; }
+.s360-plot .stk i:last-child { border-radius: 4px 4px 0 0; }
+.s360-plot .rp { position: absolute; left: 50%; width: .7rem; height: .7rem; margin: 0 0 -.35rem -.35rem; background: var(--text);
+  border: 1.5px solid #fff; transform: rotate(45deg); z-index: 2; }
+.s360-plot .pt { position: absolute; left: 50%; width: .55rem; height: .55rem; margin: -.275rem 0 0 -.275rem; border-radius: 50%;
+  border: 1.5px solid #fff; z-index: 2; }
+.s360-plot .pl { position: absolute; left: 0; right: 0; text-align: center; font-size: .75rem; font-weight: 800; white-space: nowrap; z-index: 2; }
+.s360-plot .ov { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
+.s360-plot .zero { position: absolute; left: 0; right: 0; border-top: 1px solid #9AA5B1; }
+.s360-plot .bz { position: absolute; left: 50%; width: min(60%, 3.5rem); transform: translateX(-50%); border-radius: 3px; }
+.s360-plot .pv { position: absolute; left: -50%; right: -50%; text-align: center; font-size: .75rem; font-weight: 700; color: var(--text);
+  white-space: nowrap; }
+/* Infobulle au survol (texte dans data-tip, une ligne par valeur) */
+[data-tip]:hover::after {
+  content: attr(data-tip); position: absolute; z-index: 20; pointer-events: none;
+  padding: .45rem .65rem; border-radius: 8px; background: rgba(0, 33, 87, .96); color: #fff;
+  font-size: .8125rem; font-weight: 600; line-height: 1.45; white-space: pre; text-align: left;
+  box-shadow: 0 6px 18px rgba(0, 20, 60, .25);
+}
+.s360-plot .col[data-tip]:hover::after { top: .3rem; left: 50%; transform: translateX(-50%); }
+.s360-plot .col.tl[data-tip]:hover::after { left: 0; transform: none; }
+.s360-plot .col.tr[data-tip]:hover::after { left: auto; right: 0; transform: none; }
+.s360-xl { display: grid; margin-top: .35rem; color: var(--muted); font-size: .8125rem; }
+.s360-xl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; padding: 0 .1rem; }
+.s360-xl.rot { height: 4.8rem; }
+.s360-xl.rot span { text-align: right; justify-self: center; width: 7rem; max-width: 7rem;
+  transform: translateX(-3.5rem) rotate(-38deg); transform-origin: right top; }
+.s360-rotpad { padding-left: 3.4rem; }
+.s360-minis { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .8rem; }
+.s360-mini { background: var(--tile); border-radius: 10px; padding: .7rem .8rem .4rem; min-width: 0; }
+.s360-mini > b { display: block; margin-bottom: .3rem; color: var(--navy); font-size: .9375rem; }
+.s360-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: .35rem 1.1rem; margin-top: .55rem; font-size: .8125rem; color: var(--muted); }
+.s360-legend i { display: inline-block; width: .75rem; height: .75rem; border-radius: 3px; margin-right: .35rem; vertical-align: -1px; }
+.s360-legend i.ln { height: .2rem; border-radius: 2px; vertical-align: 3px; }
+.s360-legend i.rp { width: .6rem; height: .6rem; border-radius: 1px; transform: rotate(45deg); }
+.s360-rows .rw { position: relative; display: grid; grid-template-columns: minmax(6rem, 14rem) 1fr auto; gap: .8rem; align-items: center;
+  padding: .45rem .3rem; border-top: 1px solid #E3E9F1; font-size: .875rem; border-radius: 6px; }
+.s360-rows .rw:first-child { border-top: 0; }
+.s360-rows .rw:hover { background: rgba(31, 78, 156, .07); }
+.s360-rows .rw[data-tip]:hover::after { bottom: 100%; left: 30%; }
+.s360-rows .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s360-rows .bar { height: .6rem; border-radius: 6px; background: #E3E9F1; overflow: hidden; }
+.s360-rows .bar i { display: block; height: 100%; border-radius: 6px; background: var(--tone, var(--navy-2)); }
+.s360-rows b { font-weight: 800; }
+.s360-stack { display: flex; height: 1.9rem; border-radius: 7px; background: #E3E9F1; }
+.s360-stack span { position: relative; display: grid; place-items: center; color: #fff; font-size: .8125rem; font-weight: 700;
+  white-space: nowrap; }
+.s360-stack span:first-child { border-radius: 7px 0 0 7px; }
+.s360-stack span:last-child { border-radius: 0 7px 7px 0; }
+.s360-stack span:only-child { border-radius: 7px; }
+.s360-stack span:hover { filter: brightness(1.12); }
+.s360-stack span[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+.s360-share .rw { display: grid; grid-template-columns: minmax(6rem, 12rem) 1fr; gap: .8rem; align-items: center; padding: .5rem 0; font-size: .875rem; }
+.s360-share .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s360-heat { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: .8125rem; table-layout: fixed; }
+.s360-heat th { color: var(--muted); font-weight: 600; text-align: center; padding: .2rem; white-space: nowrap; }
+.s360-heat th:first-child { width: 12rem; }
+.s360-heat th.f { text-align: left; font-size: .875rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.s360-heat td { position: relative; text-align: center; border-radius: 4px; padding: .4rem .1rem; font-weight: 700; }
+.s360-heat td:hover { outline: 2px solid var(--navy); }
+.s360-heat td[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
 
 /* ---------------------------------------------------------------- avion décoratif (titre d'onglet) */
 .s360-hero::after {

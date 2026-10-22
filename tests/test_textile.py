@@ -1,5 +1,6 @@
 """Tests de l'onglet Textile, de la règle fournisseur, des graphes SVG et de l'export Excel (données FICTIVES)."""
 
+import re
 import io
 import shutil
 import subprocess
@@ -136,21 +137,24 @@ def test_joindre_par_groupe_equivalent():
 
 
 # --------------------------------------------------------------------------
-# Graphes (Altair) : spécifications Vega-Lite valides, infobulles
+# Graphes HTML : infobulles au survol, fenêtre de mois, valeurs signées
 # --------------------------------------------------------------------------
-def test_graphes_altair():
-    spec = charts.barres(["A", "B"], {"x": [3, np.nan]}, ligne={"l": [10, 20]}, fmt_ligne=charts.pourcent).to_dict()
-    assert "layer" in spec and "tooltip" in str(spec) and "20 %" in str(spec)
-    temporel = charts.barres(pd.date_range("2026-01-01", periods=3, freq="MS"), {"x": [1, 2, 3]}, temporel=True).to_dict()
-    assert "'type': 'temporal'" in str(temporel)
-    fenetre = charts.barres(pd.date_range("2026-01-01", periods=6, freq="MS"), {"x": range(6)}, temporel=True,
-                            fenetre=("2026-02-01", "2026-03-01")).to_dict()
-    assert len(next(iter(fenetre["datasets"].values()))) == 2       # seuls les mois de la fenêtre
-    for ch in [charts.parts(pd.DataFrame({"a": [1, 3]}, index=["L1", "L2"]), {"a": "#000"}),
-               charts.barres_h([("a", 3), ("b", 1, "1 j", "#f00")]), charts.multiples({"A": (["2021"], [1])}),
-               charts.chaleur(pd.DataFrame({"01/26": [1]}, index=["F"])), charts.courbes(pd.date_range("2026-01-01", periods=2, freq="MS"),
-                                                                                         {"a": [1, 2]}), charts.vide()]:
-        ch.to_dict()
+def test_graphes_html():
+    h = charts.barres(["A", "B"], {"x": [3, np.nan]}, ligne={"l": [10, 20]}, fmt_ligne=charts.pourcent, survol=["desc A", "desc B"])
+    assert len(re.findall(r'class="col[ "]', h)) == 2 and "data-tip=" in h and "desc A&#10;x : 3&#10;l : 10 %" in h and "<polyline" in h
+    assert "\n" not in h  # une seule ligne : st.markdown garde le bloc HTML entier
+    mois = pd.date_range("2026-01-01", periods=6, freq="MS")
+    f = charts.barres(mois, {"x": range(6)}, temporel=True, fenetre=("2026-02-01", "2026-03-01"))
+    assert len(re.findall(r'class="col[ "]', f)) == 2 and "02/26" in f and "04/26" not in f       # seuls les mois de la fenêtre
+    e = charts.barres(["P1"], {"a": [2], "b": [3]}, empile=True, repere={"Minimum": [8]})
+    assert "Total : 5" in e and 'class="rp"' in e and "Minimum : 8" in e
+    ec = charts.ecarts(["C1", "C2", "C3"], [25, 4, -3], [["PN X"], ["PN Y"], ["PN Z"]], seuil=10)
+    assert "+25 j" in ec and "-3 j" in ec and 'class="zero"' in ec and "PN Z" in ec
+    for h in [charts.parts(pd.DataFrame({"a": [1, 3]}, index=["L1", "L2"]), {"a": "#000"}),
+              charts.barres_h([("a", 3), ("b", 1, "1 j", "#f00")]), charts.multiples({"A": (["2021"], [1])}),
+              charts.chaleur(pd.DataFrame({"01/26": [1]}, index=["F"])), charts.vide(), charts.barres([], {"x": []})]:
+        assert h.startswith('<div class="s360-chart">') and "\n" not in h
+    assert "<script" not in h and charts._tip(['a "b" <c>']) == ' data-tip="a &quot;b&quot; &lt;c&gt;"'
     assert charts.euros(1_234_567) == "1,2 M€" and charts.court(12_345) == "12k" and charts.entier(1234) == "1 234"
 
 

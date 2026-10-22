@@ -118,9 +118,9 @@ def tableau(df, **kwargs) -> None:
     st.dataframe(df, hide_index=True, **kwargs)
 
 
-def graphe(chart) -> None:
-    """Affiche un graphe de core/charts.py (Altair) : survol, plein écran, export PNG/SVG."""
-    st.altair_chart(chart, width="stretch", theme=None)
+def graphe(html: str) -> None:
+    """Affiche un graphe de core/charts.py. st.markdown (et non st.html, qui supprime le SVG)."""
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------

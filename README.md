@@ -46,7 +46,6 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 | Commandes (SAP) | `PN`, `Commande` | `Fournisseur`, `Code fournisseur`, `Date d'émission de la commande`, `Date de livraison demandée / promise`, `Quantité restant à livrer` |
 | Références textile — feuille « PN Catalog » | `pn`, `equipment` | `description`, `ccn` |
 | Pièces par avion (prévision) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
-| Planning PE (facultatif) | `Immatriculation`, `Date prochaine PE` | `Equipement`, `Classe`, `Composant`, `Cycle PE (ans)` |
 
 Seul l'État du stock est indispensable ; les autres fichiers complètent l'analyse. La Prévision
 demande en plus le fichier Pièces par avion.
@@ -65,22 +64,20 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
 
 - **stock minimum** d'un PN = quantité par avion × objectif d'avance (10 % des avions du groupe, au
   moins 1), additionné sur les groupes d'avions qui l'utilisent ;
-- avec le **Planning PE**, chaque PE à venir consomme les pièces des avions concernés et se répète selon
-  le cycle d'entretien (réglable par équipement, classe et composant) ;
 - **commande** au plus tard à la date de besoin moins le délai fournisseur ; si le délai est trop long,
   la commande part maintenant ;
 - les PN dormants ou inactifs ne sont jamais recommandés ;
-- vue **par fournisseur** : PN à commander, quantité et valeur maintenant et sur l'horizon, prochaine
-  commande, plan mensuel. Fournisseur d'un PN : celui de ses commandes, à défaut le dernier fournisseur
-  de l'État du stock, puis le code fournisseur.
+- vue **par fournisseur** : PN à commander, valeur maintenant et sur l'horizon, détail d'un fournisseur
+  (stock / en commande / à commander par PN, **écart promis − demandé par ligne de commande**).
+  Fournisseur d'un PN : celui de ses commandes, à défaut le dernier fournisseur de l'État du stock, puis
+  le code fournisseur.
 
-Les paramètres (objectif d'avance, horizon, délai par défaut, cycles PE…) sont dans
-« ⚙️ Paramètres de la prévision ».
+Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « ⚙️ Paramètres de la prévision ».
+Le planning des PE n'est pas pris en compte pour l'instant.
 
 ### Graphiques
 
-Survol d'un élément : infobulle avec les valeurs. Menu « ⋯ » du graphe : plein écran, export PNG / SVG,
-affichage des données.
+Survol d'une colonne, d'une barre ou d'une case : infobulle avec toutes ses valeurs.
 
 ### Fournisseur manquant (tous les onglets)
 

@@ -120,7 +120,9 @@ TEMPLATE = """<!doctype html>
     <div class="titre">Supply<span>360</span></div>
     <div class="barre"></div>
     <div class="texte">Chargement de Supply360… le premier lancement peut prendre jusqu'à une minute.</div>
-    <div class="lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à cdn.jsdelivr.net.<br><br>
+    <div class="lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à cdn.jsdelivr.net
+      et pypi.org.<br><br>
+      <button type="button" onclick="location.reload()">Recharger</button>
       <button type="button" onclick="document.getElementById('s360-loading').classList.add('fini')">Afficher la page</button>
     </div>
   </div>
@@ -147,7 +149,7 @@ const obs = new MutationObserver(() => {
   if (pret()) { ecran.classList.add("fini"); obs.disconnect(); }
 });
 obs.observe(document.body, { childList: true, subtree: true });
-setTimeout(() => { if (!pret()) ecran.classList.add("lent"); }, 120000);
+setTimeout(() => { if (!pret()) ecran.classList.add("lent"); }, 60000);
 </script>
 <!-- Thème Supply360 (app/core/theme.css), images incluses : chargé une seule fois.
      Placé en fin de <body> pour passer après les styles que Streamlit ajoute au <head>. -->

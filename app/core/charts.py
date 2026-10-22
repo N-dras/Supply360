@@ -1,22 +1,22 @@
-"""Graphes interactifs (Altair / Vega-Lite), dans le style du prototype Supply360.
+"""Graphes HTML / SVG légers, dans le style du prototype Supply360.
 
-Altair est déjà chargé par stlite (dépendance de Streamlit) : aucun téléchargement en plus.
-Chaque graphe propose : infobulle au survol, mise en évidence de la série survolée, plein écran,
-export PNG / SVG et affichage des données (barre d'outils au survol du graphe).
+Fonctions pures : elles renvoient du HTML affiché par `components.graphe` (st.markdown). Aucune
+dépendance et aucun JavaScript : rendu instantané, rien à charger. Les positions horizontales sont
+en %, les hauteurs en px : les textes gardent leur taille quelle que soit la largeur.
 
-Les fonctions construisent un `alt.Chart` (affiché par `components.graphe`) à partir de données
-déjà agrégées. Les libellés (valeurs, € …) sont formatés en Python, au format français.
+Survol : chaque colonne (ou ligne, ou case) porte une infobulle `data-tip` affichée en CSS
+(core/theme.css) avec toutes ses valeurs.
 """
 
 import math
+from html import escape
 
-import altair as alt
 import pandas as pd
 
-from core.style import COLORS, FONT
+from core.style import COLORS
 
 PALETTE = [COLORS["navy_2"], "#2A9D8F", "#F4A259", "#BC4B51", COLORS["violet"], "#8AB17D", COLORS["gris"]]
-OPACITE_FOND = 0.35  # séries non survolées
+HAUT = 24  # marge au-dessus des barres (étiquettes de valeur)
 
 
 # --------------------------------------------------------------------------
@@ -66,274 +66,298 @@ def pourcent(v) -> str:
     return "" if _nan(v) else f"{float(v):.0f} %"
 
 
-# --------------------------------------------------------------------------
-# Style commun
-# --------------------------------------------------------------------------
-def _titre(titre):
-    return alt.TitleParams(titre, anchor="start", fontSize=15, fontWeight=700, color=COLORS["text"], offset=10) \
-        if titre else alt.Undefined
-
-
-def _config(ch, font_axes=12):
-    return (ch.configure(font=FONT, background="transparent")
-            .configure_view(stroke=None)
-            .configure_axis(labelColor=COLORS["muted"], labelFontSize=font_axes, titleColor=COLORS["muted"], titleFontSize=12,
-                            titleFontWeight=600, domain=False, tickColor=COLORS["grid"], gridColor=COLORS["grid"],
-                            gridDash=[3, 3], labelLimit=180)
-            .configure_legend(orient="bottom", direction="horizontal", labelColor=COLORS["text"], labelFontSize=12,
-                              title=None, symbolType="circle", symbolSize=110, columnPadding=16, labelLimit=260)
-            .configure_title(font=FONT))
-
-
-def _style(ch, titre="", hauteur=240):
-    props = {"height": hauteur, "width": "container"}
-    if titre:
-        props["title"] = _titre(titre)
-    return _config(ch.properties(**props))
-
-
-def _couleur(noms, couleurs):
-    noms = list(noms)
-    return alt.Scale(domain=noms, range=[(couleurs or {}).get(n, PALETTE[i % len(PALETTE)]) for i, n in enumerate(noms)])
-
-
-def vide(message="Aucune donnée à afficher"):
-    """Graphe vide avec un message (garde l'emplacement)."""
-    ch = alt.Chart(pd.DataFrame({"t": [message]})).mark_text(fontSize=14, color=COLORS["muted"]).encode(text="t:N")
-    return _style(ch, hauteur=70)
+def jours(v) -> str:
+    return "" if _nan(v) else f"{float(v):+.0f} j".replace("+0 j", "0 j")
 
 
 # --------------------------------------------------------------------------
-# Barres verticales (groupées ou empilées) + courbe optionnelle (axe de droite)
+# Briques communes
+# --------------------------------------------------------------------------
+def _tip(lignes) -> str:
+    """Attribut data-tip (une ligne par élément, vides ignorés)."""
+    texte = "\n".join(str(l) for l in lignes if l not in (None, ""))
+    return f' data-tip="{escape(texte, quote=True)}"'.replace("\n", "&#10;")
+
+
+def _titre(t):
+    return f"<h5>{escape(t)}</h5>" if t else ""
+
+
+def legende(items) -> str:
+    """items : [(libellé, couleur, 'barre' | 'ligne' | 'repere')]."""
+    if not items:
+        return ""
+    cls = {"ligne": "ln", "repere": "rp"}
+    spans = "".join(f'<span><i class="{cls.get(k, "")}" style="background:{c}"></i>{escape(str(n))}</span>' for n, c, k in items)
+    return f'<div class="s360-legend">{spans}</div>'
+
+
+def vide(message="Aucune donnée à afficher") -> str:
+    return f'<div class="s360-chart"><p class="s360-vide">{escape(message)}</p></div>'
+
+
+def _libelle(c, temporel):
+    if temporel:
+        return pd.Timestamp(c).strftime("%m/%y")
+    return str(c)
+
+
+def _etiquettes_x(cats, temporel=False):
+    """Étiquettes sous les colonnes : inclinées si longues ; mois : une sur k si nombreux."""
+    n = len(cats)
+    if temporel:
+        pas = max(1, math.ceil(n / 14))
+        spans = "".join(f"<span>{escape(c) if i % pas == 0 else ''}</span>" for i, c in enumerate(cats))
+        return f'<div class="s360-xl" style="grid-template-columns:repeat({n},minmax(0,1fr))">{spans}</div>', False
+    long_ = max(len(c) for c in cats)
+    tourner = n > 4 and (n > 12 or long_ > 9)
+    spans = "".join(f'<span title="{escape(c)}">{escape(c)}</span>' for c in cats)
+    cls = "s360-xl rot" if tourner else "s360-xl"
+    return f'<div class="{cls}" style="grid-template-columns:repeat({n},minmax(0,1fr))">{spans}</div>', tourner
+
+
+def _cote(i, n):
+    """Classe d'alignement de l'infobulle : à gauche pour les premières colonnes, à droite pour les dernières."""
+    if n >= 3 and i < n * 0.25:
+        return " tl"
+    if n >= 3 and i >= n * 0.75:
+        return " tr"
+    return ""
+
+
+# --------------------------------------------------------------------------
+# Barres verticales (groupées ou empilées) + courbe et repères optionnels
 # --------------------------------------------------------------------------
 def barres(cats, series: dict, couleurs: dict | None = None, empile=False, ligne: dict | None = None,
-           couleur_ligne=COLORS["text"], fmt=court, fmt_ligne=None, hauteur=260, titre="", survol=None,
-           temporel=False, fenetre=None, titre_y="", repere: dict | None = None, titre_x_survol="Libellé"):
-    """Barres avec valeurs affichées ; `ligne` = {nom: valeurs} sur un axe de droite ;
-    `repere` = {nom: valeurs} : losanges sur la même échelle que les barres (ex. stock minimum).
+           couleur_ligne=COLORS["text"], fmt=court, fmt_ligne=None, hauteur=300, titre="", survol=None,
+           temporel=False, fenetre=None, repere: dict | None = None, legende_auto=True, etiquettes=True,
+           couleurs_barres=None) -> str:
+    """Barres avec valeurs affichées.
 
-    `temporel=True` : `cats` sont des dates (début de mois) → axe temporel ; `fenetre` = (début, fin)
-    limite les mois affichés.
+    `ligne` = {nom: valeurs} : courbe tracée sur sa propre échelle, dans une bande au-dessus des barres ;
+    `repere` = {nom: valeurs} : losanges sur l'échelle des barres (ex. stock minimum) ;
+    `temporel` : `cats` sont des débuts de mois (étiquettes MM/AA), `fenetre` = (début, fin) limite les mois ;
+    `survol` : texte en plus dans l'infobulle de chaque colonne ; `couleurs_barres` : une couleur par colonne
+    (série unique).
     """
     cats = list(cats)
     noms = list(series)
-    valeurs = {k: list(series[k]) for k in noms}
-    if temporel and fenetre:  # période affichée : on ne garde que les mois de la fenêtre
+    vals = {k: [0.0 if _nan(v) else float(v) for v in series[k]] for k in noms}
+    lig = {k: list(v) for k, v in (ligne or {}).items()}
+    rep = {k: list(v) for k, v in (repere or {}).items()}
+    survol = list(survol) if survol is not None else None
+    if temporel and fenetre:
         a, b = pd.Timestamp(fenetre[0]), pd.Timestamp(fenetre[1])
         garde = [a <= pd.Timestamp(c) <= b for c in cats]
         cats = [c for c, g in zip(cats, garde) if g]
-        valeurs = {k: [v for v, g in zip(valeurs[k], garde) if g] for k in noms}
-        survol = [v for v, g in zip(survol, garde) if g] if survol else survol
-        if ligne:
-            ligne = {k: [v for v, g in zip(list(vv), garde) if g] for k, vv in ligne.items()}
-    if not cats or not series:
+        vals = {k: [x for x, g in zip(v, garde) if g] for k, v in vals.items()}
+        lig = {k: [x for x, g in zip(v, garde) if g] for k, v in lig.items()}
+        rep = {k: [x for x, g in zip(v, garde) if g] for k, v in rep.items()}
+        survol = [x for x, g in zip(survol, garde) if g] if survol else survol
+    n = len(cats)
+    if n == 0 or not noms:
         return vide()
-    lignes = []
-    for i, c in enumerate(cats):
-        for k in noms:
-            v = valeurs[k][i]
-            v = 0.0 if _nan(v) else float(v)
-            lignes.append({"cat": c if temporel else str(c), "serie": k, "valeur": v, "txt": fmt(v) if v else "",
-                           "info": str(survol[i]) if survol else ""})
-    df = pd.DataFrame(lignes)
-    ordre = [str(c) for c in cats]
-    if temporel:
-        xenc = alt.X("cat:T", title=None, timeUnit="yearmonth", axis=alt.Axis(format="%m/%y", labelAngle=0, grid=False, tickCount="month"))
-        xtxt = alt.X("cat:T", title=None, timeUnit="yearmonth", bandPosition=0.5)  # étiquettes au centre du mois
-        tip_x = alt.Tooltip("cat:T", title="Mois", timeUnit="yearmonth", format="%m/%Y")
-    else:
-        incline = len(cats) > 7 or (len(cats) > 4 and max(len(str(c)) for c in cats) > 12)
-        xenc = alt.X("cat:N", sort=ordre, title=None,
-                     axis=alt.Axis(labelAngle=-35 if incline else 0, grid=False, labelLimit=140))
-        tip_x = alt.Tooltip("cat:N", title=titre_x_survol)
-        xtxt = xenc
-    tooltip = [tip_x, alt.Tooltip("serie:N", title="Série"), alt.Tooltip("txt:N", title="Valeur")]
-    if survol:
-        tooltip.append(alt.Tooltip("info:N", title="Détail"))
-    sel = alt.selection_point(fields=["serie"], on="pointerover", clear="pointerout")
-    opac = alt.condition(sel, alt.value(1), alt.value(OPACITE_FOND))
-    color = alt.Color("serie:N", scale=_couleur(noms, couleurs), legend=alt.Legend() if len(noms) > 1 else None, sort=noms)
-    axe_y = alt.Axis(format="~s", tickCount=5)
-    forme = {"cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4}
-    if temporel:
-        forme["width"] = {"band": 0.7}  # barres plus fines, comme sur le prototype
-    if empile:
-        bars = alt.Chart(df).mark_bar(**forme).encode(
-            x=xenc, y=alt.Y("valeur:Q", stack="zero", title=titre_y or None, axis=axe_y),
-            color=color, opacity=opac, tooltip=tooltip).add_params(sel)
-        tot = df.groupby("cat", as_index=False, sort=False)["valeur"].sum()
-        tot["txt"] = tot["valeur"].map(lambda v: fmt(v) if v else "")
-        texte = alt.Chart(tot).mark_text(dy=-8, fontSize=12, fontWeight=800, color=COLORS["text"]).encode(
-            x=xtxt, y=alt.Y("valeur:Q"), text="txt:N")
-    else:
-        off = alt.XOffset("serie:N", sort=noms) if len(noms) > 1 else alt.Undefined
-        bars = alt.Chart(df).mark_bar(**forme).encode(
-            x=xenc, xOffset=off, y=alt.Y("valeur:Q", title=titre_y or None, axis=axe_y),
-            color=color, opacity=opac, tooltip=tooltip).add_params(sel)
-        texte = alt.Chart(df).mark_text(dy=-8, fontSize=12, fontWeight=700, color=COLORS["text"]).encode(
-            x=xtxt if len(noms) == 1 else xenc, xOffset=off, y="valeur:Q", text="txt:N", opacity=opac)
-    ch = alt.layer(bars, texte)
-    if repere:
-        nom_r, vals_r = next(iter(repere.items()))
-        dr = pd.DataFrame({"cat": cats if temporel else ordre, "v": [None if _nan(v) else float(v) for v in vals_r], "serie": nom_r})
-        dr["txt"] = dr["v"].map(lambda v: "" if v is None or _nan(v) else fmt(v))
-        losange = alt.Chart(dr).mark_point(shape="diamond", size=150, filled=True, stroke="white", strokeWidth=1.2).encode(
-            x=xtxt, y=alt.Y("v:Q"),
-            color=alt.Color("serie:N", scale=alt.Scale(domain=[nom_r], range=[COLORS["text"]]), legend=alt.Legend(symbolType="diamond")),
-            tooltip=[tip_x, alt.Tooltip("txt:N", title=nom_r)])
-        ch = alt.layer(ch, losange).resolve_scale(color="independent")
-    if ligne:
-        fmt_l = fmt_ligne or fmt
-        nom_l, vals = next(iter(ligne.items()))
-        dl = pd.DataFrame({"cat": cats if temporel else ordre, "v": [None if _nan(v) else float(v) for v in vals]})
-        dl["serie"] = nom_l
-        dl["txt"] = dl["v"].map(lambda v: "" if v is None or _nan(v) else fmt_l(v))
-        hi = max([v for v in dl["v"] if v is not None and not _nan(v)] or [1])
-        lo = min([v for v in dl["v"] if v is not None and not _nan(v)] or [0] + [0])
-        # Échelle de droite étendue vers le bas : la courbe reste au-dessus des barres.
-        ytl = alt.Y("v:Q", title=None, axis=None,
-                    scale=alt.Scale(domain=[min(lo, 0) - (hi - min(lo, 0)) * 1.4, hi + (hi - min(lo, 0)) * .12]))
-        bl = alt.Chart(dl).encode(x=xtxt, y=ytl)
-        couleur_l = alt.Color("serie:N", scale=alt.Scale(domain=[nom_l], range=[couleur_ligne]),
-                              legend=alt.Legend(symbolType="stroke", symbolStrokeWidth=3))
-        trait = bl.mark_line(strokeWidth=2.5, point=alt.OverlayMarkDef(size=55, filled=True)).encode(color=couleur_l)
-        lab = bl.mark_text(dy=-11, fontSize=12, fontWeight=800, color=couleur_ligne).encode(text="txt:N")
-        survol_l = bl.mark_point(size=220, opacity=0).encode(tooltip=[tip_x, alt.Tooltip("txt:N", title=nom_l)])
-        ch = alt.layer(ch, alt.layer(trait, lab, survol_l)).resolve_scale(y="independent", color="independent")
-    return _style(ch, titre, hauteur)
+    libelles = [_libelle(c, temporel) for c in cats]
+    couleurs = couleurs or {}
+    coul = {k: couleurs.get(k, PALETTE[j % len(PALETTE)]) for j, k in enumerate(noms)}
+    tot = [sum(vals[k][i] for k in noms) for i in range(n)]
+    rep_vals = [float(x) for v in rep.values() for x in v if not _nan(x)]
+    ymax = max([max(tot) if empile else max((max(v) for v in vals.values()), default=0)] + rep_vals) or 1.0
+    fmt_l = fmt_ligne or fmt
+
+    bande = 0.0
+    if lig:  # la courbe occupe une bande au-dessus des barres : les étiquettes ne se chevauchent pas
+        bande = (hauteur - HAUT) * 0.32
+    zone = hauteur - HAUT - bande
+    grp = 62 if n > 3 else 40  # largeur du groupe de barres (% de la colonne)
+    montrer = etiquettes and (n * (1 if empile else len(noms)) <= 36)
+
+    # Position verticale des points de la courbe (px depuis le haut)
+    pts_l = {}
+    for nom, valeurs in lig.items():
+        pts = [None if _nan(v) else float(v) for v in valeurs]
+        ok = [p for p in pts if p is not None]
+        if ok:
+            lo, hi = min(min(ok), 0), max(ok)
+            ech = (hi - lo) or 1
+            pts_l[nom] = (pts, [None if p is None else HAUT - 4 + (1 - (p - lo) / ech) * (bande - 16) for p in pts])
+
+    colonnes = []
+    for i in range(n):
+        infos = [libelles[i], survol[i] if survol else None]
+        infos += [f"{k} : {fmt(vals[k][i])}" for k in noms]
+        if empile and len(noms) > 1:
+            infos.append(f"Total : {fmt(tot[i])}")
+        infos += [f"{k} : {fmt(v[i])}" for k, v in rep.items() if not _nan(v[i])]
+        infos += [f"{k} : {fmt_l(pts[i])}" for k, (pts, _) in pts_l.items() if pts[i] is not None]
+        corps = []
+        if empile:
+            segs = []
+            plusieurs = sum(1 for k in noms if vals[k][i] > 0) > 1  # une seule part : le total suffit
+            for k in noms:
+                h = vals[k][i] / ymax * zone
+                if h <= 0:
+                    continue
+                txt = fmt(vals[k][i]) if montrer and plusieurs and h >= 17 else ""
+                segs.append(f'<i style="height:{h:.1f}px;background:{coul[k]}">{txt}</i>')
+            haut_txt = fmt(tot[i]) if montrer and tot[i] else ""
+            corps.append(f'<div class="bw"><b>{haut_txt}</b><div class="stk">{"".join(segs)}</div></div>')
+        else:
+            for k in noms:
+                v = vals[k][i]
+                h = v / ymax * zone
+                c = couleurs_barres[i] if couleurs_barres is not None and len(noms) == 1 else coul[k]
+                corps.append(f'<div class="bw"><b>{fmt(v) if montrer and v else ""}</b>'
+                             f'<i class="b" style="height:{max(h, 0):.1f}px;background:{c}"></i></div>')
+        extra = []
+        for k, v in rep.items():
+            if not _nan(v[i]):
+                extra.append(f'<i class="rp" style="bottom:{float(v[i]) / ymax * zone:.1f}px"></i>')
+        for j, (k, (pts, ys)) in enumerate(pts_l.items()):
+            if ys[i] is None:
+                continue
+            cl = couleur_ligne if j == 0 else PALETTE[(j + 3) % len(PALETTE)]
+            extra.append(f'<i class="pt" style="top:{ys[i]:.1f}px;background:{cl}"></i>')
+            if montrer:
+                extra.append(f'<span class="pl" style="top:{ys[i] - 19:.1f}px;color:{cl}">{fmt_l(pts[i])}</span>')
+        colonnes.append(f'<div class="col{_cote(i, n)}"{_tip(infos)}>'
+                        f'<div class="grp" style="width:{grp}%">{"".join(corps)}</div>{"".join(extra)}</div>')
+
+    traces = []
+    for j, (k, (pts, ys)) in enumerate(pts_l.items()):
+        cl = couleur_ligne if j == 0 else PALETTE[(j + 3) % len(PALETTE)]
+        p = " ".join(f"{(i + .5) / n * 100:.3f},{y:.1f}" for i, y in enumerate(ys) if y is not None)
+        traces.append(f'<polyline points="{p}" fill="none" stroke="{cl}" stroke-width="2.5" stroke-linejoin="round" '
+                      f'vector-effect="non-scaling-stroke"/>')
+    svg = (f'<svg class="ov" viewBox="0 0 100 {hauteur}" preserveAspectRatio="none">{"".join(traces)}</svg>'
+           if traces else "")
+    xl, tourner = _etiquettes_x(libelles, temporel)
+    plot = (f'<div class="s360-plot" style="height:{hauteur}px"><div class="cols" style="grid-template-columns:'
+            f'repeat({n},minmax(0,1fr))">{"".join(colonnes)}</div>{svg}</div>{xl}')
+    if tourner:  # marge à gauche : la première étiquette inclinée n'est pas coupée
+        plot = f'<div class="s360-rotpad">{plot}</div>'
+    leg = [(k, coul[k], "barre") for k in noms] if couleurs_barres is None else []
+    leg += [(k, COLORS["text"], "repere") for k in rep]
+    leg += [(k, couleur_ligne if j == 0 else PALETTE[(j + 3) % len(PALETTE)], "ligne") for j, k in enumerate(pts_l)]
+    lg_html = legende(leg) if legende_auto and (len(noms) > 1 or rep or pts_l) else ""
+    return f'<div class="s360-chart">{_titre(titre)}{plot}{lg_html}</div>'
 
 
-def courbes(x, series: dict, couleurs: dict | None = None, hauteur=260, titre="", fmt=court, pointilles=(), escalier=()):
-    """Courbes sur un axe temporel (mois), infobulle unifiée au survol."""
-    if len(x) == 0 or not series:
+def ecarts(cats, valeurs, infos=None, seuil=10, titre="", hauteur=300, fmt=jours) -> str:
+    """Barres positives / négatives autour de zéro (ex. écart promis − demandé, en jours).
+
+    Couleur : rouge au-delà de `seuil`, orange entre 1 et `seuil`, vert si ≤ 0.
+    `infos` : lignes de détail par barre (infobulle).
+    """
+    cats = [str(c) for c in cats]
+    vals = [0.0 if _nan(v) else float(v) for v in valeurs]
+    n = len(cats)
+    if n == 0:
         return vide()
-    noms = list(series)
-    df = pd.concat([pd.DataFrame({"x": list(x), "serie": k, "v": [None if _nan(v) else float(v) for v in series[k]]}) for k in noms])
-    df["txt"] = df["v"].map(lambda v: "" if v is None or _nan(v) else fmt(v))
-    color = alt.Color("serie:N", scale=_couleur(noms, couleurs), sort=noms)
-    dash = alt.condition(alt.FieldOneOfPredicate(field="serie", oneOf=list(pointilles) or ["-"]), alt.value([6, 4]), alt.value([0]))
-    base = alt.Chart(df).encode(x=alt.X("x:T", title=None, axis=alt.Axis(format="%m/%y", grid=False, labelAngle=0)),
-                                y=alt.Y("v:Q", title=None, axis=alt.Axis(format="~s", tickCount=5)), color=color)
-    trait = base.mark_line(strokeWidth=2.6, interpolate="step-after" if escalier else "linear").encode(strokeDash=dash)
-    survol = alt.selection_point(fields=["x"], nearest=True, on="pointerover", clear="pointerout", empty=False)
-    regle = alt.Chart(df).mark_rule(color=COLORS["gris"]).encode(
-        x="x:T", opacity=alt.condition(survol, alt.value(.6), alt.value(0)),
-        tooltip=[alt.Tooltip("x:T", title="Mois", format="%m/%Y")] + [alt.Tooltip(f"{k}:N", title=k) for k in noms]
-    ).transform_pivot("serie", value="txt", groupby=["x"]).add_params(survol)
-    points = base.mark_point(filled=True, size=40).encode(opacity=alt.condition(survol, alt.value(1), alt.value(0)))
-    ch = alt.layer(trait, points, regle)
-    return _style(ch, titre, hauteur)
+    hi, lo = max(max(vals), 0), min(min(vals), 0)
+    ech = (hi - lo) or 1
+    zone = hauteur - 2 * HAUT
+    zero = HAUT + hi / ech * zone  # position de l'axe zéro (px depuis le haut)
+    montrer = n <= 40
+    colonnes = []
+    for i, v in enumerate(vals):
+        c = COLORS["ko"] if v > seuil else COLORS["warn"] if v > 0 else COLORS["ok"]
+        h = abs(v) / ech * zone
+        top = zero - h if v > 0 else zero
+        txt = f'<span class="pv" style="top:{(top - 18 if v > 0 else zero + h + 2):.1f}px">{fmt(v)}</span>' if montrer else ""
+        detail = infos[i] if infos is not None else []
+        colonnes.append(f'<div class="col{_cote(i, n)}"{_tip([cats[i], *detail, f"Écart : {fmt(v)}"])}>'
+                        f'<i class="bz" style="top:{top:.1f}px;height:{max(h, 1.5):.1f}px;background:{c}"></i>{txt}</div>')
+    axe = f'<div class="zero" style="top:{zero:.1f}px"></div>'
+    xl = ""
+    if n <= 30:
+        xl, tourner = _etiquettes_x(cats)
+    plot = (f'<div class="s360-plot nob" style="height:{hauteur}px">{axe}<div class="cols" style="grid-template-columns:'
+            f'repeat({n},minmax(0,1fr))">{"".join(colonnes)}</div></div>{xl}')
+    if xl and tourner:
+        plot = f'<div class="s360-rotpad">{plot}</div>'
+    leg = legende([(f"Plus de {seuil} j de retard", COLORS["ko"], "barre"), (f"1 à {seuil} j", COLORS["warn"], "barre"),
+                   ("À l'heure ou en avance", COLORS["ok"], "barre")])
+    return f'<div class="s360-chart">{_titre(titre)}{plot}{leg}</div>'
 
 
-def multiples(panneaux: dict, couleurs: dict | None = None, hauteur=140, fmt=court, titre="", colonnes=4):
-    """Petits multiples : {titre: (catégories, valeurs)}, une mini-série de barres par panneau (échelle propre)."""
+def multiples(panneaux: dict, couleurs: dict | None = None, hauteur=170, fmt=court, titre="") -> str:
+    """Petits multiples : {titre: (catégories, valeurs)}, une mini-série de barres par panneau."""
     if not panneaux:
         return vide()
-    lignes = []
-    for t, (cats, vals) in panneaux.items():
-        for c, v in zip(cats, vals):
-            v = 0.0 if _nan(v) else float(v)
-            lignes.append({"panneau": str(t), "cat": str(c), "valeur": v, "txt": fmt(v) if v else ""})
-    df = pd.DataFrame(lignes)
-    noms = list(dict.fromkeys(df["panneau"]))
-    ordre_x = list(dict.fromkeys(df["cat"]))
-    sel = alt.selection_point(fields=["cat"], on="pointerover", clear="pointerout")
-    base = alt.Chart().encode(x=alt.X("cat:N", sort=ordre_x, title=None, axis=alt.Axis(labelAngle=0, grid=False)))
-    bars = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-        y=alt.Y("valeur:Q", title=None, axis=alt.Axis(format="~s", tickCount=3)),
-        color=alt.Color("panneau:N", scale=_couleur(noms, couleurs), legend=None),
-        opacity=alt.condition(sel, alt.value(1), alt.value(.7)),
-        tooltip=[alt.Tooltip("panneau:N", title="Série"), alt.Tooltip("cat:N", title="Période"), alt.Tooltip("txt:N", title="Valeur")],
-    ).add_params(sel)
-    texte = base.mark_text(dy=-7, fontSize=11, fontWeight=700, color=COLORS["text"]).encode(y="valeur:Q", text="txt:N")
-    ch = alt.layer(bars, texte, data=df).properties(height=hauteur, width=alt.Step(34)) \
-        .facet(facet=alt.Facet("panneau:N", sort=noms, title=None,
-                               header=alt.Header(labelFontSize=13, labelFontWeight=700, labelColor=COLORS["navy"],
-                                                 labelAnchor="start", labelFont=FONT)),
-               columns=colonnes, spacing=22) \
-        .resolve_scale(y="independent")
-    if titre:
-        ch = ch.properties(title=_titre(titre))
-    return _config(ch, font_axes=11)
+    couleurs = couleurs or {}
+    cartes = []
+    for i, (t, (cats, vals)) in enumerate(panneaux.items()):
+        c = couleurs.get(t, PALETTE[i % len(PALETTE)])
+        cartes.append(f'<div class="s360-mini"><b>{escape(str(t))}</b>'
+                      f'{barres(cats, {str(t): vals}, {str(t): c}, hauteur=hauteur, fmt=fmt, legende_auto=False)}</div>')
+    return f'<div class="s360-chart">{_titre(titre)}<div class="s360-minis">{"".join(cartes)}</div></div>'
 
 
 # --------------------------------------------------------------------------
-# Barres horizontales (classements)
+# Barres horizontales simples (classements)
 # --------------------------------------------------------------------------
-def barres_h(lignes, couleur=COLORS["navy_2"], fmt=court, titre="", max_lignes=12, titre_x=""):
-    """lignes : [(libellé, valeur)], [(libellé, valeur, texte)] ou [(libellé, valeur, texte, couleur)], déjà triées."""
+def barres_h(lignes, couleur=COLORS["navy_2"], fmt=court, titre="", max_lignes=12, **_) -> str:
+    """lignes : [(libellé, valeur)], [(libellé, valeur, texte affiché)] ou [(libellé, valeur, texte, couleur)]."""
     lignes = list(lignes)[:max_lignes]
     if not lignes:
         return vide()
-    df = pd.DataFrame({
-        "nom": [str(l[0]) for l in lignes],
-        "valeur": [0.0 if _nan(l[1]) else float(l[1]) for l in lignes],
-        "txt": [l[2] if len(l) > 2 and l[2] is not None else fmt(l[1]) for l in lignes],
-        "couleur": [l[3] if len(l) > 3 else couleur for l in lignes],
-    })
-    sel = alt.selection_point(fields=["nom"], on="pointerover", clear="pointerout")
-    base = alt.Chart(df).encode(y=alt.Y("nom:N", sort=list(df["nom"]), title=None, axis=alt.Axis(labelLimit=220, labelFontSize=12.5)))
-    bars = base.mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-        x=alt.X("valeur:Q", title=titre_x or None, axis=alt.Axis(format="~s", tickCount=4), scale=alt.Scale(nice=True)),
-        color=alt.Color("couleur:N", scale=None), opacity=alt.condition(sel, alt.value(1), alt.value(.75)),
-        tooltip=[alt.Tooltip("nom:N", title="Libellé"), alt.Tooltip("txt:N", title="Valeur")]).add_params(sel)
-    texte = base.mark_text(align="left", dx=5, fontSize=12, fontWeight=800, color=COLORS["text"]).encode(x="valeur:Q", text="txt:N")
-    return _style(alt.layer(bars, texte), titre, max(110, 34 * len(df) + 20))
+    vmax = max((float(l[1]) for l in lignes if not _nan(l[1])), default=0) or 1
+    rows = []
+    for l in lignes:
+        nom, v = l[0], l[1]
+        txt = l[2] if len(l) > 2 and l[2] is not None else fmt(v)
+        c = l[3] if len(l) > 3 else couleur
+        pct = 0 if _nan(v) or not float(v) else max(float(v) / vmax * 100, 1.5)
+        rows.append(f'<div class="rw"{_tip([nom, txt])}><span class="nm">{escape(str(nom))}</span>'
+                    f'<div class="bar"><i style="width:{pct:.1f}%;--tone:{c}"></i></div><b>{escape(str(txt))}</b></div>')
+    return f'<div class="s360-chart">{_titre(titre)}<div class="s360-rows">{"".join(rows)}</div></div>'
 
 
 # --------------------------------------------------------------------------
 # Barres 100 % (répartition par ligne)
 # --------------------------------------------------------------------------
-def parts(tableau, couleurs: dict, titre="", afficher="nombre", noms=("Catégorie", "Statut")):
+def parts(tableau, couleurs: dict, titre="", afficher="nombre", **_) -> str:
     """`tableau` : DataFrame (lignes = catégories, colonnes = statuts) de comptages ou de valeurs."""
     if tableau is None or tableau.empty or float(tableau.to_numpy().sum()) == 0:
         return vide()
-    lignes = []
+    rows = []
     for idx, r in tableau.iterrows():
         total = float(r.sum())
-        debut = 0.0
+        segs = []
         for col, v in r.items():
             v = float(v)
-            p = v / total * 100 if total else 0
-            lignes.append({"ligne": str(idx), "statut": str(col), "p0": debut, "p1": debut + p, "pm": debut + p / 2,
-                           "pct": f"{p:.0f} %", "vtxt": court(v),
-                           "txt": (f"{p:.0f} %" if afficher == "pourcent" else court(v)) if p >= 7 else ""})
-            debut += p
-    df = pd.DataFrame(lignes)
-    cols = [str(c) for c in tableau.columns]
-    sel = alt.selection_point(fields=["statut"], on="pointerover", clear="pointerout")
-    base = alt.Chart(df).encode(y=alt.Y("ligne:N", sort=[str(i) for i in tableau.index], title=None,
-                                        axis=alt.Axis(labelLimit=200, labelFontSize=12.5)))
-    bars = base.mark_bar(cornerRadius=3).encode(
-        x=alt.X("p0:Q", title=None, scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(labelExpr="datum.value + ' %'", tickCount=5)),
-        x2="p1:Q", color=alt.Color("statut:N", scale=_couleur(cols, couleurs), sort=cols),
-        opacity=alt.condition(sel, alt.value(1), alt.value(.45)),
-        tooltip=[alt.Tooltip("ligne:N", title=noms[0]), alt.Tooltip("statut:N", title=noms[1]), alt.Tooltip("vtxt:N", title="Valeur"),
-                 alt.Tooltip("pct:N", title="Part")]).add_params(sel)
-    texte = base.mark_text(fontSize=12, fontWeight=700, color="white").encode(x="pm:Q", text="txt:N")
-    return _style(alt.layer(bars, texte), titre, max(110, 42 * len(tableau) + 20))
+            if v <= 0 or total <= 0:
+                continue
+            p = v / total * 100
+            txt = (f"{p:.0f} %" if afficher == "pourcent" else court(v)) if p >= 7 else ""
+            segs.append(f'<span style="width:{p:.2f}%;background:{couleurs.get(col, COLORS["gris"])}"'
+                        f'{_tip([f"{idx} · {col}", f"{court(v)} ({p:.0f} %)"])}>{txt}</span>')
+        rows.append(f'<div class="rw"><span class="nm" title="{escape(str(idx))}">{escape(str(idx))}</span>'
+                    f'<div class="s360-stack">{"".join(segs)}</div></div>')
+    leg = legende([(c, couleurs.get(c, COLORS["gris"]), "barre") for c in tableau.columns])
+    return f'<div class="s360-chart">{_titre(titre)}<div class="s360-share">{"".join(rows)}</div>{leg}</div>'
 
 
 # --------------------------------------------------------------------------
 # Carte de chaleur
 # --------------------------------------------------------------------------
-def chaleur(tableau, titre="", couleur=COLORS["navy_2"], libelle="Valeur"):
-    """Lignes × colonnes, intensité proportionnelle à la valeur."""
+def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes") -> str:
+    """Carte de chaleur HTML : lignes × colonnes, intensité proportionnelle à la valeur."""
     if tableau is None or tableau.empty:
         return vide()
-    df = tableau.copy()
-    df.index = [str(i) for i in df.index]
-    df.columns = [str(c) for c in df.columns]
-    df = df.reset_index(names="ligne").melt(id_vars="ligne", var_name="col", value_name="v")
-    df["txt"] = df["v"].map(lambda v: court(v) if v else "")
-    vmax = float(df["v"].max()) or 1
-    base = alt.Chart(df).encode(
-        x=alt.X("col:N", sort=[str(c) for c in tableau.columns], title=None, axis=alt.Axis(orient="top", labelAngle=0, grid=False)),
-        y=alt.Y("ligne:N", sort=[str(i) for i in tableau.index], title=None, axis=alt.Axis(labelLimit=200, grid=False)))
-    rect = base.mark_rect(cornerRadius=4, stroke="white", strokeWidth=2).encode(
-        color=alt.condition("datum.v > 0", alt.Color("v:Q", scale=alt.Scale(range=["#DCE6F6", couleur], domain=[0, vmax]), legend=None),
-                            alt.value("#F3F6FA")),
-        tooltip=[alt.Tooltip("ligne:N", title="Fournisseur"), alt.Tooltip("col:N", title="Mois"), alt.Tooltip("txt:N", title=libelle)])
-    texte = base.mark_text(fontSize=12, fontWeight=700).encode(
-        text="txt:N", color=alt.condition(f"datum.v > {vmax * .55}", alt.value("white"), alt.value(COLORS["text"])))
-    return _style(alt.layer(rect, texte), titre, max(120, 30 * len(tableau) + 40))
+    vmax = float(tableau.to_numpy().max()) or 1
+    r, g, b = couleur
+    tete = "".join(f"<th>{escape(str(c))}</th>" for c in tableau.columns)
+    lignes = []
+    for idx, row in tableau.iterrows():
+        cells = []
+        for col, v in row.items():
+            v = float(v)
+            a = 0 if v <= 0 else .15 + .85 * v / vmax
+            fg = "#fff" if a > .55 else COLORS["text"]
+            cells.append(f'<td style="background:rgba({r},{g},{b},{a:.2f});color:{fg}"'
+                         f'{_tip([idx, f"{col} : {entier(v)} {libelle}"])}>{court(v) if v else ""}</td>')
+        lignes.append(f'<tr><th class="f" title="{escape(str(idx))}">{escape(str(idx))}</th>{"".join(cells)}</tr>')
+    return (f'<div class="s360-chart">{_titre(titre)}<table class="s360-heat">'
+            f'<tr><th></th>{tete}</tr>{"".join(lignes)}</table></div>')

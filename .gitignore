@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# Fichiers de données réelles : ne jamais versionner
+*.xlsx
+*.xlsm
+*.csv
+!tests/fixtures/*.xlsx
+!tests/fixtures/*.xlsm

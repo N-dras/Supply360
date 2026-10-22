@@ -281,7 +281,7 @@ def _synthese(s, o, today, cat):
             ui.graphe(charts.barres(cats, {"Valeur du stock": g["Valeur stock (€)"], "Valeur en commande": g["Valeur en commande (€)"]},
                                     {"Valeur du stock": COLORS["navy_2"], "Valeur en commande": "#F4A259"},
                                     ligne={"Part dormante": part}, fmt=charts.euros, fmt_ligne=charts.pourcent,
-                                    titre="Valeur du stock et part dormante", hauteur=270))
+                                    titre="Valeur du stock et part dormante", hauteur=220))
         a, b = st.columns(2, gap="large")
         with a:
             ui.graphe(charts.parts(tx.activite_par_categorie(s), tx.ACTIVITY_COLORS, "PN actifs, dormants et inactifs"))
@@ -292,7 +292,7 @@ def _synthese(s, o, today, cat):
             if bo is not None:
                 series["Back-order"] = bo
             ui.graphe(charts.barres(cats, series, {"Stock étagère": COLORS["navy_2"], "En commande": "#F4A259", "Back-order": "#BC4B51"},
-                                    titre="Stock, commandes et back-orders (qté)", hauteur=250))
+                                    titre="Stock, commandes et back-orders (qté)", hauteur=205))
         with st.popover("📋 Tableau par catégorie"):
             ui.tableau(tx.resume_categories(s, o), column_config=CFG, width=1000)
         _pn_dormants(s)
@@ -455,7 +455,7 @@ def _consommation(s, o, today, cat):
             ui.graphe(charts.barres(d["PNR"], {"12 derniers mois": d["QTE CONSO 12M"].fillna(0), "12 mois précédents": d["Conso 12 mois précédents"]},
                                     {"12 derniers mois": COLORS["navy_2"], "12 mois précédents": COLORS["gris"]},
                                     ligne={"Évolution": d["Evolution 12M vs 12M précédents (%)"]}, fmt_ligne=charts.pourcent,
-                                    survol=list(d["DESCRIPTION"].fillna("").astype(str)) if "DESCRIPTION" in d else None, hauteur=320))
+                                    survol=list(d["DESCRIPTION"].fillna("").astype(str)) if "DESCRIPTION" in d else None, hauteur=260))
         _conso_pn(s, annees)
 
 
@@ -471,7 +471,7 @@ def _conso_pn(s, annees):
                                persist_state="page")
         sel = pool[pool["PNR"].isin(choix)] if choix else pool.head(6)
         ui.graphe(charts.multiples({r["PNR"]: ([str(a) for a in annees], [r.get(f"QTE CONSO {a}", 0) for a in annees])
-                                    for _, r in sel.iterrows()}, {}, hauteur=170))
+                                    for _, r in sel.iterrows()}, {}, hauteur=140))
 
 
 
@@ -614,7 +614,7 @@ def _vue_fournisseur_prev(s, o, fours):
                                 {"En stock": COLORS["navy_2"], "Déjà en commande": "#F4A259", "À commander": COLORS["ko"]},
                                 empile=True, repere={"Stock minimum à tenir": g["Besoin minimum (qté)"]},
                                 survol=list(g["DESCRIPTION"].fillna("").astype(str)) if "DESCRIPTION" in g else None,
-                                titre="Par PN : en stock, déjà en commande, à commander", hauteur=320)
+                                titre="Par PN : en stock, déjà en commande, à commander", hauteur=260)
                   if len(g) else charts.vide("Aucun PN actif suivi chez ce fournisseur"))
         _ecarts_lignes(ec, lignes)
         t1, t2 = st.columns(2)

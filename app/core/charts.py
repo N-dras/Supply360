@@ -16,7 +16,7 @@ import pandas as pd
 from core.style import COLORS
 
 PALETTE = [COLORS["navy_2"], "#2A9D8F", "#F4A259", "#BC4B51", COLORS["violet"], "#8AB17D", COLORS["gris"]]
-HAUT = 24  # marge au-dessus des barres (étiquettes de valeur)
+HAUT = 20  # marge au-dessus des barres (étiquettes de valeur)
 
 
 # --------------------------------------------------------------------------
@@ -129,7 +129,7 @@ def _cote(i, n):
 # Barres verticales (groupées ou empilées) + courbe et repères optionnels
 # --------------------------------------------------------------------------
 def barres(cats, series: dict, couleurs: dict | None = None, empile=False, ligne: dict | None = None,
-           couleur_ligne=COLORS["text"], fmt=court, fmt_ligne=None, hauteur=300, titre="", survol=None,
+           couleur_ligne=COLORS["text"], fmt=court, fmt_ligne=None, hauteur=250, titre="", survol=None,
            temporel=False, fenetre=None, repere: dict | None = None, legende_auto=True, etiquettes=True,
            couleurs_barres=None) -> str:
     """Barres avec valeurs affichées.
@@ -243,7 +243,7 @@ def barres(cats, series: dict, couleurs: dict | None = None, empile=False, ligne
     return f'<div class="s360-chart">{_titre(titre)}{plot}{lg_html}</div>'
 
 
-def ecarts(cats, valeurs, infos=None, seuil=10, titre="", hauteur=300, fmt=jours) -> str:
+def ecarts(cats, valeurs, infos=None, seuil=10, titre="", hauteur=250, fmt=jours) -> str:
     """Barres positives / négatives autour de zéro (ex. écart promis − demandé, en jours).
 
     Couleur : rouge au-delà de `seuil`, orange entre 1 et `seuil`, vert si ≤ 0.
@@ -256,7 +256,7 @@ def ecarts(cats, valeurs, infos=None, seuil=10, titre="", hauteur=300, fmt=jours
         return vide()
     hi, lo = max(max(vals), 0), min(min(vals), 0)
     ech = (hi - lo) or 1
-    zone = hauteur - 2 * HAUT
+    zone = hauteur - HAUT - (HAUT if lo < 0 else 2)  # marge basse seulement s'il y a des valeurs négatives
     zero = HAUT + hi / ech * zone  # position de l'axe zéro (px depuis le haut)
     montrer = n <= 40
     colonnes = []
@@ -281,7 +281,7 @@ def ecarts(cats, valeurs, infos=None, seuil=10, titre="", hauteur=300, fmt=jours
     return f'<div class="s360-chart">{_titre(titre)}{plot}{leg}</div>'
 
 
-def multiples(panneaux: dict, couleurs: dict | None = None, hauteur=170, fmt=court, titre="") -> str:
+def multiples(panneaux: dict, couleurs: dict | None = None, hauteur=140, fmt=court, titre="") -> str:
     """Petits multiples : {titre: (catégories, valeurs)}, une mini-série de barres par panneau."""
     if not panneaux:
         return vide()

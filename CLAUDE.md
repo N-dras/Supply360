@@ -183,7 +183,7 @@ Rendu attendu : **corporate, épuré, lisible**, cohérent avec le prototype Sup
 **Typographie et responsive :**
 
 - Police **Manrope** (celle du prototype), embarquée en woff2 dans le HTML (aucun appel à Google Fonts), puis pile système (`"Segoe UI", system-ui, …`).
-- Tailles en `rem` (base **15 px**, légèrement réduite à la demande de l'auteur : `html { font-size }` + `baseFontSize`) pour que **le texte grossisse avec le zoom navigateur**.
+- Tailles en `rem` (base **13 px** ≈ 80 % de 16 px, à la demande de l'auteur : `html { font-size }` + `baseFontSize` ; hauteurs des graphes réduites d'autant) pour que **le texte grossisse avec le zoom navigateur**.
 - Mise en page **responsive** : colonnes qui passent à la ligne sur écran étroit, espacements constants.
 - **Masquer l'habillage Streamlit** : menu, footer, bouton Deploy, barre d'outils du header.
 

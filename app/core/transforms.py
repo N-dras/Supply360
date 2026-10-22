@@ -11,6 +11,8 @@ CLASSES_RISQUE = [8.0, 9.0]
 # Les fournisseurs saisissent une PSD en 2031 quand ils n'ont pas encore donné de date.
 ANNEE_PSD_NON_FOURNIE = 2031
 SEP = " | "
+# Dernier recours, quand ni les commandes ni l'État du stock ne donnent de nom ou de code.
+FOURNISSEUR_ABSENT = "fournisseur non renseigné"
 
 # --------------------------------------------------------------------------
 # Codes action (du pire au meilleur)
@@ -49,11 +51,54 @@ def joindre_uniques(serie: pd.Series, sep: str = SEP):
 
 
 def joindre_par_groupe(df: pd.DataFrame, cle: str, col: str, sep: str = SEP) -> pd.Series:
-    """Équivalent vectorisé de `groupby(cle)[col].agg(joindre_uniques)` (index = clé)."""
+    """Équivalent vectorisé de `groupby(cle)[col].agg(joindre_uniques)` (index = clé).
+
+    Sans `groupby().agg` (une fonction Python par groupe, lent sous Pyodide) : tri stable par clé
+    puis une seule boucle sur des listes.
+    """
     s = df[col].map(str, na_action="ignore").str.strip()
     garde = s.notna() & (s != "") & (s.str.lower() != "nan")
     tmp = pd.DataFrame({cle: df[cle], col: s})[garde].drop_duplicates()
-    return tmp.groupby(cle, sort=False)[col].agg(sep.join)
+    if tmp.empty:
+        return pd.Series(dtype=object, name=col)
+    codes, uniques = pd.factorize(tmp[cle], sort=False)
+    ordre = np.argsort(codes, kind="stable")
+    c = codes[ordre]
+    vals = tmp[col].to_numpy()[ordre].tolist()
+    bornes = np.flatnonzero(np.diff(c)) + 1
+    debuts, fins = np.r_[0, bornes], np.r_[bornes, len(c)]
+    index = pd.Index(uniques.take(c[debuts]), name=cle)
+    return pd.Series([sep.join(vals[a:b]) for a, b in zip(debuts, fins)], index=index, name=col)
+
+
+def _plus_frequent(cles: pd.Series, valeurs: pd.Series) -> pd.Series:
+    """Par clé : valeur non vide la plus fréquente (première rencontrée en cas d'égalité)."""
+    d = pd.DataFrame({"k": cles, "v": valeurs}).dropna()
+    if d.empty:
+        return pd.Series(dtype=object)
+    n = d.groupby(["k", "v"], sort=False).size().reset_index(name="n")
+    return n.sort_values("n", ascending=False, kind="stable").drop_duplicates("k").set_index("k")["v"]
+
+
+def completer_fournisseurs(lignes: pd.DataFrame) -> pd.Series:
+    """Fournisseur de chaque ligne de commande, sans jamais laisser « fournisseur inconnu ».
+
+    Règle (demande métier) quand la colonne Fournisseur est vide :
+    1. nom associé au même code fournisseur sur les autres lignes du fichier ;
+    2. sinon, fournisseur le plus fréquent sur les autres lignes du même PN ;
+    3. sinon, le code fournisseur lui-même (« Code F123 ») ;
+    4. sinon, via le code fournisseur le plus fréquent du même PN.
+    Reste vide uniquement si la ligne et son PN n'ont ni nom ni code.
+    """
+    nom = lignes["Fournisseur"].where(lignes["Fournisseur"].notna(), np.nan)
+    code = lignes["Code_fournisseur_cmd"]
+    nom_par_code = _plus_frequent(code, nom)
+    nom = nom.fillna(code.map(nom_par_code))
+    nom = nom.fillna(lignes["PN"].map(_plus_frequent(lignes["PN"], nom)))
+    nom = nom.fillna(("Code " + code.astype(object)).where(code.notna()))
+    code_pn = lignes["PN"].map(_plus_frequent(lignes["PN"], code))
+    nom = nom.fillna(code_pn.map(nom_par_code)).fillna(("Code " + code_pn.astype(object)).where(code_pn.notna()))
+    return nom.astype(object)
 
 
 def _premier_prioritaire(df: pd.DataFrame, cle: str, col: str, prioritaires) -> pd.Series:
@@ -176,7 +221,7 @@ def _actions(m: pd.DataFrame):
     agent = m["CODE_ACHETEUR"].where(m["CODE_ACHETEUR"].notna(), "?").astype(str)
     fourn = (m["FOURNISSEUR"].where(_non_vide(m["FOURNISSEUR"]),
                                     m["CODE_FOURNISSEUR"].where(_non_vide(m["CODE_FOURNISSEUR"]),
-                                                                "fournisseur inconnu"))
+                                                                FOURNISSEUR_ABSENT))
              .astype(str))
     psd = pd.to_datetime(m["PSD"])
     psd_txt = psd.dt.strftime("%d/%m/%Y")

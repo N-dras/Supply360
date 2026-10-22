@@ -1,4 +1,4 @@
-"""Point d'entrée Supply360 : configuration de page, style, header et navigation.
+"""Point d'entrée Supply360 : configuration de page, thème, header et navigation.
 
 Fonctionne à l'identique avec `streamlit run app/main.py` et dans le HTML stlite.
 """
@@ -23,29 +23,22 @@ from modules import MODULES  # noqa: E402
 PAR_ID = {m.TAB_ID: m for m in MODULES}
 assert len(PAR_ID) == len(MODULES), "TAB_ID en double dans le registre des modules"
 
-if st.session_state.get("active_tab") not in PAR_ID:
-    st.session_state["active_tab"] = MODULES[0].TAB_ID
-
-
-def _changer_onglet() -> None:
-    st.session_state["active_tab"] = st.session_state["s360_nav"]
-
+# L'onglet actif est porté par le sélecteur de navigation (clé s360_nav).
+if st.session_state.get("s360_nav") not in PAR_ID:
+    st.session_state["s360_nav"] = MODULES[0].TAB_ID
 
 style.inject()
-actif = PAR_ID[st.session_state["active_tab"]]
-ui.header(f"{actif.TAB_ICON} {actif.TAB_LABEL}")
-
-# Sélecteur horizontal : seul l'onglet actif est exécuté (contrairement à st.tabs).
+ui.header()
 st.segmented_control(
     "Onglet",
     options=list(PAR_ID),
     format_func=lambda tab_id: f"{PAR_ID[tab_id].TAB_ICON} {PAR_ID[tab_id].TAB_LABEL}",
-    default=st.session_state["active_tab"],
     required=True,
     key="s360_nav",
-    on_change=_changer_onglet,
     label_visibility="collapsed",
 )
+st.session_state["active_tab"] = st.session_state["s360_nav"]
 
-actif.render()
+# Seul l'onglet actif est exécuté (contrairement à st.tabs).
+PAR_ID[st.session_state["active_tab"]].render()
 ui.footer()

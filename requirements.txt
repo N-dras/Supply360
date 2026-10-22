@@ -1,6 +1,6 @@
 # Dépendances runtime, installées par stlite/Pyodide au premier lancement.
+# Uniquement des paquets de la distribution Pyodide (CDN jsdelivr) : aucun accès à PyPI.
 # Streamlit est fourni par stlite : ne pas l'ajouter ici.
 pandas
 numpy
-openpyxl
-plotly
+python-calamine

@@ -20,7 +20,7 @@ Conséquences à garder en tête :
 
 - Les données sont traitées **localement dans le navigateur** de l'utilisateur et ne transitent par aucun serveur.
 - Rafraîchir la page **réinitialise tout**. C'est voulu : chaque session repart de zéro.
-- Au premier lancement, le navigateur télécharge Pyodide et les paquets depuis le CDN jsdelivr, ce qui prend quelques dizaines de secondes.
+- Au premier lancement, le navigateur télécharge Pyodide et les paquets depuis le CDN jsdelivr (et le paquet `protobuf` de Streamlit depuis PyPI, demandé par stlite lui-même), ce qui prend une quinzaine de secondes.
 
 ---
 
@@ -50,19 +50,27 @@ supply360/
 ├── .streamlit/
 │   └── config.toml           # thème Streamlit (couleurs de la charte)
 ├── assets/
-│   └── logo_afi.png          # logo Air France Industries (fourni par l'auteur, ne pas redessiner)
+│   ├── logo_afi.png          # logo Air France Industries (fourni par l'auteur, ne pas redessiner ; fond transparent)
+│   ├── fond_aeroport.webp    # fond d'écran (prototype v3)
+│   └── avion_a350.webp       # avion Air France (décor : titres d'onglet, écran de chargement)
 ├── app/
 │   ├── main.py               # point d'entrée : page_config, style, header, navigation
 │   ├── core/
-│   │   ├── style.py          # CSS global + injection
-│   │   ├── components.py     # header, kpi_card, section, badge, empty_state…
-│   │   ├── io.py             # lecture xlsx/csv, normalisation et validation des colonnes, export Excel
+│   │   ├── theme.css         # thème (tokens, header, cartes, graphes) ; images via asset(nom)
+│   │   ├── style.py          # couleurs de la charte + injection du thème (dev local uniquement)
+│   │   ├── components.py     # header, section, kpi_card, fichier, tableau, graphe, sous_onglets…
+│   │   ├── charts.py         # graphes SVG / HTML légers (barres, courbes, 100 %, chaleur, anneaux)
+│   │   ├── io.py             # lecture xlsx (calamine), normalisation et validation des colonnes, export Excel
+│   │   ├── xlsx.py           # écriture .xlsx mise en forme, bibliothèque standard
+│   │   ├── cache.py          # lectures communes mises en cache, partagées entre onglets
 │   │   ├── transforms.py     # fonctions de croisement réutilisables (stock × besoins × commandes)
-│   │   └── _logo.py          # GÉNÉRÉ par build.py (logo en base64) — ne pas éditer à la main
+│   │   └── textile.py        # calculs de l'onglet Textile cabine
 │   └── modules/
 │       ├── __init__.py       # REGISTRE des onglets (ordre d'affichage)
 │       ├── stock_chantier.py
-│       └── textiles.py
+│       ├── textiles.py
+│       ├── fournisseurs.py   # en cours de développement
+│       └── alertes.py        # en cours de développement
 ├── legacy/                   # scripts Streamlit d'origine à intégrer (référence, non buildés)
 ├── tests/
 │   ├── fixtures/             # données FICTIVES générées par script
@@ -87,7 +95,10 @@ def render() -> None:
 
 - Le registre `app/modules/__init__.py` contient la liste ordonnée `MODULES = [stock_chantier, textiles, ...]`. **Ajouter un onglet = créer le fichier + l'ajouter au registre.** Rien d'autre ne doit changer.
 - **Seul le module actif s'exécute.** La navigation passe par `st.session_state["active_tab"]` et un sélecteur horizontal stylé, pas par `st.tabs`, qui exécuterait tous les onglets à chaque interaction. Vérifier que le composant choisi existe dans la version de Streamlit embarquée par stlite.
-- Toutes les clés de `st.session_state` et de widgets d'un module sont **préfixées par son `TAB_ID`** (`textiles__stock_file`…) pour éviter les collisions.
+- Toutes les clés de `st.session_state` et de widgets d'un module sont **préfixées par son `TAB_ID`** (`textiles__stock_file`…) pour éviter les collisions. Exception : les imports partagés entre onglets, préfixés `commun__` (`commun__stock`, `commun__commandes`) — un même fichier « État du stock » ou « Commandes (SAP) » sert à tous les onglets.
+- **Garder l'état quand on change d'onglet** : Streamlit efface un widget non affiché. Tous les widgets d'un module prennent `persist_state="page"` ; les imports passent par `components.fichier(...)`, qui garde le fichier en mémoire.
+- **Filtres** : un bloc filtrable (recherche, multisélection + tableau) est une fonction décorée `@st.fragment` — filtrer ne relance que ce bloc.
+- **Sous-onglets** d'un module : `components.sous_onglets(...)` (seule la section active est calculée).
 - La logique métier (croisements, calculs) va dans `core/transforms.py` ou dans des fonctions pures du module, **jamais mélangée au rendu**. Elle doit être testable sans Streamlit.
 - `st.set_page_config` est appelé **uniquement** dans `main.py`.
 
@@ -107,11 +118,16 @@ Tant qu'aucun fichier n'est importé, afficher un **état vide soigné** (`compo
 
 ## 4. Contraintes stlite / Pyodide
 
-- **Paquets autorisés** : ceux de la distribution Pyodide ou disponibles en wheel pure Python via micropip. Base : `pandas`, `numpy`, `openpyxl`, `plotly`. Ajouter `xlsxwriter` si besoin pour la mise en forme des exports.
-- **Garder `requirements.txt` minimal** : chaque paquet allonge le premier chargement. Ne pas ajouter `scikit-learn`, `scipy`, `matplotlib`… sans vraie nécessité.
+- **Paquets autorisés** : uniquement ceux de la **distribution Pyodide** (servis par jsdelivr, aucun accès PyPI à prévoir). Base : `pandas`, `numpy`, `python-calamine`.
+  - Lecture Excel : moteur **calamine** (~10× plus rapide qu'openpyxl sous Pyodide).
+  - Export Excel : `core/xlsx.py` (bibliothèque standard) — openpyxl et xlsxwriter ne sont pas dans Pyodide.
+  - Graphes : `core/charts.py` (SVG / HTML) — plotly (9,7 Mo) n'est plus chargé.
+- **Garder `requirements.txt` minimal** : chaque paquet allonge le premier chargement. Ne pas ajouter `plotly`, `openpyxl`, `scikit-learn`, `scipy`, `matplotlib`… sans vraie nécessité.
 - **Interdit** : `requests` et tout accès réseau, `subprocess`, `multiprocessing`, threads, boucles avec `time.sleep`, lecture ou écriture sur le disque de l'utilisateur, connexion à une base de données.
 - **Fichiers importés** : lus depuis l'objet `UploadedFile` (`pd.read_excel(uploaded, engine="openpyxl")`), jamais via un chemin.
-- **Performance** : Pyodide est plus lent que Python natif. Vectoriser avec pandas (pas d'`iterrows`), ne lire que les colonnes utiles (`usecols`), mettre en cache les lectures lourdes avec `st.cache_data`, et vérifier son bon fonctionnement sous stlite.
+- **Performance** : Pyodide est plus lent que Python natif. Vectoriser avec pandas (pas d'`iterrows`, pas de `groupby().agg(fonction Python)` sur de gros volumes), mettre en cache les lectures et calculs lourds, et vérifier sous stlite.
+- **Cache** : `st.cache_resource` (et non `st.cache_data` : sous Pyodide, relire par pickle un DataFrame contenant des dates échoue). Clé = **contenu des fichiers (octets) + paramètres**, jamais des DataFrames (leur hachage à chaque clic coûte cher). Ne jamais modifier une table reçue du cache.
+- **Téléchargements** : `components.telecharger(...)` (`on_click="ignore"` : télécharger ne relance pas les calculs).
 - **Version de stlite épinglée** dans `build.py` (jamais `latest`). Toute montée de version doit être testée avant livraison.
 
 ---
@@ -120,7 +136,7 @@ Tant qu'aucun fichier n'est importé, afficher un **état vide soigné** (`compo
 
 Script Python sans dépendance externe, qui :
 
-1. génère `app/core/_logo.py` (`LOGO_B64 = "..."`) à partir de `assets/logo_afi.png` ;
+1. intègre le thème `app/core/theme.css`, images de `assets/` comprises (data URI), **une seule fois en fin de `<body>`** : rien n'est renvoyé à chaque interaction, et le thème passe après les styles que Streamlit ajoute au `<head>` ;
 2. lit tous les fichiers `.py` de `app/`, ainsi que `requirements.txt` et `.streamlit/config.toml` ;
 3. produit `dist/supply360.html` avec l'API JavaScript `mount()` de `@stlite/browser` (version épinglée) :
    - fichiers passés dans un objet JSON (`json.dumps`), en **échappant `</` en `<\/`** pour ne pas casser le HTML ;
@@ -151,13 +167,15 @@ Rendu attendu : **corporate, épuré, lisible**, cohérent avec le prototype Sup
 
 **Composants** (`core/components.py`) :
 
-- **Header** fixe en haut : logo Air France Industries + « Supply360 » + nom de l'onglet actif.
+- **Ambiance** du prototype v3 : fond aérien (`fond_aeroport.webp`), cartes blanches translucides.
+- **Header** fixe en haut : logo Air France Industries (sur fond clair : il est transparent) + « Supply**360** » (360 en rouge) + navigation entre onglets (onglet actif surligné) + date du jour. Une barre animée et la pastille « Calcul en cours… » signalent que Python travaille.
 - **Blocs / sections** : carte blanche, coins arrondis (10–12 px), ombre légère, **en-tête en dégradé bleu** (`--navy` → `--navy-2`) avec texte blanc.
 - **Cartes KPI** : valeur en grand, libellé, variation ou statut coloré.
 - **Badges de statut** : chantiers uniquement **Terminé / En cours / À venir**.
 - **Boutons** bien visibles, style identique partout (« Voir tout », « Détail », « Télécharger »).
 - **Tableaux** : `st.dataframe` avec `column_config` (formats €, dates JJ/MM/AAAA, barres de progression), en-têtes figés, actions à lancer en haut.
-- **Graphiques Plotly** : couleurs de la charte, **valeurs affichées sur les graphes**, fond transparent, légende en bas, police cohérente.
+- **Graphiques** (`core/charts.py`, style du prototype v3) : couleurs de la charte, **valeurs affichées sur les graphes**, fond transparent, légende en bas, police cohérente. Affichage via `components.graphe` (`st.markdown`, car `st.html` supprime le SVG).
+- **Peu de texte** : titre + une ligne de description ; les détails (colonnes attendues, règles de calcul, tableaux annexes) vont dans des `st.popover`.
 
 **Typographie et responsive :**
 

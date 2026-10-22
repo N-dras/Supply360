@@ -2,6 +2,9 @@
 
 Aucune dépendance à Streamlit : tout est testable avec pytest. Les fichiers arrivent
 sous forme d'octets (`UploadedFile.getvalue()`), jamais via un chemin.
+
+Lecture avec calamine (moteur Rust inclus dans Pyodide, ~10× plus rapide qu'openpyxl) ;
+export avec core/xlsx.py (bibliothèque standard).
 """
 
 import io
@@ -12,7 +15,8 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-NAVY_HEX = "002157"
+from core import transforms as tf
+from core import xlsx
 
 
 class ColonneIntrouvable(ValueError):
@@ -28,6 +32,14 @@ class ColonneIntrouvable(ValueError):
 
 class FichierIllisible(ValueError):
     """Le fichier importé ne peut pas être lu (format, feuille absente…)."""
+
+
+# Libellés des sources : identiques dans tous les onglets (CLAUDE.md §2.3).
+FICHIER_BESOINS = "Besoins chantier (LOGOPS)"
+FICHIER_ASREQ = "Étude ASREQ/NOREQ"
+FICHIER_STOCK = "État du stock"
+FICHIER_COMMANDES = "Commandes (SAP)"
+FICHIER_REFERENCES = "Références textile"
 
 
 # --------------------------------------------------------------------------
@@ -80,9 +92,17 @@ def trouver_ligne_entete(raw: pd.DataFrame, mots_cles, max_scan: int = 15):
 # --------------------------------------------------------------------------
 # Ouverture des classeurs
 # --------------------------------------------------------------------------
+def _moteur() -> str:
+    try:
+        import python_calamine  # noqa: F401
+        return "calamine"
+    except ImportError:  # développement local sans calamine
+        return "openpyxl"
+
+
 def ouvrir_excel(data: bytes, fichier: str) -> pd.ExcelFile:
     try:
-        return pd.ExcelFile(io.BytesIO(data), engine="openpyxl")
+        return pd.ExcelFile(io.BytesIO(data), engine=_moteur())
     except Exception as exc:  # format non Excel, fichier corrompu ou protégé
         raise FichierIllisible(
             f"Le fichier {fichier} n'a pas pu être ouvert comme classeur Excel ({exc})."
@@ -126,12 +146,12 @@ def _sans_decimale(v):
 
 
 def cle_pn(serie: pd.Series) -> pd.Series:
-    """Référence pièce en texte pour les jointures : majuscules, espaces de bord retirés.
+    """Référence pièce en texte pour les jointures : majuscules, sans aucun espace.
 
     Les zéros en tête sont conservés s'ils sont saisis en texte dans Excel.
     """
     s = serie.map(_sans_decimale, na_action="ignore")
-    s = s.map(str, na_action="ignore").str.strip().str.upper()
+    s = s.map(str, na_action="ignore").str.replace("[\\s\u00a0\u202f]+", "", regex=True).str.upper()
     return s.where(~s.isin(["", "NAN", "NONE", "NAT"]), np.nan).astype(object)
 
 
@@ -166,62 +186,12 @@ def exporter_excel(feuilles: dict, couleurs_lignes: dict | None = None) -> bytes
     ajustées, dates au format JJ/MM/AAAA. `couleurs_lignes` = {nom_feuille: liste de
     couleurs hexa (ou None) alignée sur les lignes} pour surligner certaines lignes.
     """
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
-    entete_fill = PatternFill("solid", start_color=NAVY_HEX, end_color=NAVY_HEX)
-    entete_font = Font(bold=True, color="FFFFFF")
-    buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as wr:
-        for nom, df in feuilles.items():
-            onglet = nom[:31]
-            df = df.copy()
-            col_dates = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
-            df.to_excel(wr, sheet_name=onglet, index=False)
-            ws = wr.sheets[onglet]
-            nrows, ncols = len(df), len(df.columns)
-
-            for j in range(1, ncols + 1):
-                cell = ws.cell(row=1, column=j)
-                cell.fill, cell.font = entete_fill, entete_font
-                cell.alignment = Alignment(vertical="center", wrap_text=True)
-            ws.freeze_panes = "A2"
-            if ncols and nrows:
-                ws.auto_filter.ref = f"A1:{get_column_letter(ncols)}{nrows + 1}"
-
-            for j, col in enumerate(df.columns, start=1):
-                echantillon = df[col].head(500)
-                if col in col_dates:
-                    largeur = 12
-                    for i in range(2, nrows + 2):
-                        ws.cell(row=i, column=j).number_format = "DD/MM/YYYY"
-                else:
-                    longueurs = echantillon.map(lambda v: len(str(v)) if pd.notna(v) else 0)
-                    largeur = int(longueurs.max()) if nrows else 0
-                largeur = max(largeur, len(str(col))) + 2
-                ws.column_dimensions[get_column_letter(j)].width = min(max(largeur, 8), 60)
-
-            couleurs = (couleurs_lignes or {}).get(nom)
-            if couleurs is not None and nrows:
-                fills = {}
-                for i, hexa in enumerate(couleurs, start=2):
-                    if not hexa:
-                        continue
-                    fill = fills.setdefault(hexa, PatternFill("solid", start_color=hexa, end_color=hexa))
-                    for j in range(1, ncols + 1):
-                        ws.cell(row=i, column=j).fill = fill
-    return buf.getvalue()
+    return xlsx.classeur(feuilles, couleurs_lignes)
 
 
 # --------------------------------------------------------------------------
 # Lecture des sources (une ligne par ligne de fichier, colonnes normalisées)
 # --------------------------------------------------------------------------
-FICHIER_BESOINS = "Besoins chantier (LOGOPS)"
-FICHIER_ASREQ = "Étude ASREQ/NOREQ"
-FICHIER_STOCK = "État du stock"
-FICHIER_COMMANDES = "Commandes (SAP)"
-
-
 def lire_besoins_geav(data: bytes):
     """Besoins chantier « classiques » (colonnes MPN Prime / Qty). Renvoie (lignes, feuille)."""
     xl = ouvrir_excel(data, FICHIER_BESOINS)
@@ -276,13 +246,27 @@ def _code(serie: pd.Series) -> pd.Series:
     return texte(serie).str.replace(r"\.0$", "", regex=True)
 
 
+# Colonnes complémentaires de l'État du stock (consommation, valeur…), lues si présentes.
+STOCK_COMPLEMENTS = {
+    "QTE CONSO 12M": "qte_conso_12m", "QTE CONSO 18M": "qte_conso_18m", "QTE CONSO 24M": "qte_conso_24m",
+    "TDD 6M": "tdd_6m", "TDD 12M": "tdd_12m", "QTE COUVERTURE": "qte_couverture", "QTE SAR": "qte_sar",
+    "Stock réservé": "stock_reserve", "B/O": "b/o", "Dernier PU (achat) Euros": "dernier_pu_(achat)_euros",
+    "RP": "rp", "EOQ": "eoq", "LT observé moyen sur 2 ans": "lt_observe_moyen_sur_2_ans",
+}
+
+
 def lire_etat_stock(data: bytes):
-    """État du stock (PNR, QTE SUR ÉTAGÈRE, QTE EN CDE, GESTION…). Renvoie (lignes, feuille)."""
+    """État du stock (PNR, QTE SUR ÉTAGÈRE, QTE EN CDE, GESTION…). Renvoie (lignes, feuille).
+
+    Les colonnes de consommation (QTE CONSO 12M…, QTE CONSO <année>), de prix et la date de
+    dernière consommation sont ajoutées quand elles existent (utilisées par l'onglet Textile).
+    """
     xl = ouvrir_excel(data, FICHIER_STOCK)
     feuille, entete = choisir_feuille(xl, ["pnr", "qte sur etagere"])
     df = lire_feuille(xl, feuille, entete)
 
-    c_pnr = trouver_colonne(df, "pnr", exact=True) or trouver_colonne(df, "pnr")
+    c_pnr = (trouver_colonne(df, "pnr", exact=True) or trouver_colonne(df, "pnr")
+             or trouver_colonne(df, "pn", "finalpnr", exact=True))
     c_stock = trouver_colonne(df, "qte sur etagere")
     c_cde = trouver_colonne(df, "qte en cde")
     c_gestion = trouver_colonne(df, "gestion", exact=True) or trouver_colonne(df, "gestion")
@@ -310,17 +294,31 @@ def lire_etat_stock(data: bytes):
         "CCN": _code(df[c_ccn]) if c_ccn else np.nan,
         "CLASS_CODE_STOCK": nombre(df[c_class]) if c_class else np.full(n, np.nan),
     })
+    noms = {normaliser(c): c for c in df.columns}
+    for cible, norm in STOCK_COMPLEMENTS.items():
+        if norm in noms:
+            out[cible] = nombre(df[noms[norm]])
+    for norm, col in noms.items():
+        m = re.fullmatch(r"qte_conso_(20\d\d)", norm)
+        if m:
+            out[f"QTE CONSO {m.group(1)}"] = nombre(df[col])
+    if "date_derniere_conso" in noms:
+        out["DATE DERNIERE CONSO"] = dates(df[noms["date_derniere_conso"]])
     return out[out["PN"].notna()], feuille
 
 
 def lire_commandes_sap(data: bytes):
-    """Commandes (SAP), feuille « Toutes les commandes » de préférence. Renvoie (lignes, feuille)."""
+    """Commandes (SAP), feuille « Toutes les commandes » de préférence. Renvoie (lignes, feuille).
+
+    Le fournisseur manquant est complété à partir du code fournisseur (voir
+    transforms.completer_fournisseurs).
+    """
     xl = ouvrir_excel(data, FICHIER_COMMANDES)
     feuille, entete = choisir_feuille(xl, ["pn", "code acheteur", "commande"],
                                       feuille_preferee="Toutes les commandes")
     df = lire_feuille(xl, feuille, entete).dropna(axis=1, how="all")
 
-    c_pn = trouver_colonne(df, "pn", exact=True)
+    c_pn = trouver_colonne(df, "pn", exact=True) or trouver_colonne(df, "p/n", "part number", exact=True)
     c_cmd = trouver_colonne(df, "commande", exact=True)
     c_acheteur = trouver_colonne(df, "code acheteur")
     c_gestion = trouver_colonne(df, "gestion", exact=True)
@@ -328,6 +326,8 @@ def lire_commandes_sap(data: bytes):
     c_fourn = trouver_colonne(df, "fournisseur", exact=True) or trouver_colonne(df, "fournisseur")
     c_psd = trouver_colonne(df, "date de livraison promise", "livraison promise")
     c_date_dem = trouver_colonne(df, "date de livraison demandee", "livraison demandee")
+    c_emission = trouver_colonne(df, "date d'emission de la commande", "date emission de la commande", "date emission",
+                                 "date d'emission")
     c_statut = trouver_colonne(df, "statut de la commande", "statut")
     c_restant = trouver_colonne(df, "quantite restant a livrer", "restant a livrer")
     c_class = trouver_colonne(df, "class code", "code classe")
@@ -341,17 +341,42 @@ def lire_commandes_sap(data: bytes):
         "Commande": texte(df[c_cmd]) if c_cmd else np.nan,
         "Code_acheteur": texte(df[c_acheteur]) if c_acheteur else np.nan,
         "Gestion_cmd": nombre(df[c_gestion]) if c_gestion else np.nan,
-        "Code_fournisseur_cmd": texte(df[c_fourn_code]) if c_fourn_code else np.nan,
+        "Code_fournisseur_cmd": _code(df[c_fourn_code]) if c_fourn_code else np.nan,
         "Fournisseur": texte(df[c_fourn]) if c_fourn else np.nan,
         "PSD": dates(df[c_psd]) if c_psd else nat,
         "Date_demandee": dates(df[c_date_dem]) if c_date_dem else nat,
+        "Date_emission": dates(df[c_emission]) if c_emission else nat,
         "Statut": texte(df[c_statut]) if c_statut else np.nan,
         "Qty_restant": nombre(df[c_restant], 0) if c_restant else 0.0,
         "Class_code": nombre(df[c_class]) if c_class else np.nan,
         "CCN_cmd": _code(df[c_ccn]) if c_ccn else np.nan,
     })
     out = out[out["PN"].notna()].copy()
+    out["Fournisseur"] = tf.completer_fournisseurs(out)
     # Date de livraison « effective » : la PSD si connue, sinon la date demandée.
     out["PSD_effective"] = out["PSD"].fillna(out["Date_demandee"])
     out["PSD_est_estimee"] = out["PSD"].isna() & out["Date_demandee"].notna()
+    return out, feuille
+
+
+def lire_references_textile(data: bytes):
+    """Références textile (feuille « PN Catalog » : pn, equipment, description, ccn). Renvoie (catalogue, feuille)."""
+    xl = ouvrir_excel(data, FICHIER_REFERENCES)
+    feuille, entete = choisir_feuille(xl, ["pn", "equip"], feuille_preferee="PN Catalog")
+    df = lire_feuille(xl, feuille, entete)
+    c_pn = trouver_colonne(df, "pn", exact=True)
+    c_eq = trouver_colonne(df, "equipment", "equipement", exact=True) or trouver_colonne(df, "equipment", "equipement")
+    if c_pn is None:
+        raise ColonneIntrouvable("pn", FICHIER_REFERENCES, feuille, df.columns)
+    if c_eq is None:
+        raise ColonneIntrouvable("equipment", FICHIER_REFERENCES, feuille, df.columns)
+    c_desc = trouver_colonne(df, "description", exact=True)
+    c_ccn = trouver_colonne(df, "ccn", exact=True)
+    out = pd.DataFrame({
+        "PN": cle_pn(df[c_pn]),
+        "Equipement": texte(df[c_eq]).str.upper(),
+        "Description": texte(df[c_desc]) if c_desc else np.nan,
+        "CCN": _code(df[c_ccn]) if c_ccn else np.nan,
+    })
+    out = out[out["PN"].notna()].drop_duplicates("PN").reset_index(drop=True)
     return out, feuille

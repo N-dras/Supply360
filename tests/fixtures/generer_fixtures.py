@@ -5,7 +5,7 @@ Les PN, fournisseurs et codes sont inventés. Chaque PN illustre un cas de la r�
 d'action (voir CAS_ATTENDUS, avec une date de début de chantier au DATE_CHANTIER).
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -94,16 +94,36 @@ def asreq():
     wb.save(ICI / "etude_asreq.xlsm")
 
 
+# PN → [12M, 18M, 24M, 2021…2025, PU, B/O, dernière conso]
+CONSO = {
+    "FX-2001": [0, 0, 0, 2, 1, 0, 0, 0, 120.0, 0, datetime(2019, 5, 1)],   # dormant : stock, aucune conso sur 3 ans
+    "FX-2002": [0, 0, 0, 0, 0, 0, 0, 0, 80.0, 0, datetime(2001, 1, 1)],    # inactif : ni stock, ni conso, ni commande
+    "FX-1003": [30, 40, 50, 20, 25, 30, 35, 45, 60.0, 2, datetime(2026, 10, 1)],
+}
+
+# Références textile (feuille « PN Catalog ») : PN → catégorie
+REFERENCES = {"FX-1001": "CEINTURE", "FX-1002": "HOUSSE", "FX-1003": "HOUSSE", "FX-1004": "RIDEAUX", "FX-1005": "MOUSSE",
+              "FX-1006": "MOUSSE", "FX-1007": "CEINTURE", "FX-1012": "HOUSSE", "FX-1015": "RIDEAUX", "FX-2001": "HOUSSE",
+              "FX-2002": "RIDEAUX", "FX-9999": "CEINTURE"}
+
+
+def references():
+    wb = Workbook()
+    wb.remove(wb.active)
+    _feuille(wb, "PN Catalog", ["pn", "equipment", "description", "ccn"],
+             [[pn, eq, f"Textile {pn}", 40] for pn, eq in REFERENCES.items()])
+    wb.save(ICI / "references_textile.xlsx")
+
+
 def stock():
     wb = Workbook()
     wb.remove(wb.active)
     _feuille(wb, "Paramètres", ["Clé", "Valeur"], [["version", "fictive"]])
     entete = ["PNR", "DESCRIPTION", "QTE SUR\nÉTAGÈRE", "QTE EN CDE", "GESTION", "CODE AGT APPRO",
-              "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CCN", "CLASS CODE"]
-    _feuille(
-        wb, "Export",
-        entete,
-        [
+              "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CCN", "CLASS CODE",
+              "QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M", "QTE CONSO 2021", "QTE CONSO 2022", "QTE CONSO 2023",
+              "QTE CONSO 2024", "QTE CONSO 2025", "Dernier PU (achat) Euros", "B/O", "DATE DERNIERE CONSO"]
+    lignes = [
             ["FX-1001", "Coussin assise", 10, 0, 245, "AG01", "F001", "Fournisseur Alpha", 11, 1],
             ["FX-1002", "Housse dossier", 1, 0, 245, "AG01", "F002", "Fournisseur Bravo", 12, 1],
             ["FX-1003", "Tablette", 2, 2, 246, "AG02", "F003", "Fournisseur Charlie", 13, 1],
@@ -118,13 +138,19 @@ def stock():
             [123456, "PN numérique", 3, 0, 245, "AG01", "F014", "Fournisseur Lima", 22, 1],
             ["FX-1014", "Gestion corrigée", 0, 2, 300, "AG04", "F015", "Fournisseur Mike", 23, 1],
             ["FX-1015", "Deux commandes", 0, 2, 245, "AG01", "F016", "Fournisseur November", 24, 1],
-        ],
-    )
+            ["FX-2001", "Housse dormante", 6, 0, 245, "AG05", "F020", "Fournisseur Papa", 30, 1],
+            ["FX-2002", "Rideau inactif", 0, 0, 245, "AG05", "F021", "Fournisseur Quebec", 31, 1],
+        ]
+    for ligne in lignes:  # consommation et valorisation (fictives), pour l'onglet Textile
+        ligne += CONSO.get(ligne[0], [4, 6, 9, 10, 8, 7, 6, 5, 25.0, 0, datetime(2026, 9, 1)])
+    _feuille(wb, "Export", entete, lignes)
     wb.save(ICI / "etat_stock.xlsx")
 
 
 def commandes():
     wb = Workbook()
+    # Date d'émission (dernière colonne) : 60 jours avant la date demandée
+
     wb.remove(wb.active)
     _feuille(wb, "Synthèse", ["Indicateur", "Valeur"], [["Commandes", 9]])
     d = datetime
@@ -132,7 +158,7 @@ def commandes():
         wb, "Toutes les commandes",
         ["PN", "Commande", "Code acheteur", "Gestion", "Code fournisseur", "Fournisseur",
          "Date de livraison demandée", "Date de livraison promise", "Statut de la commande",
-         "Quantité restant à livrer", "Class code", "CCN"],
+         "Quantité restant à livrer", "Class code", "CCN", "Date d'émission de la commande"],
         [
             ["FX-1003", "CMD-0003", "AC03", 246, "F003", "Fournisseur Charlie", d(2026, 11, 1), d(2026, 11, 10), "En cours", 2, 1, 13],
             ["FX-1004", "CMD-0004", "AC04", 247, "F004", "Fournisseur Delta", d(2026, 11, 1), d(2026, 11, 15), "En cours", 5, 1, 14],
@@ -144,9 +170,15 @@ def commandes():
             ["FX-1014", "CMD-0014", "AC14", 245, "F015", "Fournisseur Mike", d(2026, 11, 1), d(2026, 11, 20), "En cours", 2, 1, 23],
             ["FX-1015", "CMD-0151", "AC15", 245, "F016", "Fournisseur November", d(2026, 12, 1), d(2026, 12, 20), "En cours", 1, 1, 24],
             ["FX-1015", "CMD-0152", "AC15", 245, "F016", "Fournisseur November", d(2026, 11, 1), d(2026, 11, 25), "En cours", 1, 1, 24],
+            # Sans nom de fournisseur : retrouvé grâce au code F003 (Fournisseur Charlie)
+            ["FX-1003", "CMD-0031", "AC03", 246, "F003", None, d(2026, 6, 1), d(2049, 1, 1), "En cours", 1, 1, 13],
         ],
         prefixe=[["Tableau de bord commandes — fichier fictif"], [], ["Mise à jour : fictive"]],
     )
+    ws = wb["Toutes les commandes"]
+    for row in ws.iter_rows(min_row=5):
+        if row[6].value:
+            row[12].value = row[6].value - timedelta(days=60)
     wb.save(ICI / "commandes_sap.xlsx")
 
 
@@ -155,4 +187,5 @@ if __name__ == "__main__":
     asreq()
     stock()
     commandes()
+    references()
     print("Fixtures générées dans", ICI)

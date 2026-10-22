@@ -178,7 +178,8 @@ def _legacy():
 def _comparer(attendu: pd.DataFrame, obtenu: pd.DataFrame):
     a = attendu.set_index("PN").sort_index()
     o = obtenu.set_index("PN").sort_index()
-    a_msg = a["ACTION"].str.replace("fichier Stock", "fichier État du stock")
+    a_msg = (a["ACTION"].str.replace("fichier Stock", "fichier État du stock")
+             .str.replace("fournisseur inconnu", tf.FOURNISSEUR_ABSENT))  # libellé modifié à la demande métier
     pd.testing.assert_series_equal(a["ACTION_CODE"], o["ACTION_CODE"], check_dtype=False)
     pd.testing.assert_series_equal(a_msg, o["ACTION"], check_dtype=False, check_names=False)
     for col in ["Deficit", "Qty_a_commander", "QTY_STOCK", "QTY_CDE", "GESTION", "RISK_CLASS"]:
@@ -249,7 +250,9 @@ def test_export_excel_mis_en_forme(croise):
     assert ws["A1"].font.bold and ws["A1"].fill.start_color.rgb.endswith("002157")
     assert ws.freeze_panes == "A2"
     assert ws.auto_filter.ref == f"A1:D{len(df) + 1}"
-    assert ws["C2"].number_format == "DD/MM/YYYY"
+    ligne = 2 + int(df["PSD"].notna().to_numpy().argmax())  # première ligne avec une PSD
+    assert ws[f"C{ligne}"].number_format.lower() == "dd/mm/yyyy"
+    assert ws[f"C{ligne}"].value.date() == df["PSD"].dropna().iloc[0].date()
     assert ws["A2"].fill.start_color.rgb.endswith(tf.ACTION_FILL_HEX[df["ACTION_CODE"].iloc[0]])
 
 

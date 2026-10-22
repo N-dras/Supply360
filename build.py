@@ -4,33 +4,25 @@ Usage : python build.py
 Sans dépendance externe (bibliothèque standard uniquement).
 """
 
-import base64
 import json
 import re
+import sys
 import tomllib
 from pathlib import Path
 
 # Version épinglée : toute montée de version doit être testée avant livraison (CLAUDE.md §4).
-# @stlite/browser 1.9.2 embarque Streamlit 1.62.0 (cf. requirements-dev.txt).
+# @stlite/browser 1.9.2 embarque Streamlit 1.62.0 et Pyodide 0.29.3 (cf. requirements-dev.txt).
 STLITE_VERSION = "1.9.2"
 STLITE_CDN = f"https://cdn.jsdelivr.net/npm/@stlite/browser@{STLITE_VERSION}/build"
 
 ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
-LOGO = ROOT / "assets" / "logo_afi.png"
-LOGO_PY = APP / "core" / "_logo.py"
+ASSETS = ROOT / "assets"
 CONFIG = ROOT / ".streamlit" / "config.toml"
 OUT = ROOT / "dist" / "supply360.html"
 
-
-def generer_logo() -> str:
-    b64 = base64.b64encode(LOGO.read_bytes()).decode("ascii")
-    LOGO_PY.write_text(
-        '"""GÉNÉRÉ par build.py à partir de assets/logo_afi.png — ne pas éditer à la main."""\n\n'
-        f'LOGO_B64 = "{b64}"\n',
-        encoding="utf-8",
-    )
-    return b64
+sys.path.insert(0, str(APP))
+from core.style import css_complet  # noqa: E402  (module sans dépendance : bibliothèque standard)
 
 
 def lire_requirements() -> list[str]:
@@ -83,42 +75,54 @@ TEMPLATE = """<!doctype html>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
 <link rel="stylesheet" href="__CDN__/stlite.css">
 <style>
-  :root { --navy:#002157; --navy-2:#1F4E9C; --bg:#F4F6FA; --muted:#5B6478; }
-  html, body { margin:0; background:var(--bg); }
-  #s360-loading {
-    position:fixed; inset:0; z-index:1000000; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:1.25rem; padding:1rem;
-    background:#FFFFFF; font-family:"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
-    text-align:center; transition:opacity .35s ease;
-  }
-  #s360-loading.fini { opacity:0; pointer-events:none; }
-  /* Logo sur fond transparent, texte bleu marine : toujours sur fond blanc. */
-  #s360-loading img { width:min(22rem, 80vw); height:auto; }
-  #s360-loading .titre { color:var(--navy); font-size:1.75rem; font-weight:700; }
-  #s360-loading .texte { color:var(--muted); font-size:1rem; max-width:32rem; }
-  #s360-loading .barre { width:min(18rem, 70vw); height:4px; border-radius:4px; overflow:hidden; background:#E3E8F1; }
-  #s360-loading .barre::after {
-    content:""; display:block; width:40%; height:100%; border-radius:4px;
-    background:linear-gradient(90deg, var(--navy), var(--navy-2)); animation:s360-glisse 1.3s ease-in-out infinite;
-  }
-  @keyframes s360-glisse { 0% { transform:translateX(-100%); } 100% { transform:translateX(250%); } }
-  #s360-loading .lent { display:none; color:var(--muted); font-size:.9375rem; max-width:34rem; }
-  #s360-loading.lent .lent { display:block; }
-  #s360-loading button {
-    font:inherit; font-weight:600; color:#fff; border:0; border-radius:8px; padding:.5rem 1rem; cursor:pointer;
-    background:linear-gradient(90deg, var(--navy), var(--navy-2));
-  }
+/* Écran de chargement (les variables et images viennent du thème, en fin de page) */
+#s360-loading {
+  position: fixed; inset: 0; z-index: 1000000; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.2rem; padding: 1rem; text-align: center; font-family: var(--font); overflow: hidden;
+  background: linear-gradient(180deg, rgba(11, 26, 51, .55), rgba(11, 26, 51, .8)), var(--img-fond) center / cover;
+  transition: opacity .4s ease;
+}
+#s360-loading.fini { opacity: 0; pointer-events: none; }
+#s360-loading .carte {
+  display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 1.8rem 2.4rem; border-radius: 16px;
+  background: rgba(255, 255, 255, .96); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); max-width: 30rem;
+}
+/* Logo sur fond transparent, texte bleu marine : toujours sur la carte blanche. */
+#s360-loading .s360-logo { width: 16rem; height: 3.8rem; background-position: center; }
+#s360-loading .titre { color: var(--navy); font-size: 1.9rem; font-weight: 800; }
+#s360-loading .titre span { color: var(--accent); }
+#s360-loading .texte { color: var(--muted); font-size: 1rem; }
+#s360-loading .barre { width: 16rem; height: 4px; border-radius: 4px; overflow: hidden; background: #E3E9F1; }
+#s360-loading .barre::after {
+  content: ""; display: block; width: 40%; height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, var(--navy), var(--accent)); animation: s360-glisse 1.3s ease-in-out infinite;
+}
+#s360-loading .avion {
+  position: absolute; left: -45%; bottom: 12%; width: min(42rem, 70vw); aspect-ratio: 4 / 1;
+  background: var(--img-avion) center / contain no-repeat; filter: drop-shadow(0 18px 18px rgba(0, 0, 0, .4));
+  animation: s360-vol 9s linear infinite;
+}
+@keyframes s360-glisse { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+@keyframes s360-vol { from { transform: translateX(0); } to { transform: translateX(260vw); } }
+#s360-loading .lent { display: none; color: var(--muted); font-size: .9375rem; }
+#s360-loading.lent .lent { display: block; }
+#s360-loading button {
+  font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
+  background: var(--navy);
+}
 </style>
 </head>
 <body>
 <div id="s360-loading" role="status" aria-live="polite">
-  <img src="data:image/png;base64,__LOGO__" alt="Air France Industries KLM Engineering &amp; Maintenance">
-  <div class="titre">Supply360</div>
-  <div class="barre"></div>
-  <div class="texte">Chargement de Supply360… le premier lancement peut prendre jusqu'à une minute.</div>
-  <div class="lent">Le chargement est plus long que prévu. Le navigateur doit pouvoir accéder à
-    cdn.jsdelivr.net et pypi.org (proxy, réseau). <br><br>
-    <button type="button" onclick="document.getElementById('s360-loading').classList.add('fini')">Afficher la page</button>
+  <div class="avion"></div>
+  <div class="carte">
+    <div class="s360-logo" role="img" aria-label="Air France Industries KLM Engineering &amp; Maintenance"></div>
+    <div class="titre">Supply<span>360</span></div>
+    <div class="barre"></div>
+    <div class="texte">Chargement de Supply360… le premier lancement peut prendre jusqu'à une minute.</div>
+    <div class="lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à cdn.jsdelivr.net.<br><br>
+      <button type="button" onclick="document.getElementById('s360-loading').classList.add('fini')">Afficher la page</button>
+    </div>
   </div>
 </div>
 <div id="root"></div>
@@ -145,18 +149,22 @@ const obs = new MutationObserver(() => {
 obs.observe(document.body, { childList: true, subtree: true });
 setTimeout(() => { if (!pret()) ecran.classList.add("lent"); }, 120000);
 </script>
+<!-- Thème Supply360 (app/core/theme.css), images incluses : chargé une seule fois.
+     Placé en fin de <body> pour passer après les styles que Streamlit ajoute au <head>. -->
+<style>
+__THEME__
+</style>
 </body>
 </html>
 """
 
 
 def main() -> None:
-    logo_b64 = generer_logo()
     fichiers = lire_fichiers()
     reqs = lire_requirements()
     html = (TEMPLATE
             .replace("__CDN__", STLITE_CDN)
-            .replace("__LOGO__", logo_b64)
+            .replace("__THEME__", css_complet(ASSETS))
             .replace("__REQUIREMENTS__", js(reqs))
             .replace("__CONFIG__", js(config_streamlit()))
             .replace("__FILES__", js(fichiers)))  # en dernier : le code peut contenir des « __X__ »

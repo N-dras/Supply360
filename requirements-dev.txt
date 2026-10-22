@@ -2,3 +2,5 @@
 # Même version que celle embarquée par @stlite/browser (voir STLITE_VERSION dans build.py)
 streamlit==1.62.0
 pytest
+# Uniquement pour les tests (relecture des exports Excel) : jamais utilisé par l'application.
+openpyxl

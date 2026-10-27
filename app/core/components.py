@@ -178,9 +178,16 @@ def _source_fichier(data: bytes, nom: str):
     return sio.identifier_fichier(data, nom)
 
 
-def lien_sharepoint(url: str, libelle: str) -> None:
-    """Lien vers le dossier SharePoint des fichiers (nouvel onglet) : on y télécharge ou synchronise les fichiers."""
-    st.html(f'<a class="s360-lien" href="{escape(url, quote=True)}" target="_blank" rel="noopener">🔗 {escape(libelle)}</a>')
+def lien_sharepoint(url: str, dossier: str) -> None:
+    """Aide « première utilisation » : synchroniser le dossier Teams avec OneDrive pour le voir dans « Parcourir »."""
+    with st.popover(f"🔗 Première utilisation : synchroniser le dossier {dossier}"):
+        st.markdown(
+            f"Le bouton **Parcourir** ouvre l'Explorateur Windows : le dossier Teams **{dossier}** doit y apparaître. "
+            "À faire **une seule fois par poste** :\n\n"
+            f"1. [Ouvrir le dossier {dossier} sur SharePoint]({url}) (nouvel onglet).\n"
+            "2. En haut de la page, cliquer sur **« Ajouter un raccourci à Mon OneDrive »** (ou **« Synchroniser »**).\n"
+            f"3. Le dossier apparaît dans l'Explorateur sous **OneDrive – Air France-KLM › {dossier}**, et reste à jour tout seul.\n\n"
+            "Ensuite, dans Supply360 : **Parcourir** → ce dossier. Rien à télécharger à la main.")
 
 
 def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "") -> None:

@@ -150,7 +150,7 @@ def _choix_chantier(dossier: str, par_source: dict) -> None:
 
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
-        ui.lien_sharepoint(SHAREPOINT_R2, "Ouvrir R2 sur SharePoint")
+        ui.lien_sharepoint(SHAREPOINT_R2, "R2")
         ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock",
                                           "commandes": "commun__commandes"}, dossier=True, on_choix=_choix_chantier,
                           label="📂 Choisir le dossier du chantier dans R2", aide=NOMMAGE)

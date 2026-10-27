@@ -178,7 +178,7 @@ NOMMAGE = ("Dossier Textile : État du stock, Références textile et Pièces pa
 
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
-        ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Ouvrir le dossier Textile sur SharePoint")
+        ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Textile")
         ui.import_dossier(K + "dossier", {"stock": K + "stock", "commandes": "commun__commandes", "references": K + "references",
                                           "pieces": K + "pieces"}, label="📂 Importer les fichiers du dossier Textile (Ctrl+A)",
                           aide=NOMMAGE)

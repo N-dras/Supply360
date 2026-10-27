@@ -57,7 +57,7 @@ class ParamsPE:
     cycles: tuple = CYCLES_DEFAUT          # ((classe, composant, mois), …) : n-uplet, utilisable comme clé de cache
     tolerance_mois: int = 3                # délai toléré après l'échéance avant « En retard »
     securite_ratio: float = 0.10           # stock de sécurité : part des avions de la flotte
-    securite_min: int = 1                  # … au moins N avions
+    securite_min: int = 1                  # … au moins N avions (sauf à 0 % : pas de stock de sécurité)
     horizon_mois: int = 36
 
     def cycle(self, classe: str, composant: str) -> int:
@@ -261,13 +261,15 @@ def evenements(cal: pd.DataFrame, mousses: pd.DataFrame, today: date, horizon: i
 
 
 def stock_securite(cal: pd.DataFrame, mousses: pd.DataFrame, p: ParamsPE) -> pd.Series:
-    """Par PN : pour chaque flotte, ceil(ratio × avions qui utilisent le PN) (au moins `securite_min`) × qté par avion."""
+    """Par PN : pour chaque flotte, ceil(ratio × avions qui utilisent le PN) (au moins `securite_min`) × qté par avion.
+    Ratio à 0 % : aucun stock de sécurité (le minimum ne s'applique pas)."""
     flotte = cal.drop_duplicates("Immatriculation").assign(cle=lambda x: x["Immatriculation"].map(_cle_immat))
     m = mousses.merge(flotte[["cle", "Flotte"]], on="cle", how="inner")
     if m.empty:
         return pd.Series(dtype=float)
     g = m.groupby(["pn", "Flotte"]).agg(avions=("cle", "nunique"), qte=("Qté par avion", "max")).reset_index()
-    g["Stock de sécurité"] = [max(math.ceil(p.securite_ratio * a - 1e-9), p.securite_min) * q for a, q in zip(g["avions"], g["qte"])]
+    mini = p.securite_min if p.securite_ratio > 0 else 0
+    g["Stock de sécurité"] = [max(math.ceil(p.securite_ratio * a - 1e-9), mini) * q for a, q in zip(g["avions"], g["qte"])]
     return g.groupby("pn")["Stock de sécurité"].sum()
 
 
@@ -340,6 +342,31 @@ def articles(pbi: pd.DataFrame) -> pd.DataFrame:
                       "Prix": pd.to_numeric(pbi.get("Dernier PU (achat) Euros", pd.Series(np.nan, index=pbi.index)), errors="coerce").to_numpy(),
                       "Fournisseur": fournisseur_prevision(pbi).to_numpy()}, index=pbi["PNR"].to_numpy())
     return a[~a.index.duplicated()]
+
+
+MOIS_COURTS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+
+
+def libelles_annees(mois) -> dict[int, str]:
+    """{année : libellé} des mois de l'horizon ; année incomplète : « 2026 (oct.–déc.) »."""
+    mois = pd.DatetimeIndex(mois)
+    out = {}
+    for y in sorted(set(mois.year)):
+        m = mois[mois.year == y].month
+        if len(m) == 12:
+            out[y] = str(y)
+        else:
+            a, b = MOIS_COURTS[m.min() - 1], MOIS_COURTS[m.max() - 1]
+            out[y] = f"{y} ({a})" if a == b else f"{y} ({a}–{b})"
+    return out
+
+
+def par_annee(long: pd.DataFrame, mois, index: str = "PN", valeur: str = "À livrer") -> pd.DataFrame:
+    """Tableau `index` × année (colonnes libellées par libelles_annees) de `valeur`, sur les mois donnés."""
+    noms = libelles_annees(mois)
+    d = long[long["Mois"].isin(pd.DatetimeIndex(mois))]
+    t = d.assign(Année=d["Mois"].dt.year).pivot_table(index=index, columns="Année", values=valeur, aggfunc="sum", fill_value=0)
+    return t.reindex(columns=list(noms), fill_value=0).rename(columns=noms)
 
 
 def livraisons_commandes(o: pd.DataFrame, today: date) -> pd.DataFrame:

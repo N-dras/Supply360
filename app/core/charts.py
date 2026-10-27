@@ -342,8 +342,11 @@ def parts(tableau, couleurs: dict, titre="", afficher="nombre", **_) -> str:
 # --------------------------------------------------------------------------
 # Carte de chaleur
 # --------------------------------------------------------------------------
-def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes") -> str:
-    """Carte de chaleur HTML : lignes × colonnes, intensité proportionnelle à la valeur."""
+def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes", hauteur_max: str | None = None) -> str:
+    """Carte de chaleur HTML : lignes × colonnes, intensité proportionnelle à la valeur.
+
+    `hauteur_max` (ex. "30rem") : zone défilante dont la ligne d'en-tête (colonnes) reste figée en haut.
+    """
     if tableau is None or tableau.empty:
         return vide()
     vmax = float(tableau.to_numpy().max()) or 1
@@ -359,5 +362,8 @@ def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes") -> str:
             cells.append(f'<td style="background:rgba({r},{g},{b},{a:.2f});color:{fg}"'
                          f'{_tip([idx, f"{col} : {entier(v)} {libelle}"])}>{court(v) if v else ""}</td>')
         lignes.append(f'<tr><th class="f" title="{escape(str(idx))}">{escape(str(idx))}</th>{"".join(cells)}</tr>')
-    return (f'<div class="s360-chart">{_titre(titre)}<table class="s360-heat">'
-            f'<tr><th></th>{tete}</tr>{"".join(lignes)}</table></div>')
+    table = f'<table class="s360-heat"><thead><tr><th></th>{tete}</tr></thead><tbody>{"".join(lignes)}</tbody></table>'
+    if hauteur_max:
+        table = f'<div class="s360-heat-scroll" style="max-height:{hauteur_max}">{table}</div>'
+    return f'<div class="s360-chart">{_titre(titre)}{table}</div>'
+

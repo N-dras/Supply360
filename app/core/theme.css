@@ -232,8 +232,22 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-dossier-btn { font: inherit; font-weight: 700; font-size: .9375rem; cursor: pointer; border: 0; border-radius: 99px;
   padding: .55rem 1.2rem; color: #fff; background: var(--navy); box-shadow: 0 3px 12px rgba(11, 42, 91, .3); }
 .s360-dossier-btn:hover { background: var(--navy-2); }
-.s360-dossier-btn.autre { color: var(--navy); background: #fff; border: 1px solid #CFD8E5; box-shadow: none; font-size: .8125rem;
-  padding: .45rem .9rem; }
+/* Bouton principal + « Changer » collés en une seule pastille */
+.s360-dossier-grp { display: inline-flex; align-items: stretch; border-radius: 99px; box-shadow: 0 3px 12px rgba(11, 42, 91, .25); }
+.s360-dossier-grp .s360-dossier-btn { box-shadow: none; border-radius: 99px 0 0 99px; padding: .55rem 1rem .55rem 1.1rem; }
+.s360-dossier-btn.autre { color: var(--navy); background: #fff; border: 1px solid #CFD8E5; border-left: 0; box-shadow: none;
+  font-size: .8125rem; padding: .45rem .8rem; }
+.s360-dossier-grp .s360-dossier-btn.autre { border-radius: 0 99px 99px 0; }
+.s360-dossier-btn.autre:hover { background: #E8F0FD; }
+/* État des imports : une pastille par fichier attendu */
+.s360-puces { display: flex; flex-wrap: wrap; gap: .4rem; margin: .1rem 0 .1rem; }
+.s360-puce { display: inline-flex; align-items: baseline; gap: .35rem; max-width: 100%; padding: .3rem .75rem; border-radius: 99px;
+  background: #EEF2F8; color: var(--muted); font-size: .8125rem; border: 1px solid #E1E7F0; }
+.s360-puce b { color: var(--text); font-weight: 700; white-space: nowrap; }
+.s360-puce em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16rem; }
+.s360-puce.ok { background: #E6F6EC; border-color: #BFE5CD; color: var(--ok); }
+.s360-puce.ok b { color: #17663F; }
+.s360-puce.ko { background: #FFF4E0; border-color: #F3D9A6; color: #9A6A00; }
 #s360-fenetre { position: fixed; inset: 0; z-index: 1000002; display: grid; place-items: center; padding: 1rem;
   background: rgba(11, 26, 51, .45); font-family: var(--font); }
 #s360-fenetre .boite { position: relative; width: min(34rem, 100%); max-height: 85vh; display: flex; flex-direction: column; gap: .6rem;
@@ -254,6 +268,9 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 #s360-fenetre .sep { margin: .5rem 0 .1rem; color: var(--muted); font-size: .8125rem; font-weight: 700; text-transform: uppercase; }
 .st-key-s360cache_commande [data-testid="stFileUploader"] { display: none; }
 .s360-note { margin: -.2rem 0 .3rem; color: var(--muted); font-size: .8125rem; }
+/* Zone repliable (components.zone_repliable) : contenu masqué mais présent dans la page */
+[class*="st-key-s360pli_ferme_"] { display: none !important; }
+[class*="st-key-s360pli_ouvert_"] { padding: .8rem .9rem .3rem; border: 1px solid #E1E7F0; border-radius: 12px; background: #F8FAFD; }
 [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
 [data-testid="stExpander"] details { border-color: var(--border); border-radius: 10px; background: #fff; }
 [data-testid="stCaptionContainer"] { color: var(--muted); font-size: .875rem; }
@@ -339,6 +356,10 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-heat td { position: relative; text-align: center; border-radius: 4px; padding: .4rem .1rem; font-weight: 700; }
 .s360-heat td:hover { outline: 2px solid var(--navy); }
 .s360-heat td[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
+/* Zone défilante : en-tête figé ; infobulle sous la case (au-dessus, elle passerait sous l'en-tête) */
+.s360-heat-scroll { overflow: auto; padding-bottom: 3.5rem; margin-bottom: -3rem; }
+.s360-heat-scroll thead th { position: sticky; top: 0; z-index: 3; background: var(--surface); box-shadow: 0 3px 0 var(--surface); }
+.s360-heat-scroll td[data-tip]:hover::after { bottom: auto; top: calc(100% + 6px); }
 
 /* ---------------------------------------------------------------- avion décoratif (titre d'onglet) */
 .s360-hero::after {

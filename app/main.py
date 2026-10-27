@@ -17,8 +17,11 @@ st.set_page_config(page_title="Supply360 Â· Air France Industries", page_icon="â
                    layout="wide", initial_sidebar_state="collapsed")
 
 from core import components as ui  # noqa: E402
+from core import journal  # noqa: E402
 from core import style  # noqa: E402
 from modules import MODULES  # noqa: E402
+
+journal.installer()  # stlite : erreurs Python transmises au bandeau de diagnostic de la page
 
 PAR_ID = {m.TAB_ID: m for m in MODULES}
 assert len(PAR_ID) == len(MODULES), "TAB_ID en double dans le registre des modules"

@@ -151,36 +151,42 @@ def _choix_chantier(dossier: str, par_source: dict) -> None:
 
 
 def _bloc_import():
-    with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
-        d1, d2, d3 = st.columns([1.1, 1.1, 1], vertical_alignment="center")
-        with d1:
-            ui.bouton_dossier("R2", K + "dossier__upload", mode="chantier")
-        with d2:
-            ui.bouton_commandes()
-        with d3:
+    with ui.section(f"{TAB_ID}_import", "Import et paramètres", "Les fichiers sont lus sur votre poste : rien n'est envoyé"):
+        a, b, c, d = st.columns([2.7, 1, 1.3, 1], vertical_alignment="bottom")
+        with a:
+            ui.boutons_dossiers("R2", K + "dossier__upload", mode="chantier")
+        date_chantier = b.date_input("Début du chantier", value=date.today(), format="DD/MM/YYYY", key=K + "date",
+                                     persist_state="page", help="Lue dans le nom du dossier « <IMMAT> - <JJMMAA> ».")
+        etude = c.segmented_control("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], default=ETUDE_CLASSIQUE, key=K + "etude",
+                                    required=True, persist_state="page") or ETUDE_CLASSIQUE
+        n = len(st.session_state.get(K + "gestions", GESTIONS_DEFAUT))
+        with d.popover(f"⚙️ Périmètre · {n} code{'s' if n > 1 else ''}", width="stretch"):
+            gestions = st.multiselect("Codes Gestion du périmètre", GESTIONS_PROPOSEES, default=GESTIONS_DEFAUT, key=K + "gestions",
+                                      placeholder="Choisir les codes Gestion", persist_state="page")
+        puces, bilan = st.container(), st.container()
+        with ui.zone_repliable(K + "manuel", "📎 Import manuel (Parcourir) et colonnes attendues"):
+            zone_dossier = st.container()
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if etude == ETUDE_CLASSIQUE:
+                    f_besoin = ui.fichier(sio.FICHIER_BESOINS, K + "besoin_classique", ["xlsx", "xlsm"], COLONNES_ATTENDUES[etude],
+                                          on_import=_infos_chantier)
+                else:
+                    f_besoin = ui.fichier(f"{sio.FICHIER_ASREQ} (.xlsm)", K + "besoin_asreq", ["xlsm", "xlsx"],
+                                          COLONNES_ATTENDUES[etude], on_import=_infos_chantier)
+            with c2:
+                f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
+            with c3:
+                f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
             ui.lien_sharepoint(SHAREPOINT_R2, "R2")
-        # Pas de cible « commandes » : seul le fichier du dossier COMMANDE fait foi.
-        ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock"},
-                          dossier=True, on_choix=_choix_chantier,
-                          label="… ou choisir le dossier du chantier avec Parcourir", aide=NOMMAGE)
-        p1, p2, p3 = st.columns([1.1, 1, 2.2])
-        etude = p1.radio("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], horizontal=True, key=K + "etude", persist_state="page")
-        date_chantier = p2.date_input("Début du chantier", value=date.today(), format="DD/MM/YYYY", key=K + "date",
-                                      persist_state="page")
-        gestions = p3.multiselect("Codes Gestion du périmètre", GESTIONS_PROPOSEES, default=GESTIONS_DEFAUT, key=K + "gestions",
-                                  placeholder="Choisir les codes Gestion", persist_state="page")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if etude == ETUDE_CLASSIQUE:
-                f_besoin = ui.fichier(sio.FICHIER_BESOINS, K + "besoin_classique", ["xlsx", "xlsm"], COLONNES_ATTENDUES[etude],
-                                      on_import=_infos_chantier)
-            else:
-                f_besoin = ui.fichier(f"{sio.FICHIER_ASREQ} (.xlsm)", K + "besoin_asreq", ["xlsm", "xlsx"], COLONNES_ATTENDUES[etude],
-                                      on_import=_infos_chantier)
-        with c2:
-            f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
-        with c3:
-            f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
+        with bilan:
+            # Pas de cible « commandes » : seul le fichier du dossier COMMANDE fait foi.
+            ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock"},
+                              dossier=True, on_choix=_choix_chantier, label="Dossier du chantier (ou R2 entier)", aide=NOMMAGE,
+                              zone=zone_dossier)
+        with puces:
+            besoin = (sio.FICHIER_BESOINS, K + "besoin_classique") if etude == ETUDE_CLASSIQUE else (sio.FICHIER_ASREQ, K + "besoin_asreq")
+            ui.etat_fichiers([(*besoin, True), (sio.FICHIER_STOCK, K + "stock", True), (sio.FICHIER_COMMANDES, "commun__commandes", True)])
     return etude, date_chantier, gestions, f_besoin, f_stock, f_cmd
 
 

@@ -32,7 +32,7 @@ CFG = {
     "Stock": st.column_config.NumberColumn("Stock", format="%d"),
     "En commande": st.column_config.NumberColumn("En commande", format="%d"),
     "Stock de sécurité": st.column_config.NumberColumn("Stock de sécurité", format="%d",
-                                                      help="10 % des avions de chaque flotte qui utilisent le PN × quantité par avion"),
+                                                      help="% des avions de chaque flotte qui utilisent le PN (paramètre) × quantité par avion"),
     "Besoin": st.column_config.NumberColumn("Besoin", format="%d", help="Mousses à remplacer sur l'horizon"),
     "À commander": st.column_config.NumberColumn("À commander", format="%d",
                                                 help="Besoin + stock de sécurité − stock − commandes en cours (toutes, déjà passées)"),
@@ -49,20 +49,21 @@ ICONES_STATUT = {"En retard": "🔴 En retard", "Délai toléré": "🟠 Délai 
 # Paramètres (popover du bloc d'import)
 # --------------------------------------------------------------------------
 def parametres() -> pe.ParamsPE:
+    """Champs des paramètres du Planning PE (placés dans le popover « Paramètres » du bloc d'import)."""
     d = pe.ParamsPE()
-    with st.popover("⚙️ Paramètres PE (mousses)", width="stretch"):
-        st.markdown("**Cycle PE (mois)** · 0 = jamais remplacé")
-        cols = st.columns(3)
-        cycles = []
-        for i, (cl, comp, m) in enumerate(d.cycles):
-            v = cols[i % 3].number_input(f"{cl} · {comp}", 0, 240, m, 6, key=f"{K}cycle_{cl}_{comp}", persist_state="page")
-            cycles.append((cl, comp, int(v)))
-        a, b, c = st.columns(3)
-        tol = a.number_input("Délai toléré après l'échéance (mois)", 0, 24, d.tolerance_mois, key=K + "tol", persist_state="page",
-                             help="Échéance dépassée depuis moins longtemps : « Délai toléré » ; au-delà : « En retard ».")
-        ratio = b.slider("Stock de sécurité (% des avions de la flotte)", 0, 50, int(d.securite_ratio * 100), key=K + "ss",
-                         persist_state="page")
-        mini = c.number_input("Minimum d'avions de sécurité par flotte", 0, 10, d.securite_min, key=K + "ssmin", persist_state="page")
+    st.markdown("**Cycle de remplacement (mois)** · 0 = jamais remplacé")
+    cols = st.columns(3)
+    cycles = []
+    for i, (cl, comp, mois) in enumerate(d.cycles):
+        v = cols[i % 3].number_input(f"{cl} · {comp}", 0, 240, mois, 6, key=f"{K}cycle_{cl}_{comp}", persist_state="page")
+        cycles.append((cl, comp, int(v)))
+    a, b, c = st.columns(3)
+    tol = a.number_input("Délai toléré après l'échéance (mois)", 0, 24, d.tolerance_mois, key=K + "tol", persist_state="page",
+                         help="Échéance dépassée depuis moins longtemps : « Délai toléré » ; au-delà : « En retard ».")
+    ratio = b.number_input("Stock de sécurité (% des avions)", 0, 50, int(d.securite_ratio * 100), 5, key=K + "ss",
+                           persist_state="page", help="Par flotte et par PN. 0 % : aucun stock de sécurité.")
+    mini = c.number_input("Minimum d'avions de sécurité", 0, 10, d.securite_min, key=K + "ssmin", persist_state="page",
+                          help="Par flotte, si le stock de sécurité n'est pas à 0 %.")
     return pe.ParamsPE(cycles=tuple(cycles), tolerance_mois=int(tol), securite_ratio=ratio / 100, securite_min=int(mini))
 
 
@@ -170,8 +171,7 @@ def _calendrier(c: pd.DataFrame, today):
             ui.graphe(charts.vide("Aucun remplacement sur les 24 prochains mois"))
         else:
             ordre = d[d["Col"].isin(cols)].groupby("Ligne")["Date prévue"].min().sort_values().index
-            with st.container(height=min(60 + 30 * len(t), 470), border=False):
-                ui.graphe(charts.chaleur(t.reindex(ordre), libelle="élément(s)", couleur=(198, 40, 40) if False else (31, 78, 156)))
+            ui.graphe(charts.chaleur(t.reindex(ordre), libelle="élément(s)", hauteur_max="34rem"))
         _detail_avions(c)
 
 
@@ -260,16 +260,40 @@ def _forecast(ev, synth, long, today) -> int:
 @st.fragment
 def _forecast_fournisseur(ev, synth, long, today, h):
     debut = pd.Timestamp(today).to_period("M").start_time
-    fin = debut + pd.DateOffset(months=h)
-    lg = long[long["Mois"] < fin]
+    mois = pd.date_range(debut, periods=h, freq="MS")
+    lg = long[long["Mois"].isin(mois)]
     v = lg.groupby("Fournisseur")["Valeur à livrer (€)"].sum().sort_values(ascending=False)
     if v.empty:
         return
     with ui.section("textiles_pe_fournisseur", "Forecast par fournisseur",
-                    f"Commande globale et livraisons mois par mois sur {h} mois : à partager avec le fournisseur"):
+                    f"Ce que vous allez commander, par année et par mois, sur {h} mois : à partager avec chaque fournisseur"):
+        # Vue d'ensemble : tous les fournisseurs, par année
+        qte_an = pe.par_annee(lg, mois, "Fournisseur").reindex(v.index)
+        val_an = pe.par_annee(lg, mois, "Fournisseur", "Valeur à livrer (€)").reindex(v.index)
+        annees = list(qte_an.columns)
+        vue = pd.DataFrame(index=v.index)
+        for an in annees:
+            vue[f"{an} · qté"] = qte_an[an]
+            vue[f"{an} · €"] = val_an[an]
+        vue["Total · qté"], vue["Total · €"] = qte_an.sum(axis=1), val_an.sum(axis=1)
+        cfg = {c: st.column_config.NumberColumn(c, format="%.0f €" if c.endswith("€") else "%d") for c in vue.columns}
+        a, b = st.columns([1, 1.5], gap="large")
+        with a:
+            ui.graphe(charts.barres(annees, {"Valeur (€)": val_an.sum()}, {"Valeur (€)": COLORS["navy_2"]}, fmt=charts.euros,
+                                    hauteur=220, titre="Valeur à commander par année (tous fournisseurs)",
+                                    survol=[f"{charts.entier(q)} mousses" for q in qte_an.sum()]))
+        with b:
+            st.markdown("**Par fournisseur et par année**")
+            ui.tableau(vue.reset_index(), column_config=cfg, height="content" if len(vue) <= 6 else 260)
+
+        # Détail du fournisseur choisi
         libelles = {f: f"{f}  ·  {charts.euros(val)}" for f, val in v.items()}
-        f = st.selectbox("Fournisseur", list(libelles), format_func=libelles.get, key=K + "fournisseur", persist_state="page",
+        c1, c2 = st.columns([1.4, 1], vertical_alignment="center")
+        f = c1.selectbox("Fournisseur", list(libelles), format_func=libelles.get, key=K + "fournisseur", persist_state="page",
                          label_visibility="collapsed")
+        with c2:
+            pas = st.segmented_control("Vue", ["Par année", "Par mois"], default="Par année", key=K + "vue_fournisseur",
+                                       required=True, persist_state="page", label_visibility="collapsed") or "Par année"
         d = lg[lg["Fournisseur"] == f]
         a_livrer = d[d["À livrer"] > 0]
         premier = a_livrer["Mois"].min()
@@ -280,22 +304,33 @@ def _forecast_fournisseur(ev, synth, long, today, h):
             ui.kpi_card("Première livraison", f"{premier:%m/%Y}" if pd.notna(premier) else "—",
                         "dès que possible" if pd.notna(premier) and premier == debut else "", "warn"),
         ])
-        mois = pd.date_range(debut, periods=h, freq="MS")
         piv = d.pivot_table(index="PN", columns="Mois", values="À livrer", aggfunc="sum", fill_value=0).reindex(columns=mois, fill_value=0)
         piv = piv[piv.sum(axis=1) > 0]
-        series = {pn: piv.loc[pn] for pn in piv.index[:8]}
-        if len(piv) > 8:
-            series["Autres PN"] = piv.iloc[8:].sum()
-        ui.graphe(charts.barres(mois, series, empile=True, temporel=True, hauteur=250,
-                                titre="Mousses à livrer par mois et par PN") if series else charts.vide("Rien à livrer"))
-        desig = synth.set_index("PN")["Désignation"]
-        tab = piv.copy()
-        tab.columns = [m.strftime("%m/%Y") for m in tab.columns]
+        an = pe.par_annee(d, mois).reindex(piv.index)
+        top = list(piv.sum(axis=1).sort_values(ascending=False).index[:8])
+        def _series(t):
+            s = {pn: t.loc[pn] for pn in top}
+            if len(t) > 8:
+                s["Autres PN"] = t.drop(index=top).sum()
+            return s
+        if pas == "Par année":
+            graphe = charts.barres(annees, _series(an), empile=True, hauteur=240, titre="Mousses à livrer par année et par PN")
+            tab = an.copy()
+        else:
+            graphe = charts.barres(mois, _series(piv), empile=True, temporel=True, hauteur=240,
+                                   titre="Mousses à livrer par mois et par PN")
+            tab = piv.copy()
+            tab.columns = [m_.strftime("%m/%Y") for m_ in tab.columns]
+        ui.graphe(graphe if len(piv) else charts.vide("Rien à livrer"))
+        prix = synth.set_index("PN")["Prix unitaire (€)"].reindex(tab.index).fillna(0)
+        tab.insert(0, "Valeur (€)", piv.sum(axis=1) * prix)
         tab.insert(0, "Total", piv.sum(axis=1))
-        tab.insert(0, "Désignation", desig.reindex(tab.index))
+        tab.insert(0, "Désignation", synth.set_index("PN")["Désignation"].reindex(tab.index))
         tab = tab.reset_index()
-        ui.tableau(tab, column_config=CFG, height=min(38 + 35 * len(tab), 320))
-        ui.telecharger(_export_fournisseur(f, tab, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"forecast_{f}"),
+        ui.tableau(tab, column_config=CFG, height="content" if len(tab) <= 8 else 320)
+        par_mois = piv.copy()
+        par_mois.columns = [m_.strftime("%m/%Y") for m_ in par_mois.columns]
+        ui.telecharger(_export_fournisseur(f, an, par_mois, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"forecast_{f}"),
                        K + "export_fournisseur", label="⬇️ Forecast fournisseur (Excel)")
 
 
@@ -303,12 +338,13 @@ def _nom_fichier(base: str) -> str:
     return f"Supply360_{re.sub(r'[^A-Za-z0-9]+', '_', base).strip('_')}_{date.today():%Y%m%d}.xlsx"
 
 
-def _export_fournisseur(f, tab, ev, synth) -> bytes:
-    resume = synth[synth["PN"].isin(tab["PN"])][["PN", "Désignation", "Composant", "Classes", "Prix unitaire (€)"]].merge(
-        tab[["PN", "Total"]], on="PN")
+def _export_fournisseur(f, an, par_mois, ev, synth) -> bytes:
+    resume = synth[synth["PN"].isin(an.index)][["PN", "Désignation", "Composant", "Classes", "Prix unitaire (€)"]]
+    resume = resume.assign(Total=resume["PN"].map(an.sum(axis=1)))
     resume["Valeur (€)"] = resume["Total"] * resume["Prix unitaire (€)"].fillna(0)
     avions = ev.assign(Mois=ev["Mois"].dt.strftime("%m/%Y"))[["PN", "Mois", "Immatriculation", "Flotte", "Classe", "Composant", "Qté"]]
-    return sio.exporter_excel({"Commande globale": resume, "Livraisons par mois": tab, "Besoins par avion": avions})
+    return sio.exporter_excel({"Commande globale": resume, "Par année": an.reset_index(), "Par mois": par_mois.reset_index(),
+                               "Besoins par avion": avions})
 
 
 def _exports_controles(res, c, ev, synth, long, h):

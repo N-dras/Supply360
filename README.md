@@ -130,7 +130,7 @@ quel dans le dossier Textile (date des âges lue dans son nom) et de textile_all
 - **Forecast par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
 - **Filtres** : flotte, classe, élément. **Exports** : planning complet ; **contrôles** des données.
 
-Règles (paramètres dans « ⚙️ Paramètres PE ») :
+Règles (paramètres dans « ⚙️ Paramètres » › Planning PE ; stock de sécurité réglable de 0 à 50 %) :
 - cycles : J / W / Y assise 36 mois, J dossier 72 mois, dossiers W / Y jamais ;
 - échéance = date des âges − âge + cycle (âge « > 60 » : 60 pris comme minimum, échéance au plus tôt) ;
 - statut : En retard (échéance + délai toléré dépassés, 3 mois par défaut), Délai toléré, À faire < 3 mois,
@@ -172,3 +172,9 @@ python tests/fixtures/generer_fixtures.py   # régénérer les fichiers fictifs 
 
 Les fichiers de `tests/fixtures/` sont **fictifs** : ils permettent d'essayer l'application sans
 données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet.
+
+### Si la page ne répond plus
+
+Un bandeau apparaît en bas de page (« L'application ne répond plus » / « Le moteur de calcul s'est arrêté ») avec
+**Recharger la page** et **Détails techniques** (bouton **Copier** : à transmettre à l'auteur pour diagnostic).
+Conseil Edge : *Paramètres › Système et performances › Ne jamais mettre en veille ces sites* → ajouter l'adresse de Supply360.

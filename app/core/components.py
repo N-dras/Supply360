@@ -4,7 +4,7 @@ Les fonctions qui renvoient du HTML (`kpi_card`, `badge`…) sont pures ; celles
 dessinent (`header`, `section`, `kpi_grid`…) appellent Streamlit.
 """
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import date
 from html import escape
 
@@ -189,24 +189,52 @@ def _source_fichier(data: bytes, nom: str):
     return sio.identifier_fichier(data, nom)
 
 
-def bouton_dossier(dossier: str, cible: str, mode: str = "fichiers") -> None:
-    """Boutons « Ouvrir <dossier> » / « Changer de dossier » (dossier mémorisé, géré en JavaScript par build.py).
+def _boutons_dossier(dossier: str, cible: str, mode: str) -> str:
+    attrs = f'data-dossier="{escape(dossier)}" data-cible="{escape(cible)}" data-mode="{escape(mode)}"'
+    return (f'<span class="s360-dossier-grp"><button type="button" class="s360-dossier-btn" {attrs}>📂 Ouvrir {escape(dossier)}</button>'
+            f'<button type="button" class="s360-dossier-btn autre" {attrs} data-changer="1" '
+            f'title="Choisir un autre dossier {escape(dossier)}">Changer</button></span>')
+
+
+def boutons_dossiers(dossier: str, cible: str, mode: str = "fichiers", commandes: bool = True) -> None:
+    """Barre « 📂 Ouvrir <dossier> » (+ « 📂 Ouvrir COMMANDE ») : dossiers mémorisés, gérés en JavaScript par build.py.
 
     Le dossier choisi une fois est retenu par le navigateur. Selon `mode`, on dépose dans le `file_uploader` de
     clé `cible` : tous ses fichiers (« fichiers »), ceux du chantier choisi dans la liste (« chantier ») ou le
-    fichier le plus récemment modifié (« dernier »). Sans effet en développement local.
+    fichier le plus récemment modifié (« dernier »). « Changer » choisit un autre dossier. Sans effet en local.
+    COMMANDE : fichier Commandes (SAP) le plus récent, rangé dans l'import commun `commun__commandes`.
     """
-    attrs = f'data-dossier="{escape(dossier)}" data-cible="{escape(cible)}" data-mode="{escape(mode)}"'
-    st.html(f'<div class="s360-dossiers"><button type="button" class="s360-dossier-btn" {attrs}>📂 Ouvrir {escape(dossier)}</button>'
-            f'<button type="button" class="s360-dossier-btn autre" {attrs} data-changer="1">Changer de dossier</button></div>')
+    html = _boutons_dossier(dossier, cible, mode)
+    if commandes:
+        html += _boutons_dossier("COMMANDE", "commun__dossier_commande__upload", "dernier")
+    st.html(f'<div class="s360-dossiers">{html}</div>')
+    if commandes:
+        with st.container(key="s360cache_commande"):  # zone de dépôt du bouton COMMANDE, masquée (CSS)
+            import_dossier("commun__dossier_commande", {"commandes": "commun__commandes"}, resume=False)
 
 
-def bouton_commandes() -> None:
-    """Bouton « Ouvrir COMMANDE » : fichier Commandes (SAP) le plus récent du dossier mémorisé, reconnu par son
-    contenu puis rangé dans l'import commun `commun__commandes` (partagé par tous les onglets)."""
-    bouton_dossier("COMMANDE", "commun__dossier_commande__upload", mode="dernier")
-    with st.container(key="s360cache_commande"):  # zone de dépôt du bouton, masquée (CSS)
-        import_dossier("commun__dossier_commande", {"commandes": "commun__commandes"}, resume=False)
+@contextmanager
+def zone_repliable(cle: str, libelle: str):
+    """Zone repliée derrière un interrupteur. Contrairement à `st.expander` (dont le contenu replié n'est pas
+    dans la page), les widgets restent présents, masqués en CSS : les boutons « 📂 Ouvrir » peuvent y déposer
+    des fichiers même quand la zone est fermée."""
+    ouvert = st.toggle(libelle, key=cle, persist_state="page")
+    with st.container(key=f"s360pli_{'ouvert' if ouvert else 'ferme'}_{cle}"):
+        yield
+
+
+def etat_fichiers(fichiers: list[tuple[str, str, bool]]) -> None:
+    """Pastilles d'état des imports : (libellé, clé de `fichier`, obligatoire) → ✓ nom du fichier, ou « à importer »."""
+    puces = []
+    for libelle, cle, obligatoire in fichiers:
+        garde = st.session_state.get(f"{cle}__data")
+        if garde:
+            puces.append(f'<span class="s360-puce ok" title="{escape(garde[0])}">✓ <b>{escape(libelle)}</b>'
+                         f'<em>{escape(garde[0])}</em></span>')
+        else:
+            ton = "ko" if obligatoire else ""
+            puces.append(f'<span class="s360-puce {ton}">○ <b>{escape(libelle)}</b><em>{"à importer" if obligatoire else "facultatif"}</em></span>')
+    st.html(f'<div class="s360-puces">{"".join(puces)}</div>')
 
 
 def import_commandes(colonnes) -> tuple[str, bytes] | None:
@@ -230,7 +258,7 @@ def lien_sharepoint(url: str, dossier: str) -> None:
 
 
 def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "",
-                   noms: dict[str, str] | None = None, resume: bool = True) -> None:
+                   noms: dict[str, str] | None = None, resume: bool = True, zone=None) -> None:
     """Import de tout un dossier : chaque fichier est reconnu par son contenu (à défaut son nom) et rangé
     dans l'emplacement `fichier` correspondant (`cibles` = {source: clé du fichier}).
 
@@ -240,6 +268,8 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     `on_choix(dossier_chantier, {source: [chemins]})` est appelé après chaque répartition.
     `noms` = {source: motif} : règles de nommage prioritaires (voir dossiers.appliquer_noms).
     Un fichier Commandes (SAP) trouvé ici est ignoré si `commandes` n'est pas une cible : seul le dossier COMMANDE fait foi.
+    `zone` : conteneur où placer la zone d'import (ex. l'expander « Import manuel ») ; le choix du chantier et le
+    bilan restent à l'emplacement courant.
     """
     version = st.session_state.get(f"{cle}__v", 0)
     cle_up, cle_idx, cle_ch, cle_bilan = f"{cle}__upload{version}", f"{cle}__index", f"{cle}__chantier", f"{cle}__bilan"
@@ -281,8 +311,9 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
             st.session_state[cle_ch] = chantiers[0] if chantiers else dossiers.HORS_CHANTIER
         _appliquer()
 
-    st.file_uploader(label or "📂 Importer les fichiers du dossier (Ctrl+A pour tout sélectionner)", type=["xlsx", "xlsm", "csv"],
-                     accept_multiple_files="directory" if dossier else True, key=cle_up, on_change=_charger, help=aide or None)
+    with zone if zone is not None else nullcontext():
+        st.file_uploader(label or "📂 Importer les fichiers du dossier (Ctrl+A pour tout sélectionner)", type=["xlsx", "xlsm", "csv"],
+                         accept_multiple_files="directory" if dossier else True, key=cle_up, on_change=_charger, help=aide or None)
     index = st.session_state.get(cle_idx, {})
     if not index:
         return
@@ -311,9 +342,9 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     ch = st.session_state.get(cle_ch, dossiers.HORS_CHANTIER)
     nb = sum(len(l) for l in par_source.values()) + len(inconnus)
     if resume:
-        notes.append(f"Importé : <b>{escape(ch)}</b> ({nb} fichier(s))" if ch else f"Importé : {nb} fichier(s)")
+        notes.append(f"Dossier importé : <b>{escape(ch)}</b> ({nb} fichier(s))" if ch else f"Dossier importé : {nb} fichier(s)")
     if manquants:
-        notes.append("Absent(s) du dossier : <b>" + ", ".join(escape(m) for m in manquants) + "</b> (import séparé ci-dessous)")
+        notes.append("absent(s) du dossier : <b>" + ", ".join(escape(m) for m in manquants) + "</b>")
     if "commandes" in par_source and "commandes" not in cibles:
         notes.append(f"Commandes (SAP) du dossier non utilisé ({escape(dossiers.nom_court(par_source['commandes'][0]))}) : "
                      "le fichier du dossier <b>COMMANDE</b> fait foi")

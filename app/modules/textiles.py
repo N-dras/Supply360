@@ -162,9 +162,10 @@ def _export(cle_tables: tuple, cat: str, cle_prev: tuple | None) -> bytes:
 # Rendu
 # --------------------------------------------------------------------------
 def _parametres(parts) -> tuple[pv.Params, tuple]:
-    """Popover des paramètres de la prévision (buffer, délais, composants, politique d'entretien)."""
+    """Paramètres du sous-onglet Prévision (buffer, délais, composants, politique d'entretien)."""
     d = pv.Params()
-    with st.popover("⚙️ Paramètres de la prévision", width="stretch"):
+    st.caption("Utilisés par le sous-onglet **Prévision** (stock minimum d'avance). Le Planning PE a ses propres paramètres.")
+    if True:
         a, b = st.columns(2)
         ratio = a.slider("Avions d'avance (% du groupe)", 2, 40, int(d.buffer_ratio * 100), key=K + "ratio", persist_state="page",
                          help="10 % : 10 avions → 1, 50 avions → 5.")
@@ -186,13 +187,13 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
         regles = None
         if parts is not None:
             # Grille de champs (et non st.data_editor : indisponible sous stlite, il dépend de pyarrow).
-            st.markdown("**Politique d'entretien : cycle PE (ans)** · 0 = jamais remplacé · pris en compte si "
+            st.markdown("**Cycle PE pour la prévision (ans)** · 0 = jamais remplacé · pris en compte si "
                         "« Buffer aussi pour les composants sans PE » est décoché")
             base = pv.regles_pe_defaut(parts)
             cols = st.columns(3)
             cycles = []
             for i, r in enumerate(base.itertuples(index=False)):
-                cle = f"{K}pe__{pv.cle_regle(r.Equipement, r.Classe, r.Composant)}"
+                cle = f"{K}prev_pe__{pv.cle_regle(r.Equipement, r.Classe, r.Composant)}"
                 cycles.append(cols[i % 3].number_input(f"{r.Equipement} · {r.Classe} · {r.Composant}", 0.0, 20.0,
                                                        float(r[3]), 0.5, key=cle, persist_state="page"))
             regles = tuple((r.Equipement, r.Classe, r.Composant, float(c)) for r, c in zip(base.itertuples(index=False), cycles))
@@ -209,43 +210,52 @@ NOMMAGE = ("Dossier Textile : « Résultat… » = État du stock, « textile_ma
 
 
 def _bloc_import():
-    with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
-        d1, d2, d3 = st.columns([1.1, 1.1, 1], vertical_alignment="center")
-        with d1:
-            ui.bouton_dossier("Textile", K + "dossier__upload")
-        with d2:
-            ui.bouton_commandes()
-        with d3:
+    with ui.section(f"{TAB_ID}_import", "Import et paramètres", "Les fichiers sont lus sur votre poste : rien n'est envoyé"):
+        a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
+        with a:
+            ui.boutons_dossiers("Textile", K + "dossier__upload")
+        today = b.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date", persist_state="page",
+                             help="Date des données : âge des commandes, retards, début de la prévision et du planning PE.")
+        reglages = c.popover("⚙️ Paramètres", width="stretch")
+        puces, bilan = st.container(), st.container()
+        with ui.zone_repliable(K + "manuel", "📎 Import manuel (Parcourir) et colonnes attendues"):
+            zone_dossier = st.container()
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
+                f_pieces = ui.fichier(f"{pv.FICHIER_PIECES} (textile_all_parts)", K + "pieces", ["csv", "xlsx", "xlsm"],
+                                      COLONNES_ATTENDUES["pieces"])
+            with c2:
+                f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
+                f_pe = ui.fichier(f"{pe.FICHIER_PE} (PE_MOUSSE, mensuel)", K + "pe", ["xlsx", "xlsm"], COLONNES_ATTENDUES["pe"])
+            with c3:
+                f_ref = ui.fichier(sio.FICHIER_REFERENCES, K + "references", ["xlsx", "xlsm"], COLONNES_ATTENDUES["references"])
             ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Textile")
-        ui.import_dossier(K + "dossier", {"stock": K + "stock", "references": K + "references", "pieces": K + "pieces",
-                                          "pe": K + "pe"},
-                          label="… ou importer les fichiers avec Parcourir (Ctrl+A pour tout sélectionner)", aide=NOMMAGE,
-                          noms=NOMS_DOSSIER)
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
-        with c2:
-            f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
-        with c3:
-            f_ref = ui.fichier(sio.FICHIER_REFERENCES, K + "references", ["xlsx", "xlsm"], COLONNES_ATTENDUES["references"])
-        d1, d2, d3 = st.columns(3)
-        with d1:
-            f_pieces = ui.fichier(f"{pv.FICHIER_PIECES} (textile_all_parts)", K + "pieces", ["csv", "xlsx", "xlsm"], COLONNES_ATTENDUES["pieces"])
-        with d2:
-            f_pe = ui.fichier(f"{pe.FICHIER_PE} (PE_MOUSSE, mensuel)", K + "pe", ["xlsx", "xlsm"], COLONNES_ATTENDUES["pe"])
-        with d3:
-            today = st.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date", persist_state="page",
-                                  help="Date des données : âge des commandes, retards, début de la prévision.")
-            seul = st.toggle("Uniquement les PN du catalogue textile", value=True, key=K + "seul", persist_state="page")
-            params_pe = vue_pe.parametres()
-            parts = None
-            if f_pieces:
-                try:
-                    parts = _pieces(f_pieces[1], f_pieces[0], pv.Params())[0]
-                except ValueError as exc:
-                    ui.callout(f"<b>{pv.FICHIER_PIECES} illisible.</b> {exc}", "ko", "⛔")
-                    f_pieces = None
-            params, regles = _parametres(parts)
+        with bilan:
+            ui.import_dossier(K + "dossier", {"stock": K + "stock", "references": K + "references", "pieces": K + "pieces",
+                                              "pe": K + "pe"},
+                              label="Tout le dossier Textile (Ctrl+A pour tout sélectionner)", aide=NOMMAGE, noms=NOMS_DOSSIER,
+                              zone=zone_dossier)
+        with puces:
+            ui.etat_fichiers([(sio.FICHIER_STOCK, K + "stock", True), (sio.FICHIER_COMMANDES, "commun__commandes", False),
+                              (sio.FICHIER_REFERENCES, K + "references", False), (pv.FICHIER_PIECES, K + "pieces", False),
+                              (pe.FICHIER_PE, K + "pe", False)])
+        parts = None
+        if f_pieces:
+            try:
+                parts = _pieces(f_pieces[1], f_pieces[0], pv.Params())[0]
+            except ValueError as exc:
+                ui.callout(f"<b>{pv.FICHIER_PIECES} illisible.</b> {exc}", "ko", "⛔")
+                f_pieces = None
+        with reglages:
+            t_pe, t_prev, t_gen = st.tabs(["📅 Planning PE", "🧮 Prévision", "Général"])
+            with t_pe:
+                params_pe = vue_pe.parametres()
+            with t_prev:
+                params, regles = _parametres(parts)
+            with t_gen:
+                seul = st.toggle("Uniquement les PN du catalogue textile", value=True, key=K + "seul", persist_state="page",
+                                 help="Limite l'analyse aux PN du fichier Références textile.")
     return f_stock, f_cmd, f_ref, f_pieces, f_pe, today, seul, params, regles, params_pe
 
 

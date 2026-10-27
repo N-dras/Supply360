@@ -173,11 +173,14 @@ TEMPLATE = """<!doctype html>
 .Toastify__toast:not(.Toastify__toast--error) { display: none !important; }
 .Toastify { position: relative; z-index: 1000001; }
 #s360-bloque { display: none; position: fixed; z-index: 1000001; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
-  padding: .7rem 1.1rem; border-radius: 12px; background: #fff; color: var(--text); font-family: var(--font); font-size: .9375rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .25); border-left: 4px solid var(--warn); }
+  width: min(46rem, calc(100vw - 2rem)); padding: .8rem 1.1rem; border-radius: 12px; background: #fff; color: var(--text);
+  font-family: var(--font); font-size: .9375rem; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); border-left: 4px solid var(--warn); }
 #s360-bloque.visible { display: block; }
 #s360-bloque button { font: inherit; font-weight: 700; color: #fff; background: var(--navy); border: 0; border-radius: 99px;
-  padding: .3rem .9rem; cursor: pointer; }
+  padding: .3rem .9rem; cursor: pointer; margin-left: .3rem; }
+#s360-bloque details { margin-top: .4rem; color: var(--muted); font-size: .8125rem; }
+#s360-bloque pre { max-height: 10rem; overflow: auto; white-space: pre-wrap; margin: .3rem 0; font-size: .75rem; }
+#s360-bloque .copier { background: #fff; color: var(--navy); border: 1px solid #CFD8E5; margin: 0; }
 #s360-loading.lent .lent { display: block; }
 #s360-loading button {
   font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
@@ -203,6 +206,49 @@ TEMPLATE = """<!doctype html>
   </div>
 </div>
 <div id="root"></div>
+<script>
+// Surveillance du moteur Python (Pyodide, dans un « worker » du navigateur). On note les messages envoyés à
+// l'application (clics) et reçus en retour, les erreurs, et on peut sonder le moteur (message « heartbeat » de
+// Streamlit, sans effet sur l'app). Si le moteur ne répond plus, un bandeau le signale au lieu d'une page figée.
+window.s360Moteur = (function () {
+  const journal = [];
+  const noter = (m) => {
+    journal.push(new Date().toLocaleTimeString("fr-FR") + "  " + String(m).replace(/\\s+/g, " ").slice(0, 600));
+    if (journal.length > 30) journal.shift();
+  };
+  window.addEventListener("error", (e) => noter("Erreur : " + (e.message || e.error)));
+  window.addEventListener("unhandledrejection", (e) => noter("Erreur : " + ((e.reason && e.reason.message) || e.reason)));
+  const consoleErreur = console.error;
+  console.error = function (...a) { try { noter(a.map((x) => (x && x.message) || x).join(" ")); } catch (_) {} return consoleErreur.apply(this, a); };
+  const etat = { worker: null, envoi: 0, recu: Date.now(), mort: "" };
+  const W = window.Worker;
+  window.Worker = function (...args) {
+    const w = new W(...args);
+    etat.worker = w;
+    w.addEventListener("message", (e) => {
+      etat.recu = Date.now();
+      const d = e.data;
+      if (d && d.type === "s360:journal") {  // erreur Python transmise par core/journal.py
+        noter("Python " + d.texte);
+        if (/report this bug|RuntimeStoppedError/.test(d.texte)) etat.mort = "erreur interne de Streamlit";
+      }
+    });
+    w.addEventListener("error", (e) => { etat.mort = e.message || "erreur du moteur"; noter("Moteur arrêté : " + etat.mort); });
+    const envoyer = w.postMessage.bind(w);
+    w.postMessage = function (m, t) { if (m && m.type === "websocket:send") etat.envoi = Date.now(); return envoyer(m, t); };
+    return w;
+  };
+  window.Worker.prototype = W.prototype;
+  // BackMsg { appHeartbeat: true } (champ 17, booléen ; étiquette varint 0x88 0x01, valeur 1) : Streamlit répond par un « heartbeat_ack ».
+  const sonder = () => {
+    if (!etat.worker) return;
+    const canal = new MessageChannel();
+    canal.port1.onmessage = () => canal.port1.close();
+    etat.worker.postMessage({ type: "websocket:send", data: { payload: new Uint8Array([136, 1, 1]) } }, [canal.port2]);
+  };
+  return { etat, journal, noter, sonder };
+})();
+</script>
 <script>
 // Le bouton de téléchargement de Streamlit « vérifie » son adresse interne (https://stlite.invalid/…) par une vraie
 // requête réseau, qui part vers le proxy et échoue. On y répond localement : aucune requête inutile.
@@ -230,19 +276,46 @@ window.fetch = function (ressource, options) {
   ];
   let libelle = etape.textContent, hote = "cdn.jsdelivr.net";
   const pret = () => document.querySelector(".s360-header, .stException, [data-testid='stException']");
-  // Après le démarrage : si un calcul dure anormalement (plus de 90 s), un bandeau propose de recharger la page.
+  // Après le démarrage : bandeau si le moteur s'arrête, ne répond plus (aucune réponse 20 s après un clic ou une
+  // sonde) ou si un calcul dure anormalement (plus de 90 s). La sonde part toutes les 30 s d'inactivité, et dès
+  // que l'on revient sur l'onglet : un blocage est signalé avant même le prochain clic.
   const surveiller = () => {
-    let depuis = null;
+    const M = window.s360Moteur;
+    let depuis = null, affiche = "";
     const bandeau = document.createElement("div");
     bandeau.id = "s360-bloque";
-    bandeau.innerHTML = "⏳ Le calcul dure plus longtemps que prévu. Si la page ne répond plus : " +
-      "<button type='button' onclick='location.reload()'>Recharger</button> (les fichiers seront à réimporter).";
     document.body.append(bandeau);
-    setInterval(() => {
+    const afficher = (titre, texte) => {
+      const cle = titre + texte;
+      if (cle === affiche) return;
+      affiche = cle;
+      if (!titre) { bandeau.classList.remove("visible"); return; }
+      bandeau.innerHTML = "<b></b> <span></span> <button type='button' class='recharger'>Recharger la page</button>" +
+        "<details><summary>Détails techniques</summary><pre></pre><button type='button' class='copier'>Copier</button></details>";
+      bandeau.querySelector("b").textContent = titre;
+      bandeau.querySelector("span").textContent = texte;
+      bandeau.querySelector("pre").textContent = M.journal.join("\\n") || "Aucune erreur enregistrée.";
+      bandeau.querySelector(".recharger").onclick = () => location.reload();
+      bandeau.querySelector(".copier").onclick = () => navigator.clipboard && navigator.clipboard.writeText(
+        titre + "\\n" + navigator.userAgent + "\\n" + M.journal.join("\\n"));
+      bandeau.classList.add("visible");
+    };
+    const verifier = () => {
+      const e = M.etat, now = Date.now();
       const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
-      depuis = enCours ? depuis || Date.now() : null;
-      bandeau.classList.toggle("visible", !!depuis && Date.now() - depuis > 90000);
-    }, 2000);
+      depuis = enCours ? depuis || now : null;
+      if (e.mort) afficher("⛔ Le moteur de calcul s'est arrêté.", "Rechargez la page puis réimportez les fichiers (📂 Ouvrir : un clic).");
+      else if (!enCours && e.envoi > e.recu && now - e.envoi > 20000)
+        afficher("⚠️ L'application ne répond plus.", "Rechargez la page puis réimportez les fichiers (📂 Ouvrir : un clic).");
+      else if (depuis && now - depuis > 90000)
+        afficher("⏳ Le calcul dure plus longtemps que prévu.", "Si la page ne répond plus, rechargez-la (fichiers à réimporter).");
+      else afficher("", "");
+      if (!enCours && document.visibilityState === "visible" && e.envoi <= e.recu && now - e.recu > 30000) { e.envoi = now; M.sonder(); }
+    };
+    setInterval(verifier, 2000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && M.etat.envoi <= M.etat.recu) { M.etat.envoi = Date.now(); M.sonder(); }
+    });
   };
   // Préchargement (voir PRECHARGEMENT dans build.py) : un fichier à la fois, quand le navigateur est libre ;
   // les échecs sont retentés une minute plus tard. Ensuite, l'app n'a plus besoin du réseau.

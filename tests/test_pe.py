@@ -76,6 +76,14 @@ def test_stock_de_securite_10_pct_par_flotte(planning):
     assert ss["FM-1001"] == 34                 # J assise A350 : ceil(10 % × 6) = 1 avion × 34
 
 
+def test_stock_de_securite_a_zero(lignes):
+    l, dref = lignes
+    parts = pv.preparer_pieces(pv.lire_pieces((FIX / "textile_all_parts.csv").read_bytes(), "textile_all_parts.csv"), pv.Params())[0]
+    cal = pe.calendrier(l, dref, AUJ, pe.ParamsPE())
+    ss = pe.stock_securite(cal, pe.pieces_mousses(parts)[0], pe.ParamsPE(securite_ratio=0, securite_min=1))
+    assert (ss == 0).all()                      # 0 % : pas de stock de sécurité, même avec un minimum d'avions
+
+
 def test_forecast_mois_par_mois(planning):
     long = planning["long"].set_index(["PN", "Mois"])
     oct_, jan = pd.Timestamp(2026, 10, 1), pd.Timestamp(2027, 1, 1)
@@ -91,6 +99,14 @@ def test_forecast_mois_par_mois(planning):
     assert s.loc["FM-1004", "À commander 12 mois"] == pytest.approx(planning["long"].query("PN == 'FM-1004'")["À livrer"].head(12).sum())
     assert s.loc["FM-1004", "Fournisseur"] == "Fournisseur Tango" and s.loc["FM-1004", "Prix unitaire (€)"] == 45
     assert s.loc["FM-1004", "Valeur 12 mois (€)"] == s.loc["FM-1004", "À commander 12 mois"] * 45
+
+
+def test_vue_par_annee(planning):
+    mois = pd.date_range("2026-10-01", periods=36, freq="MS")
+    assert list(pe.libelles_annees(mois).values()) == ["2026 (oct.–déc.)", "2027", "2028", "2029 (janv.–sept.)"]
+    an = pe.par_annee(planning["long"], mois)
+    total = planning["long"].query("Mois < '2029-10-01'").groupby("PN")["À livrer"].sum()
+    assert an.sum(axis=1).reindex(total.index).tolist() == pytest.approx(total.tolist())   # même total, réparti par année
 
 
 def test_controles(planning):

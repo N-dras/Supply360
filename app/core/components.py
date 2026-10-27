@@ -178,6 +178,11 @@ def _source_fichier(data: bytes, nom: str):
     return sio.identifier_fichier(data, nom)
 
 
+def lien_sharepoint(url: str, libelle: str) -> None:
+    """Lien vers le dossier SharePoint des fichiers (nouvel onglet) : on y télécharge ou synchronise les fichiers."""
+    st.html(f'<a class="s360-lien" href="{escape(url, quote=True)}" target="_blank" rel="noopener">🔗 {escape(libelle)}</a>')
+
+
 def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "") -> None:
     """Import de tout un dossier : chaque fichier est reconnu par son contenu (à défaut son nom) et rangé
     dans l'emplacement `fichier` correspondant (`cibles` = {source: clé du fichier}).

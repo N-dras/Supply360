@@ -169,6 +169,8 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
     return p, regles
 
 
+SHAREPOINT_TEXTILE = ("https://afkl.sharepoint.com/:f:/r/teams/MS-LGT1-Analystes/Shared%20Documents/Textile"
+                      "?d=w58572b00036a42e395a6b6435ecf4000&csf=1&web=1&e=ExlJGH")
 NOMMAGE = ("Dossier Textile : État du stock, Références textile et Pièces par avion (et Commandes (SAP) si présent). "
            "Les fichiers sont reconnus par leur contenu, quel que soit leur nom ; s'il y en a plusieurs du même type, "
            "le plus récent (date dans le nom) est retenu.")
@@ -176,6 +178,7 @@ NOMMAGE = ("Dossier Textile : État du stock, Références textile et Pièces pa
 
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
+        ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Ouvrir le dossier Textile sur SharePoint")
         ui.import_dossier(K + "dossier", {"stock": K + "stock", "commandes": "commun__commandes", "references": K + "references",
                                           "pieces": K + "pieces"}, label="📂 Importer les fichiers du dossier Textile (Ctrl+A)",
                           aide=NOMMAGE)

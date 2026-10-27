@@ -224,6 +224,9 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
   background: #DFF5E6; color: var(--ok); font-size: .875rem; font-weight: 700; overflow: hidden;
 }
 .s360-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s360-lien { display: inline-flex; align-items: center; gap: .4rem; margin: .1rem 0 -.2rem; padding: .35rem .9rem; border-radius: 99px;
+  background: #E8F0FD; color: var(--navy) !important; font-size: .875rem; font-weight: 700; text-decoration: none !important; }
+.s360-lien:hover { background: #D6E4FB; }
 .s360-note { margin: -.2rem 0 .3rem; color: var(--muted); font-size: .8125rem; }
 [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
 [data-testid="stExpander"] details { border-color: var(--border); border-radius: 10px; background: #fff; }

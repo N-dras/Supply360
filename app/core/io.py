@@ -66,6 +66,46 @@ def reconnaitre_fichier(nom: str) -> str | None:
     return None
 
 
+# Signatures de contenu : mots-clés de la ligne d'en-tête (mêmes règles que les lecteurs ci-dessous).
+SIGNATURES_SOURCES = [
+    ("besoins", ["mpn prime", "qty"]),
+    ("stock", ["pnr", "qte sur etagere"]),
+    ("commandes", ["pn", "code acheteur", "commande"]),
+    ("pieces", ["qty_per_ac", "registration"]),
+    ("references", ["pn", "equip"]),
+]
+
+
+def detecter_source(data: bytes, nom: str) -> str | None:
+    """Source d'un fichier d'après son CONTENU (en-têtes des 15 premières lignes de chaque feuille).
+
+    Indépendant du nom du fichier, qui peut changer. None si rien ne correspond ou fichier illisible.
+    """
+    if nom.lower().endswith(".csv"):
+        tete = normaliser(data[:4000].decode("utf-8-sig", errors="ignore").split("\n", 1)[0])
+        return "pieces" if "qty_per_ac" in tete and "registration" in tete else None
+    try:
+        xl = ouvrir_excel(data, nom)
+    except FichierIllisible:
+        return None
+    if "Ordered" in xl.sheet_names:  # étude ASREQ/NOREQ (classeur .xlsm, feuille « Ordered »)
+        return "asreq"
+    for feuille in xl.sheet_names[:10]:
+        try:
+            raw = xl.parse(feuille, header=None, nrows=15)
+        except Exception:
+            continue
+        for source, mots in SIGNATURES_SOURCES:
+            if trouver_ligne_entete(raw, mots) is not None:
+                return source
+    return None
+
+
+def identifier_fichier(data: bytes, nom: str) -> str | None:
+    """Source d'un fichier : par son contenu d'abord, à défaut par les mots-clés de son nom."""
+    return detecter_source(data, nom) or reconnaitre_fichier(nom.replace("\\", "/").rsplit("/", 1)[-1])
+
+
 def chantier_depuis_nom(nom: str) -> tuple[str, date] | None:
     """« F-HRBA - 151126 - LOGOPS.xlsx » → ("F-HRBA", date(2026, 11, 15)) ; None si absent ou date invalide."""
     m = CHANTIER_DANS_NOM.search(nom.upper())

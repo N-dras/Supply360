@@ -131,6 +131,16 @@ TEMPLATE = """<!doctype html>
 <script type="module">
 import { mount } from "__CDN__/stlite.js";
 
+// Import d'un dossier : stlite n'envoie que le nom du fichier. On transmet son chemin relatif
+// (« R2/F-HRBA - 151126/extraction.xlsx ») pour que l'app regroupe les fichiers par dossier chantier.
+const ajouterFormData = FormData.prototype.append;
+FormData.prototype.append = function (nom, valeur, fichier) {
+  if (valeur instanceof File && valeur.webkitRelativePath && fichier === undefined) {
+    return ajouterFormData.call(this, nom, valeur, valeur.webkitRelativePath);
+  }
+  return ajouterFormData.apply(this, arguments);
+};
+
 mount(
   {
     entrypoint: "app/main.py",

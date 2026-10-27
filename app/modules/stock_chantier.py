@@ -126,9 +126,9 @@ def _export(b_besoin: bytes, etude: str, b_stock: bytes, b_cmd: bytes, gestions:
 # --------------------------------------------------------------------------
 # Rendu
 # --------------------------------------------------------------------------
-NOMMAGE = ("Dossier du chantier « <IMMAT> - <JJMMAA> » : le nom du fichier LOGOPS reprend ce préfixe "
-           "(ex. « F-HRBA - 151126 - LOGOPS.xlsx ») pour remplir la date de début et l'immatriculation. "
-           "Mots-clés reconnus : logops / asreq (besoins), stock, commande ou sap.")
+NOMMAGE = ("Choisissez dans R2 le dossier « <IMMAT> - <JJMMAA> » du chantier (ou R2 entier, puis le chantier dans la liste). "
+           "Les fichiers sont reconnus par leur contenu, quel que soit leur nom ; l'immatriculation et la date de début "
+           "viennent du nom du dossier.")
 
 
 def _infos_chantier(nom: str) -> None:
@@ -138,17 +138,18 @@ def _infos_chantier(nom: str) -> None:
         st.session_state[K + "immat"], st.session_state[K + "date"] = info
 
 
-def _import_dossier(source: str, nom: str) -> None:
-    """Callback de l'import groupé : type d'étude et infos chantier déduits des noms de fichiers."""
-    if source in ("besoins", "asreq"):
-        st.session_state[K + "etude"] = ETUDE_CLASSIQUE if source == "besoins" else ETUDE_ASREQ
-        _infos_chantier(nom)
+def _choix_chantier(dossier: str, par_source: dict) -> None:
+    """Callback de l'import de dossier : immatriculation et date (nom du dossier), type d'étude (fichiers trouvés)."""
+    if "besoins" in par_source or "asreq" in par_source:
+        st.session_state[K + "etude"] = ETUDE_CLASSIQUE if "besoins" in par_source else ETUDE_ASREQ
+    _infos_chantier(dossier or next(iter(par_source.get("besoins") or par_source.get("asreq") or [""])))
 
 
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
-        ui.import_groupe(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock",
-                                         "commandes": "commun__commandes"}, on_import=_import_dossier, aide=NOMMAGE)
+        ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock",
+                                          "commandes": "commun__commandes"}, dossier=True, on_choix=_choix_chantier,
+                          label="📂 Choisir le dossier du chantier dans R2", aide=NOMMAGE)
         p1, p2, p3 = st.columns([1.1, 1, 2.2])
         etude = p1.radio("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], horizontal=True, key=K + "etude", persist_state="page")
         date_chantier = p2.date_input("Début du chantier", value=date.today(), format="DD/MM/YYYY", key=K + "date",

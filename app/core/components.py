@@ -10,6 +10,7 @@ from html import escape
 
 import streamlit as st
 
+from core import dossiers
 from core import io as sio
 
 TONES = {
@@ -167,40 +168,87 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
     return garde[:2] if garde else None
 
 
-def import_groupe(cle: str, cibles: dict[str, str], on_import=None, aide: str = "") -> None:
-    """Import de plusieurs fichiers d'un coup (tout un dossier) : chaque fichier est rangé d'après son nom.
+LIBELLES_SOURCES = {"besoins": sio.FICHIER_BESOINS, "asreq": sio.FICHIER_ASREQ, "stock": sio.FICHIER_STOCK,
+                    "commandes": sio.FICHIER_COMMANDES, "references": sio.FICHIER_REFERENCES, "pieces": "Pièces par avion"}
 
-    `cibles` = {source: clé du `fichier` correspondant} (sources : voir io.reconnaitre_fichier) ;
-    `on_import(source, nom)` est appelé pour chaque fichier rangé. Le fichier apparaît ensuite dans
-    son emplacement (« ✓ nom ») ; les fichiers non reconnus sont signalés.
+
+@st.cache_resource(show_spinner=False, max_entries=256)
+def _source_fichier(data: bytes, nom: str):
+    """Source d'un fichier (contenu, puis nom), mise en cache : chaque fichier n'est analysé qu'une fois."""
+    return sio.identifier_fichier(data, nom)
+
+
+def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "") -> None:
+    """Import de tout un dossier : chaque fichier est reconnu par son contenu (à défaut son nom) et rangé
+    dans l'emplacement `fichier` correspondant (`cibles` = {source: clé du fichier}).
+
+    `dossier=True` : sélection d'un dossier entier (R2 ou un dossier « <IMMAT> - <JJMMAA> ») ; les fichiers
+    sont regroupés par dossier chantier et, s'il y en a plusieurs, on choisit le chantier à analyser.
+    Si une source a plusieurs fichiers, le plus récent (date dans le nom) est retenu et peut être changé.
+    `on_choix(dossier_chantier, {source: [chemins]})` est appelé après chaque répartition.
     """
-    cle_up, bilan = f"{cle}__upload", f"{cle}__bilan"
+    cle_up, cle_idx, cle_ch, cle_bilan = f"{cle}__upload", f"{cle}__index", f"{cle}__chantier", f"{cle}__bilan"
 
-    def _repartir():
-        ignores = []
-        for f in st.session_state.get(cle_up) or []:
-            if not _fichier_valide(f):
-                continue
-            source = sio.reconnaitre_fichier(f.name)
+    def _ranger(source, chemin):
+        nom, data, fid = st.session_state[cle_idx][chemin]
+        st.session_state[f"{cibles[source]}__data"] = (dossiers.nom_court(nom), data, fid)
+
+    def _appliquer():
+        index = st.session_state.get(cle_idx, {})
+        groupes = dossiers.regrouper(list(index))
+        ch = st.session_state.get(cle_ch, dossiers.HORS_CHANTIER)
+        chemins = groupes.get(ch, []) + (groupes.get(dossiers.HORS_CHANTIER, []) if ch != dossiers.HORS_CHANTIER else [])
+        par_source, inconnus = dossiers.repartir({c: _source_fichier(index[c][1], c) for c in chemins})
+        for source, liste in par_source.items():
             if source in cibles:
-                st.session_state[f"{cibles[source]}__data"] = (f.name, f.getvalue(), f.file_id)
-                if on_import:
-                    on_import(source, f.name)
-            else:
-                ignores.append(f.name)
-        st.session_state[bilan] = ignores
+                _ranger(source, liste[0])
+                st.session_state[f"{cle}__alt__{source}"] = liste[0]
+        st.session_state[cle_bilan] = (par_source, inconnus)
+        if on_choix:
+            on_choix(ch, par_source)
 
-    st.file_uploader("📂 Importer tout le dossier : sélectionnez tous ses fichiers (Ctrl+A), ils sont rangés d'après leur nom",
-                     type=["xlsx", "xlsm", "csv"], accept_multiple_files=True, key=cle_up, on_change=_repartir, help=aide or None)
-    ignores = st.session_state.get(bilan, [])
-    if ignores:
-        callout("<b>Fichier(s) non reconnu(s)</b> : " + ", ".join(escape(n) for n in ignores)
-                + ". Le nom doit contenir l'un des mots : " + ", ".join(escape(m) for m in aide_mots(cibles)) + ".", "warn", "⚠️")
+    def _charger():
+        fs = st.session_state.get(cle_up) or []
+        st.session_state[cle_idx] = {f.name: (f.name, f.getvalue(), f.file_id) for f in fs if _fichier_valide(f)}
+        chantiers = dossiers.chantiers_tries(dossiers.regrouper(list(st.session_state[cle_idx])))
+        if st.session_state.get(cle_ch) not in chantiers:
+            st.session_state[cle_ch] = chantiers[0] if chantiers else dossiers.HORS_CHANTIER
+        _appliquer()
 
-
-def aide_mots(cibles) -> list[str]:
-    """Mots-clés attendus dans les noms de fichiers, pour les sources d'un onglet."""
-    return [m for source, mots in sio.MOTS_CLES_SOURCES if source in cibles for m in mots]
+    st.file_uploader(label or "📂 Importer les fichiers du dossier (Ctrl+A pour tout sélectionner)", type=["xlsx", "xlsm", "csv"],
+                     accept_multiple_files="directory" if dossier else True, key=cle_up, on_change=_charger, help=aide or None)
+    index = st.session_state.get(cle_idx, {})
+    if not index:
+        return
+    taille = sum(len(v[1]) for v in index.values()) / 1e6
+    if taille > 250:
+        callout(f"{taille:.0f} Mo importés : pour aller plus vite, choisissez directement le dossier du chantier.", "warn", "🐢")
+    chantiers = dossiers.chantiers_tries(dossiers.regrouper(list(index)))
+    par_source, inconnus = st.session_state.get(cle_bilan, ({}, []))
+    doubles = {s: l for s, l in par_source.items() if s in cibles and len(l) > 1}
+    choix_chantier = dossier and len(chantiers) > 1
+    if choix_chantier or doubles:
+        cols = iter(st.columns(int(choix_chantier) + len(doubles)))
+        if choix_chantier:
+            def _libelle(g):
+                immat, debut = sio.chantier_depuis_nom(g)
+                return f"{immat} · début {debut:%d/%m/%Y}"
+            next(cols).selectbox(f"Chantier à analyser ({len(chantiers)} dossiers)", chantiers, key=cle_ch, format_func=_libelle,
+                                 on_change=_appliquer, persist_state="page")
+        for source, liste in doubles.items():
+            next(cols).selectbox(f"{LIBELLES_SOURCES[source]} : {len(liste)} fichiers, le plus récent est retenu", liste,
+                                 key=f"{cle}__alt__{source}", format_func=dossiers.nom_court, persist_state="page",
+                                 on_change=lambda s=source: _ranger(s, st.session_state[f"{cle}__alt__{s}"]))
+    manquants = [LIBELLES_SOURCES[s] for s in cibles if s not in par_source and s != "asreq"
+                 and not (s == "besoins" and "asreq" in par_source)]
+    notes = []
+    if manquants:
+        notes.append("Absent(s) du dossier : <b>" + ", ".join(escape(m) for m in manquants) + "</b> (import séparé ci-dessous)")
+    hors = [dossiers.nom_court(c) for c in inconnus] + [dossiers.nom_court(l[0]) for s, l in par_source.items() if s not in cibles]
+    if hors:
+        notes.append("Ignoré(s) : " + ", ".join(escape(n) for n in hors))
+    if notes:
+        st.html('<div class="s360-note">' + " · ".join(notes) + "</div>")
 
 
 def telecharger(data: bytes, nom: str, cle: str, label: str = "⬇️ Télécharger (Excel)") -> None:

@@ -47,6 +47,7 @@ supply360/
 ├── requirements.txt          # dépendances runtime (minimales, voir §4)
 ├── requirements-dev.txt      # streamlit, pytest… pour le dev local
 ├── build.py                  # assemble app/ → dist/supply360.html
+├── .github/workflows/pages.yml  # publication GitHub Pages (build.py → index.html) à chaque push sur main
 ├── .streamlit/
 │   └── config.toml           # thème Streamlit (couleurs de la charte)
 ├── assets/
@@ -65,6 +66,7 @@ supply360/
 │   │   ├── xlsx.py           # écriture .xlsx mise en forme, bibliothèque standard
 │   │   ├── cache.py          # lectures communes mises en cache, partagées entre onglets
 │   │   ├── transforms.py     # fonctions de croisement réutilisables (stock × besoins × commandes)
+│   │   ├── dossiers.py       # import de dossier : regroupement par chantier, choix du fichier le plus récent
 │   │   ├── textile.py        # calculs de l'onglet Textile cabine
 │   │   └── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
 │   └── modules/
@@ -98,7 +100,7 @@ def render() -> None:
 - Le registre `app/modules/__init__.py` contient la liste ordonnée `MODULES = [stock_chantier, textiles, ...]`. **Ajouter un onglet = créer le fichier + l'ajouter au registre.** Rien d'autre ne doit changer.
 - **Seul le module actif s'exécute.** La navigation passe par `st.session_state["active_tab"]` et un sélecteur horizontal stylé, pas par `st.tabs`, qui exécuterait tous les onglets à chaque interaction. Vérifier que le composant choisi existe dans la version de Streamlit embarquée par stlite.
 - Toutes les clés de `st.session_state` et de widgets d'un module sont **préfixées par son `TAB_ID`** (`textiles__stock_file`…) pour éviter les collisions. Exception : l'import partagé entre onglets `commun__commandes` — le fichier « Commandes (SAP) » est le même pour tous. L'« État du stock » est propre à chaque onglet (il change d'un chantier à l'autre).
-- **Import groupé** : chaque onglet propose `components.import_groupe(...)` en tête du bloc d'import. On sélectionne tous les fichiers d'un dossier SharePoint ; chacun est rangé d'après son nom (`io.reconnaitre_fichier` : logops, asreq, stock, commande/sap, reference, piece). Stock par chantier : « <IMMAT> - <JJMMAA> » dans le nom du fichier LOGOPS remplit l'immatriculation et la date de début (`io.chantier_depuis_nom`). Le navigateur ne transmet que le nom du fichier, jamais son dossier.
+- **Import d'un dossier** : `components.import_dossier(...)` en tête du bloc d'import. Chaque fichier est reconnu par son **contenu** (`io.detecter_source` : en-têtes), à défaut par son nom (`io.reconnaitre_fichier`) ; plusieurs fichiers d'une même source → le plus récent (`dossiers.meilleur`, date dans le nom), modifiable. Stock par chantier : sélection d'un dossier (`accept_multiple_files="directory"`), fichiers regroupés par dossier « <IMMAT> - <JJMMAA> » (`core/dossiers.py`), qui donne immatriculation et date de début. stlite n'envoie que le nom des fichiers : build.py redéfinit `FormData.append` pour transmettre le chemin relatif (`webkitRelativePath`).
 - **Garder l'état quand on change d'onglet** : Streamlit efface un widget non affiché. Tous les widgets d'un module prennent `persist_state="page"` ; les imports passent par `components.fichier(...)`, qui garde le fichier en mémoire.
 - **Filtres** : un bloc filtrable (recherche, multisélection + tableau) est une fonction décorée `@st.fragment` — filtrer ne relance que ce bloc.
 - **Sous-onglets** d'un module : `components.sous_onglets(...)` (seule la section active est calculée).

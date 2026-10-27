@@ -17,37 +17,37 @@ fichier HTML** : `dist/supply360.html`.
 
 Pendant un calcul, la barre sous le header s'anime et la pastille « Calcul en cours… » s'affiche.
 
-## Organisation des dossiers et import groupé
+## Organisation des dossiers et import
 
-En tête de chaque onglet, « 📂 Importer tout le dossier » : sélectionnez tous les fichiers du dossier
-(Ctrl+A) ; chacun est rangé d'après son nom. Un fichier non reconnu est signalé.
+Version en ligne : **https://n-dras.github.io/Supply360/** (republiée automatiquement à chaque mise à
+jour). Les fichiers importés restent dans le navigateur : rien n'est envoyé, ni à GitHub ni ailleurs.
 
 ```
-Supply360 (SharePoint)
+SharePoint
 ├── 00_Commun/
-│   └── Commandes_SAP_AAAAMMJJ.xlsx
+│   └── Commandes (SAP)
 ├── Textile/
-│   ├── Etat_stock_AAAAMMJJ.xlsx
-│   ├── References_textile.xlsx
-│   └── Pieces_par_avion.csv
-└── Stock par chantier/
-    └── F-HRBA - 151126/                      <IMMAT> - <JJMMAA>
-        ├── F-HRBA - 151126 - LOGOPS.xlsx     (ou … - ASREQ.xlsm)
-        └── Etat_stock_AAAAMMJJ.xlsx
+│   └── État du stock, Références textile, Pièces par avion
+└── R2/                                   un dossier par chantier : <IMMAT> - <JJMMAA>
+    ├── F-HRBA - 151126/
+    │   └── Besoins LOGOPS (ou étude ASREQ), État du stock
+    └── F-GZCA - 030227/
 ```
 
-| Mot dans le nom du fichier | Source |
-|---|---|
-| `logops` / `asreq`, `noreq` | Besoins chantier / étude ASREQ-NOREQ |
-| `stock` | État du stock |
-| `commande` ou `sap` | Commandes (SAP) |
-| `reference` | Références textile |
-| `piece` | Pièces par avion |
+- **Stock par chantier** : « 📂 Choisir le dossier du chantier dans R2 ». Choisissez le dossier du chantier,
+  ou R2 entier puis le chantier dans la liste (triée par date de début). L'immatriculation et la date de
+  début viennent du nom du dossier ; le type d'étude (Classique / ASREQ) des fichiers trouvés.
+- **Textile** : « 📂 Importer les fichiers du dossier Textile », sélectionnez tous les fichiers (Ctrl+A).
+- **Commandes (SAP)** : commun à tous les onglets, importé une fois (dossier 00_Commun).
 
-Stock par chantier : si le nom du fichier LOGOPS commence par « <IMMAT> - <JJMMAA> », l'immatriculation
-et la date de début du chantier sont remplies automatiquement (le navigateur ne transmet que le nom du
-fichier, pas celui du dossier). Astuce : synchronisez le dossier SharePoint avec OneDrive pour le
-retrouver directement dans l'Explorateur au moment de l'import.
+Les fichiers sont reconnus par leur **contenu** (en-têtes de colonnes), quel que soit leur nom ; à défaut
+par un mot du nom (`logops`, `asreq`, `stock`, `commande`/`sap`, `reference`, `piece`). Si un dossier
+contient plusieurs fichiers du même type, le plus récent (date dans le nom, ex. `20261020`) est retenu et
+peut être changé dans la liste. Les fichiers non reconnus sont ignorés et signalés.
+
+Astuce : synchronisez les dossiers SharePoint avec OneDrive (« Ajouter un raccourci à Mon OneDrive ») pour
+les retrouver directement dans la fenêtre de sélection. Choisir R2 entier charge tous ses fichiers : si
+R2 devient volumineux, choisissez directement le dossier du chantier.
 
 ## Onglets
 

@@ -204,7 +204,7 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
 
     o = o[o["PNR"].isin(set(pbi["PNR"]))]  # commandes des PN présents au stock (cohérent avec la table stock)
     stock_pn = pbi.drop_duplicates("PNR").set_index("PNR")["QTE SUR ÉTAGÈRE"]
-    o["QTE SUR ÉTAGÈRE"] = o["PNR"].map(stock_pn)  # stock du PN, affiché à côté de chaque ligne de commande
+    o = o.assign(**{"QTE SUR ÉTAGÈRE": o["PNR"].map(stock_pn)})  # stock du PN, à côté de chaque ligne de commande
     o = o.merge(ref[["PNR", "REF_Equipement", "REF_Description"]], on="PNR", how="left")
     o = ajouter_metriques_commandes(o, today)
     if seulement_textile and len(catalogue):

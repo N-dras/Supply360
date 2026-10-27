@@ -265,8 +265,8 @@ def test_nom_export():
 # --------------------------------------------------------------------------
 def test_reconnaitre_fichier():
     attendu = {
-        "F-HRBA - 151126 - LOGOPS.xlsx": "besoins",
-        "F-GZCA - 030227 - ASREQ.xlsm": "asreq",
+        "F-XKAA - 151126 - LOGOPS.xlsx": "besoins",
+        "F-XKBB - 030227 - ASREQ.xlsm": "asreq",
         "Etat_stock_20261020.xlsx": "stock",
         "État du Stock.xlsx": "stock",
         "Commandes_SAP_20261020.xlsx": "commandes",
@@ -278,9 +278,9 @@ def test_reconnaitre_fichier():
 
 
 def test_chantier_depuis_nom():
-    assert sio.chantier_depuis_nom("F-HRBA - 151126 - LOGOPS.xlsx") == ("F-HRBA", date(2026, 11, 15))
-    assert sio.chantier_depuis_nom("f-gzca-030227 asreq.xlsm") == ("F-GZCA", date(2027, 2, 3))
-    assert sio.chantier_depuis_nom("F-HRBA - 321326 - LOGOPS.xlsx") is None      # date invalide
+    assert sio.chantier_depuis_nom("F-XKAA - 151126 - LOGOPS.xlsx") == ("F-XKAA", date(2026, 11, 15))
+    assert sio.chantier_depuis_nom("f-xkbb-030227 asreq.xlsm") == ("F-XKBB", date(2027, 2, 3))
+    assert sio.chantier_depuis_nom("F-XKAA - 321326 - LOGOPS.xlsx") is None      # date invalide
     assert sio.chantier_depuis_nom("Etat_stock_20261020.xlsx") is None
 
 
@@ -291,16 +291,16 @@ def test_detecter_source_par_contenu():
         data = (FIX / fichier).read_bytes()
         assert sio.detecter_source(data, "export (3)." + fichier.rsplit(".", 1)[1]) == source
     assert sio.detecter_source(b"pas un classeur", "x.xlsx") is None
-    assert sio.identifier_fichier(b"pas un classeur", "R2/F-HRBA - 151126/Etat_stock.xlsx") == "stock"   # repli sur le nom
+    assert sio.identifier_fichier(b"pas un classeur", "R2/F-XKAA - 151126/Etat_stock.xlsx") == "stock"   # repli sur le nom
 
 
 def test_dossiers_regroupement_et_choix():
     from core import dossiers as d
-    chemins = ["R2/F-HRBA - 151126/a.xlsx", "R2/F-GZCA - 030227/b.xlsx", "R2/lisez-moi.xlsx", "R2/F-AAAA - 010126/c.xlsx"]
+    chemins = ["R2/F-XKAA - 151126/a.xlsx", "R2/F-XKBB - 030227/b.xlsx", "R2/lisez-moi.xlsx", "R2/F-AAAA - 010126/c.xlsx"]
     g = d.regrouper(chemins)
-    assert d.chantiers_tries(g) == ["F-AAAA - 010126", "F-HRBA - 151126", "F-GZCA - 030227"]
+    assert d.chantiers_tries(g) == ["F-AAAA - 010126", "F-XKAA - 151126", "F-XKBB - 030227"]
     assert g[d.HORS_CHANTIER] == ["R2/lisez-moi.xlsx"]
-    assert d.date_dans_nom("R2/F-HRBA - 151126/stock 20261020.xlsx") == date(2026, 10, 20)
+    assert d.date_dans_nom("R2/F-XKAA - 151126/stock 20261020.xlsx") == date(2026, 10, 20)
     assert d.date_dans_nom("stock 15.10.26.xlsx") == date(2026, 10, 15)
     par_source, inconnus = d.repartir({"x/stock 20250101.xlsx": "stock", "x/stock 20261020.xlsx": "stock", "x/photo.xlsx": None})
     assert par_source["stock"][0] == "x/stock 20261020.xlsx" and inconnus == ["x/photo.xlsx"]

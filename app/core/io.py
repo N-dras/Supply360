@@ -47,6 +47,7 @@ FICHIER_REFERENCES = "Références textile"
 # --------------------------------------------------------------------------
 # Mots-clés cherchés dans le nom du fichier (sans accents ni majuscules), par ordre de priorité.
 MOTS_CLES_SOURCES = [
+    ("pe", ("pe_mousse",)),
     ("besoins", ("logops",)),
     ("asreq", ("asreq", "noreq")),
     ("pieces", ("piece",)),
@@ -90,6 +91,8 @@ def detecter_source(data: bytes, nom: str) -> str | None:
         return None
     if "Ordered" in xl.sheet_names:  # étude ASREQ/NOREQ (classeur .xlsm, feuille « Ordered »)
         return "asreq"
+    if any("bottom_foam" in normaliser(f) or "backrest_foam" in normaliser(f) for f in xl.sheet_names):
+        return "pe"  # fichier PE mousses (feuilles BOTTOM FOAM / BACKREST FOAM)
     for feuille in xl.sheet_names[:10]:
         try:
             raw = xl.parse(feuille, header=None, nrows=15)
@@ -107,7 +110,7 @@ def identifier_fichier(data: bytes, nom: str) -> str | None:
 
 
 def chantier_depuis_nom(nom: str) -> tuple[str, date] | None:
-    """« F-HRBA - 151126 - LOGOPS.xlsx » → ("F-HRBA", date(2026, 11, 15)) ; None si absent ou date invalide."""
+    """« F-XKAA - 151126 - LOGOPS.xlsx » → ("F-XKAA", date(2026, 11, 15)) ; None si absent ou date invalide."""
     m = CHANTIER_DANS_NOM.search(nom.upper())
     if not m:
         return None

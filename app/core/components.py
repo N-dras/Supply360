@@ -179,7 +179,8 @@ def vider_emplacement(cle: str, garder_donnees: bool = False) -> None:
 
 
 LIBELLES_SOURCES = {"besoins": sio.FICHIER_BESOINS, "asreq": sio.FICHIER_ASREQ, "stock": sio.FICHIER_STOCK,
-                    "commandes": sio.FICHIER_COMMANDES, "references": sio.FICHIER_REFERENCES, "pieces": "Pièces par avion"}
+                    "commandes": sio.FICHIER_COMMANDES, "references": sio.FICHIER_REFERENCES, "pieces": "Pièces par avion",
+                    "pe": "PE mousses"}
 
 
 @st.cache_resource(show_spinner=False, max_entries=256)

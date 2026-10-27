@@ -119,7 +119,7 @@ def js(obj) -> str:
 def modules_embarques(fichiers: dict[str, str]) -> list[str]:
     noms = []
     for chemin, code in fichiers.items():
-        if chemin.startswith("app/modules/") and not chemin.endswith("__init__.py"):
+        if chemin.startswith("app/modules/") and not chemin.endswith("__init__.py") and not Path(chemin).name.startswith("_"):
             label = re.search(r'^TAB_LABEL\s*=\s*"([^"]+)"', code, re.M)
             noms.append(f"{Path(chemin).stem} ({label.group(1) if label else '?'})")
     return noms
@@ -291,7 +291,7 @@ window.fetch = function (ressource, options) {
 // est retenu dans le navigateur (IndexedDB). Ensuite « Ouvrir R2 » + « Autoriser » liste les chantiers ; les
 // fichiers du chantier choisi sont déposés dans la zone d'import de l'app, comme un « Parcourir ». Rien ne
 // sort du poste : les fichiers sont lus localement, dans le dossier OneDrive synchronisé.
-window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif (« R2/F-HRBA - 151126/x.xlsx »)
+window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif (« R2/F-XKAA - 151126/x.xlsx »)
 (function () {
   const EXT = /\\.(xlsx|xlsm|csv)$/i;
   const CHANTIER = /([A-Z]{1,2}-?[A-Z0-9]{3,5})\\s*-\\s*(\\d{2})(\\d{2})(\\d{2})(?!\\d)/i;
@@ -414,7 +414,7 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
 </script>
 <script type="module">
 // Import d'un dossier : stlite n'envoie que le nom du fichier. On transmet son chemin relatif
-// (« R2/F-HRBA - 151126/extraction.xlsx ») pour que l'app regroupe les fichiers par dossier chantier.
+// (« R2/F-XKAA - 151126/extraction.xlsx ») pour que l'app regroupe les fichiers par dossier chantier.
 const ajouterFormData = FormData.prototype.append;
 FormData.prototype.append = function (nom, valeur, fichier) {
   if (valeur instanceof File && fichier === undefined) {

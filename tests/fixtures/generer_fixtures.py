@@ -95,10 +95,20 @@ def asreq():
 
 
 # PN → [12M, 18M, 24M, 2021…2025, PU, B/O, dernière conso]
+# Mousses de sièges (Planning PE) : stock, fournisseur et prix fictifs
+MOUSSES_STOCK = [  # PN, désignation, stock, code fournisseur, fournisseur
+    ("FM-1001", "FOAM BOTTOM J", 40, "F030", "Fournisseur Sierra"), ("FM-1002", "FOAM BACKREST J", 10, "F030", "Fournisseur Sierra"),
+    ("FM-1003", "FOAM BOTT W", 0, "F031", "Fournisseur Tango"), ("FM-1004", "FOAM BOTTOM Y", 300, "F031", "Fournisseur Tango"),
+    ("FM-2001", "FOAM BOTTOM SEAT J", 5, "F030", "Fournisseur Sierra"), ("FM-2002", "FOAM BACKREST J", 0, "F032", "Fournisseur Uniform"),
+    ("FM-2003", "FOAM BOTT W", 20, "F031", "Fournisseur Tango"),
+]
 CONSO = {
     "FX-2001": [0, 0, 0, 2, 1, 0, 0, 0, 120.0, 0, datetime(2019, 5, 1)],   # dormant : stock, aucune conso sur 3 ans
     "FX-2002": [0, 0, 0, 0, 0, 0, 0, 0, 80.0, 0, datetime(2001, 1, 1)],    # inactif : ni stock, ni conso, ni commande
     "FX-1003": [30, 40, 50, 20, 25, 30, 35, 45, 60.0, 2, datetime(2026, 10, 1)],
+    **{pn: [10, 15, 20, 10, 10, 10, 10, 10, prix, 0, datetime(2026, 8, 1)]
+       for pn, prix in [("FM-1001", 180.0), ("FM-1002", 150.0), ("FM-1003", 90.0), ("FM-1004", 45.0),
+                        ("FM-2001", 175.0), ("FM-2002", 140.0), ("FM-2003", 85.0)]},
 }
 
 # Références textile (feuille « PN Catalog ») : PN → catégorie
@@ -170,6 +180,7 @@ def stock():
             ["FX-2001", "Housse dormante", 6, 0, 245, "AG05", "F020", "Fournisseur Papa", 30, 1],
             ["FX-2002", "Rideau inactif", 0, 0, 245, "AG05", "F021", "Fournisseur Quebec", 31, 1],
         ]
+    lignes += [[pn, desc, stock, 0, 245, "AG06", code, four, 60, 1] for pn, desc, stock, code, four in MOUSSES_STOCK]
     for ligne in lignes:  # consommation et valorisation (fictives), pour l'onglet Textile
         ligne += CONSO.get(ligne[0], [4, 6, 9, 10, 8, 7, 6, 5, 25.0, 0, datetime(2026, 9, 1)])
         ligne.append("TL1" if str(ligne[0]).endswith(("1", "3", "5")) else "TL0")  # tracking level (fictif)
@@ -200,6 +211,7 @@ def commandes():
             ["FX-1014", "CMD-0014", "AC14", 245, "F015", "Fournisseur Mike", d(2026, 11, 1), d(2026, 11, 20), "En cours", 2, 1, 23],
             ["FX-1015", "CMD-0151", "AC15", 245, "F016", "Fournisseur November", d(2026, 12, 1), d(2026, 12, 20), "En cours", 1, 1, 24],
             ["FX-1015", "CMD-0152", "AC15", 245, "F016", "Fournisseur November", d(2026, 11, 1), d(2026, 11, 25), "En cours", 1, 1, 24],
+            ["FM-1004", "CMD-0040", "AC20", 245, "F031", "Fournisseur Tango", d(2026, 12, 1), d(2027, 1, 15), "En cours", 150, 1, 60],
             # Sans nom de fournisseur : retrouvé grâce au code F003 (Fournisseur Charlie)
             ["FX-1003", "CMD-0031", "AC03", 246, "F003", None, d(2026, 6, 1), d(2049, 1, 1), "En cours", 1, 1, 13],
         ],
@@ -212,6 +224,68 @@ def commandes():
     wb.save(ICI / "commandes_sap.xlsx")
 
 
+# --------------------------------------------------------------------------
+# Planning PE des mousses : fichier « PE mousses » (même structure que l'extraction mensuelle) et
+# textile_all_parts avec les mousses. Flottes, immatriculations et âges inventés.
+# --------------------------------------------------------------------------
+FLOTTES_PE = {  # flotte → version cabine → {immat: (âges assise J, W, Y), âge dossier J, visite liée}
+    "A350": {"A350-900 34J": {
+        "F-XM01": ((10, 10, 10), 10, "EO : S40 - TEST - BOD - 02-OCT-2025 [TRFX0001]"),
+        "F-XM02": ((34, 34, 34), 70, None),                                            # échéance assise dans 2 mois
+        "F-XM03": ((40, 40, 40), 20, "MRI : S10 - TEST - ORY - 12APR2025 [TRFX0002]"),   # en retard
+        "F-XM04": (("> 60", "> 60", "> 60"), "> 108", None),                           # âge seulement minimum
+        "F-XM05": ((20, 20, 20), 50, "EO : S03 - TEST - BOD - 15-JAN-2027 [TRFX0003]"),  # prochaine visite
+        "F-XM06": ((37, 37, 37), 37, None),                                            # délai toléré
+    }},
+    "B777": {"777-300ER 14J": {
+        "F-XN01": ((5, 5, 5), 5, None),
+        "F-XN02": ((30, 30, 30), 66, "EO : S20 - TEST - CDG - 16AOUT2027 [TRFX0004]"),
+        "F-XN03": ((45, 45, 45), 80, None),
+        "F-XN04": (("> 60", "> 60", "> 60"), "> 108", None),
+    }},
+}
+MOUSSES_PIECES = {  # flotte → [(classe, PN, description, qté par avion)]
+    "A350": [("J", "FM-1001", "FOAM BOTTOM J", 34), ("J", "FM-1002", "FOAM BACKREST J", 34), ("W", "FM-1003", "FOAM BOTT W", 24),
+             ("Y", "FM-1004", "FOAM BOTTOM Y", 266), ("Y", "FM-1005", "FOAM BACK Y", 266), ("J", "FM-1006", "FOAM HEADREST J", 34)],
+    "B777": [("J", "FM-2001", "FOAM BOTTOM SEAT J", 14), ("J", "FM-2002", "FOAM BACKREST J", 14), ("W", "FM-2003", "FOAM BOTT W", 28),
+             ("Y", "FM-1004", "FOAM BOTTOM Y", 300)],
+}
+
+
+def pe_mousse():
+    wb = Workbook()
+    wb.remove(wb.active)
+    _feuille(wb, "GLOBAL", ["", "FLEET", "FLEET TYPE", "SEAT CLASS", "BOTTOM FOAM", "BACKREST FOAM"], [["", "A350", "ALL", "", 0.5, 0.8]])
+    sous = ["AGE (month)", "PAST / NEXT EXECUTION", "COMPLETION OF THE MAINTENANCE ITEM OR AC NOT DUE", "STOCK FEASIBILITY"]
+    for titre, classes in [("PE BOTTOM FOAM DETAILS (2909)", ["J", "W", "Y"]), ("PE BACKREST FOAM DETAILS (2909)", ["J"])]:
+        ws = wb.create_sheet(titre)
+        ws.append(["FLEET", "AIRCRAFT", "FOAM INFORMATION BY CABIN CLASS"])
+        ws.append(["", ""] + [v for c in classes for v in (c, None, None, None)])
+        ws.append(["", ""] + sous * len(classes))
+        for flotte, versions in FLOTTES_PE.items():
+            ws.append([flotte])
+            for version, avions in versions.items():
+                for k, (immat, (assises, dossier, visite)) in enumerate(avions.items()):
+                    ages = assises if len(classes) == 3 else (dossier,)
+                    ws.append([version if k == 0 else None, immat] + [v for a in ages for v in (a, visite, 0.5 if k == 0 else None, 1 if k == 0 else None)])
+                ws.append([])
+    _feuille(wb, "DATA", ["", "BOTTOM FOAM"], [["", "J SEAT CLASS", 0.4, 0.6]])
+    wb.save(ICI / "pe_mousse_29092026.xlsx")
+
+
+def textile_all_parts():
+    """Pièces par avion avec les mousses des avions du fichier PE (en plus des pièces fictives de pieces_par_avion)."""
+    pd = __import__("pandas")
+    lignes = [[eq, typ, grp, reg, area, 25, pn, desc, q] for (typ, grp), regs in GROUPES.items() for reg in regs
+              for eq, area, pn, desc, q in PIECES]
+    for flotte, versions in FLOTTES_PE.items():
+        for version, avions in versions.items():
+            for immat in avions:
+                lignes += [["MOUSSE", flotte, version, immat, cl, 25, pn, desc, q] for cl, pn, desc, q in MOUSSES_PIECES[flotte]]
+    pd.DataFrame(lignes, columns=["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description",
+                                  "qty_per_ac"]).to_csv(ICI / "textile_all_parts.csv", index=False)
+
+
 if __name__ == "__main__":
     besoins()
     asreq()
@@ -220,4 +294,6 @@ if __name__ == "__main__":
     references()
     pieces()
     planning()
+    pe_mousse()
+    textile_all_parts()
     print("Fixtures générées dans", ICI)

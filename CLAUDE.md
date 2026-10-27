@@ -68,17 +68,22 @@ supply360/
 │   │   ├── transforms.py     # fonctions de croisement réutilisables (stock × besoins × commandes)
 │   │   ├── dossiers.py       # import de dossier : regroupement par chantier, choix du fichier le plus récent
 │   │   ├── textile.py        # calculs de l'onglet Textile cabine
-│   │   └── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
+│   │   ├── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
+│   │   └── pe.py             # Planning PE des mousses : fichier PE_MOUSSE, échéances, stock de sécurité, forecast 12/24/36 mois
 │   └── modules/
 │       ├── __init__.py       # REGISTRE des onglets (ordre d'affichage)
 │       ├── stock_chantier.py
 │       ├── textiles.py
+│       ├── _planning_pe.py   # rendu du sous-onglet « Planning PE » du Textile (« _ » : pas un onglet du registre)
 │       ├── fournisseurs.py   # en cours de développement
 │       └── alertes.py        # en cours de développement
 ├── legacy/                   # scripts Streamlit d'origine à intégrer (référence, non buildés)
 ├── tests/
 │   ├── fixtures/             # données FICTIVES générées par script
-│   └── test_transforms.py
+│   ├── test_transforms.py
+│   ├── test_textile.py
+│   ├── test_pe.py
+│   └── test_app.py           # l'app démarre sur chaque onglet
 └── dist/
     └── supply360.html        # livrable (généré)
 ```

@@ -1,7 +1,7 @@
 """Dossiers importés d'un coup (dossier SharePoint synchronisé) : regroupement par chantier, choix des fichiers.
 
 Fonctions pures, testables sans Streamlit. Les fichiers arrivent avec leur chemin relatif
-(« R2/F-HRBA - 151126/extraction.xlsx ») grâce au correctif FormData de build.py ; en développement
+(« R2/F-XKAA - 151126/extraction.xlsx ») grâce au correctif FormData de build.py ; en développement
 local (`streamlit run`), seul le nom est connu et tout est rangé dans un même dossier.
 """
 

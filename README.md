@@ -27,9 +27,10 @@ SharePoint (canal Teams MS-LGT1-Analystes, bibliothèque Documents)
 ├── COMMANDE/          fichier Commandes (SAP) à jour (le plus récent est pris) — c'est lui qui fait foi
 ├── Textile/           « Résultat… » (État du stock), « textile_master_export » (Références textile),
 │                      « textile_all_parts » (Pièces par avion)
+│                      « PE_MOUSSE_JJMMAAAA » (âge des mousses, fichier mensuel tel quel)
 └── R2/                un dossier par chantier : <IMMAT> - <JJMMAA>
-    ├── F-HRBA - 151126/   Besoins LOGOPS (ou étude ASREQ), État du stock
-    └── F-GZCA - 030227/
+    ├── F-XKAA - 151126/   Besoins LOGOPS (ou étude ASREQ), État du stock
+    └── F-XKBB - 030227/
 ```
 
 **Première utilisation (une fois par poste)** : aide « 🔗 Première utilisation » de l'onglet → ouvrir le dossier
@@ -87,7 +88,8 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 | État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `DESCRIPTION`, `QTE CONSO 12M / 18M / 24M`, `QTE CONSO <année>`, `Dernier PU (achat) Euros`, `DATE DERNIERE CONSO`, `B/O`, `RP`, `EOQ`, `TDD` |
 | Commandes (SAP) | `PN`, `Commande` | `Fournisseur`, `Code fournisseur`, `Date d'émission de la commande`, `Date de livraison demandée / promise`, `Quantité restant à livrer` |
 | Références textile — feuille « PN Catalog » | `pn`, `equipment` | `description`, `ccn` |
-| Pièces par avion (prévision) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
+| Pièces par avion (textile_all_parts) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
+| PE mousses (PE_MOUSSE_JJMMAAAA, mensuel) | feuilles « … BOTTOM FOAM … » et « … BACKREST FOAM … » : FLEET, AIRCRAFT, AGE (month) par classe, PAST / NEXT EXECUTION | |
 
 Seul l'État du stock est indispensable ; les autres fichiers complètent l'analyse. La Prévision
 demande en plus le fichier Pièces par avion.
@@ -116,6 +118,31 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
 
 Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « ⚙️ Paramètres de la prévision ».
 Le planning des PE n'est pas pris en compte pour l'instant.
+
+**Planning PE (mousses de sièges)** — sous-onglet « Planning PE », à partir du fichier mensuel PE_MOUSSE déposé tel
+quel dans le dossier Textile (date des âges lue dans son nom) et de textile_all_parts :
+
+- **Avancement** : conformité PE, éléments en retard, dans le délai toléré, à faire sous 3 mois, visites à venir ;
+  avancement par flotte × élément (J assise, J dossier, W assise, Y assise) ; remplacements à faire par mois.
+- **Calendrier** : une ligne par avion, le nombre d'éléments à remplacer par mois (24 mois) ; détail par avion.
+- **Forecast des mousses** (12 / 24 / 36 mois) : mousses à remplacer (dont retard à rattraper), quantité et valeur
+  à commander, livraisons à prévoir par mois, valeur par fournisseur, tableau par PN.
+- **Forecast par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
+- **Filtres** : flotte, classe, élément. **Exports** : planning complet ; **contrôles** des données.
+
+Règles (paramètres dans « ⚙️ Paramètres PE ») :
+- cycles : J / W / Y assise 36 mois, J dossier 72 mois, dossiers W / Y jamais ;
+- échéance = date des âges − âge + cycle (âge « > 60 » : 60 pris comme minimum, échéance au plus tôt) ;
+- statut : En retard (échéance + délai toléré dépassés, 3 mois par défaut), Délai toléré, À faire < 3 mois,
+  À faire < 12 mois, OK ;
+- date prévue : la prochaine visite datée (PAST / NEXT EXECUTION), sinon l'échéance ; un retard est à rattraper
+  le mois en cours ; une visite postérieure à l'échéance est signalée ;
+- mousses : lignes `equipment` = MOUSSE de textile_all_parts, classe = `area`, assise = « FOAM BOTTOM / BOTT… »,
+  dossier = « FOAM BACKREST / BACK… » ;
+- stock de sécurité par PN : pour chaque flotte, 10 % des avions qui l'utilisent (arrondi au-dessus, au moins 1)
+  × quantité par avion ;
+- à commander : chaque mois, ce qui manque pour garder stock + commandes en cours − besoins au niveau du stock de
+  sécurité. Le fichier étant régénéré chaque mois, un remplacement fait remet l'âge à zéro : rien à saisir.
 
 ### Graphiques
 

@@ -14,6 +14,65 @@ from pathlib import Path
 # @stlite/browser 1.9.2 embarque Streamlit 1.62.0 et Pyodide 0.29.3 (cf. requirements-dev.txt).
 STLITE_VERSION = "1.9.2"
 STLITE_CDN = f"https://cdn.jsdelivr.net/npm/@stlite/browser@{STLITE_VERSION}/build"
+# Morceaux de l'interface que stlite ne télécharge qu'à la première utilisation d'un composant (tableau, liste
+# déroulante, téléchargement…). Ils sont préchargés juste après le démarrage : sinon, après une période
+# d'inactivité (connexion proxy expirée), leur téléchargement peut échouer et figer la page jusqu'au rechargement.
+# Liste relevée sur un parcours complet de l'app avec stlite {STLITE_VERSION} : À REFAIRE à chaque montée de version.
+PRECHARGEMENT = [
+    "Checkbox-E_kqAaSQ-XDNDyBvK.js",
+    "Close.esm-53Kdm0pn-BTjbStjM.js",
+    "DataFrame-D3ov19Re-DgV6QYb0.js",
+    "DataFrame-D3ov19Re-DiVf96O7.js",
+    "Delete.esm-eQnZPoP6-BmgQoQ39.js",
+    "DownloadButton-BCKLqfXu-CxjBVa7P.js",
+    "FileDownload.esm-iHteBN-O-B2zuyOVq.js",
+    "InputInstructions-kdC8ngsh-DtoZPH3K.js",
+    "NumberInput-DB8CmU_F-CTAxqc36.js",
+    "Selectbox-CPd6VRVc-CEBySJwc.js",
+    "Slider-DZ2YwD_e-BCLslQhV.js",
+    "TextField-DMz8flDd-BYc8lIbh.js",
+    "TextInput-5lGdvVSD-jkOP18uQ.js",
+    "_baseAssignValue-IQwDL8b1-wSPyEqHN.js",
+    "assets/1b1a876c211e4f13.wasm",
+    "assets/512f7db3dabc21be.woff2",
+    "assets/a804e71d97445f8d.woff2",
+    "colors-BD7LS4qt-BehGd4Ls.js",
+    "createDownloadLinkElement-QSfNRYy1-k2qjp4Ep.js",
+    "cubic-Dir1Ko---Ccey17jF.js",
+    "defaultLocale-2bEbhetO-QGFVckfi.js",
+    "formatMoment-DEtsTHwA-Cy3S6Sp4.js",
+    "formatNumber-xp1Ep0f5-DHq-Xx7V.js",
+    "iconPosition-DY1kTtFE-C8pN-O4s.js",
+    "index-Bh_NXBPX-BZVlUpTI.js",
+    "index-CVld_lKx-DBjTNNj_.js",
+    "index-CsubvKbq-FbSnpms7.js",
+    "index-CtOUUcfI-DNqIEPU5.js",
+    "index-DVjwAKiP-zTZQenW8.js",
+    "index-Df-1Z3LJ-BbKzDPIK.js",
+    "index-DgYQCen1-Bimy2-LT.js",
+    "init-5BClRdiB-LyILMlTE.js",
+    "inputUtils-DCYiajnz-DpM8zsby.js",
+    "linear-CJvvCWKw-rrRTERsA.js",
+    "moment-C29_LcvN-QgIIpCw9.js",
+    "numbro-CDdPhOTG-vF1UvoJy.js",
+    "ordinal-DkyryJlW-DURmPlUH.js",
+    "pandasStylerUtils--IM_7ZsY-CD0uJ7uR.js",
+    "range-C0hfWAYi-cb33LuVx.js",
+    "range-DdOGybNB-Ba7Spj1J.js",
+    "reactJsonViewCompat-BquGJEzn-BKjUVnQo.js",
+    "resolveDefaultExport-Cy5TTESD-CcwO08HL.js",
+    "serialization-BSMBF8e2-CqZaT18J.js",
+    "sprintfjs-lt-CVrXF-__7wvrub.js",
+    "string-BvOnLx8K-BsWpS-s0.js",
+    "styled-components-BNQOantF-DPuk6Rjb.js",
+    "threshold-je-9V4hw-qdwK0deF.js",
+    "time-p2i1Qn9v-RYMFf5JC.js",
+    "useUpdateUiValue-Dpx7InB9-BtZthHVv.js",
+    "value-Fb9HFOxE-BHCNJ526.js",
+    "withCalculatedWidth-qkUd4en1-CpQUhavR.js",
+    "withFullScreenWrapper-D-Ly5q5J-Cy5NDgpz.js",
+    "zoom-C9yGXsgU-cg-4X7cE.js",
+]
 
 ROOT = Path(__file__).resolve().parent
 APP = ROOT / "app"
@@ -113,6 +172,12 @@ TEMPLATE = """<!doctype html>
 /* Étapes de stlite (en anglais) : reprises en français sur l'écran de chargement, jamais affichées en bas de page. */
 .Toastify__toast:not(.Toastify__toast--error) { display: none !important; }
 .Toastify { position: relative; z-index: 1000001; }
+#s360-bloque { display: none; position: fixed; z-index: 1000001; left: 50%; bottom: 1.2rem; transform: translateX(-50%);
+  padding: .7rem 1.1rem; border-radius: 12px; background: #fff; color: var(--text); font-family: var(--font); font-size: .9375rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .25); border-left: 4px solid var(--warn); }
+#s360-bloque.visible { display: block; }
+#s360-bloque button { font: inherit; font-weight: 700; color: #fff; background: var(--navy); border: 0; border-radius: 99px;
+  padding: .3rem .9rem; cursor: pointer; }
 #s360-loading.lent .lent { display: block; }
 #s360-loading button {
   font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
@@ -139,6 +204,16 @@ TEMPLATE = """<!doctype html>
 </div>
 <div id="root"></div>
 <script>
+// Le bouton de téléchargement de Streamlit « vérifie » son adresse interne (https://stlite.invalid/…) par une vraie
+// requête réseau, qui part vers le proxy et échoue. On y répond localement : aucune requête inutile.
+const fetchOrigine = window.fetch;
+window.fetch = function (ressource, options) {
+  const url = typeof ressource === "string" ? ressource : ressource && ressource.url;
+  if (url && url.startsWith("https://stlite.invalid/")) return Promise.resolve(new Response(null, { status: 204 }));
+  return fetchOrigine.apply(this, arguments);
+};
+</script>
+<script>
 // Surveillance du chargement (script classique : elle fonctionne même si stlite ne se télécharge pas).
 (function () {
   const ecran = document.getElementById("s360-loading");
@@ -155,6 +230,32 @@ TEMPLATE = """<!doctype html>
   ];
   let libelle = etape.textContent, hote = "cdn.jsdelivr.net";
   const pret = () => document.querySelector(".s360-header, .stException, [data-testid='stException']");
+  // Après le démarrage : si un calcul dure anormalement (plus de 90 s), un bandeau propose de recharger la page.
+  const surveiller = () => {
+    let depuis = null;
+    const bandeau = document.createElement("div");
+    bandeau.id = "s360-bloque";
+    bandeau.innerHTML = "⏳ Le calcul dure plus longtemps que prévu. Si la page ne répond plus : " +
+      "<button type='button' onclick='location.reload()'>Recharger</button> (les fichiers seront à réimporter).";
+    document.body.append(bandeau);
+    setInterval(() => {
+      const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
+      depuis = enCours ? depuis || Date.now() : null;
+      bandeau.classList.toggle("visible", !!depuis && Date.now() - depuis > 90000);
+    }, 2000);
+  };
+  // Préchargement (voir PRECHARGEMENT dans build.py) : un fichier à la fois, quand le navigateur est libre ;
+  // les échecs sont retentés une minute plus tard. Ensuite, l'app n'a plus besoin du réseau.
+  const precharger = (liste = __PRECHARGEMENT__) => {
+    const echecs = [];
+    const suivant = (i) => {
+      if (i >= liste.length) { if (echecs.length) setTimeout(() => precharger(echecs), 60000); return; }
+      const url = "__CDN__/" + liste[i];
+      const p = url.endsWith(".js") ? import(url) : fetch(url, { cache: "force-cache" }).then((r) => r.arrayBuffer());
+      p.catch(() => echecs.push(liste[i])).finally(() => (window.requestIdleCallback || setTimeout)(() => suivant(i + 1)));
+    };
+    suivant(0);
+  };
   window.s360Echec = (message) => {
     if (ecran.classList.contains("echec")) return;
     erreur.textContent = "Le chargement a échoué : " + message;
@@ -162,7 +263,7 @@ TEMPLATE = """<!doctype html>
     ecran.classList.add("echec");
   };
   const suivre = () => {
-    if (pret()) { ecran.classList.add("fini"); clearInterval(minuteur); obs.disconnect(); return; }
+    if (pret()) { ecran.classList.add("fini"); clearInterval(minuteur); obs.disconnect(); precharger(); surveiller(); return; }
     const toasts = document.querySelectorAll(".Toastify__toast");
     const err = document.querySelector(".Toastify__toast--error");
     if (err) window.s360Echec(err.innerText.trim().slice(0, 400));
@@ -221,7 +322,7 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     return out;
   }
   function deposer(cible, liste) {
-    const input = document.querySelector(`.st-key-${cible} input[type=file]`);
+    const input = document.querySelector(`[class*="st-key-${cible}"] input[type=file]`);  // clé versionnée (…upload3)
     if (!input) throw new Error("zone d'import introuvable sur la page");
     const dt = new DataTransfer();
     liste.forEach((f) => dt.items.add(f));
@@ -350,6 +451,7 @@ def main() -> None:
     fichiers = lire_fichiers()
     reqs = lire_requirements()
     html = (TEMPLATE
+            .replace("__PRECHARGEMENT__", js(PRECHARGEMENT))
             .replace("__CDN__", STLITE_CDN)
             .replace("__THEME__", css_complet(ASSETS))
             .replace("__REQUIREMENTS__", js(reqs))

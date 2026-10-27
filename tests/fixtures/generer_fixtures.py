@@ -151,7 +151,7 @@ def stock():
     entete = ["PNR", "DESCRIPTION", "QTE SUR\nÉTAGÈRE", "QTE EN CDE", "GESTION", "CODE AGT APPRO",
               "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CCN", "CLASS CODE",
               "QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M", "QTE CONSO 2021", "QTE CONSO 2022", "QTE CONSO 2023",
-              "QTE CONSO 2024", "QTE CONSO 2025", "Dernier PU (achat) Euros", "B/O", "DATE DERNIERE CONSO"]
+              "QTE CONSO 2024", "QTE CONSO 2025", "Dernier PU (achat) Euros", "B/O", "DATE DERNIERE CONSO", "TRACKING LEVEL"]
     lignes = [
             ["FX-1001", "Coussin assise", 10, 0, 245, "AG01", "F001", "Fournisseur Alpha", 11, 1],
             ["FX-1002", "Housse dossier", 1, 0, 245, "AG01", "F002", "Fournisseur Bravo", 12, 1],
@@ -172,6 +172,7 @@ def stock():
         ]
     for ligne in lignes:  # consommation et valorisation (fictives), pour l'onglet Textile
         ligne += CONSO.get(ligne[0], [4, 6, 9, 10, 8, 7, 6, 5, 25.0, 0, datetime(2026, 9, 1)])
+        ligne.append("TL1" if str(ligne[0]).endswith(("1", "3", "5")) else "TL0")  # tracking level (fictif)
     _feuille(wb, "Export", entete, lignes)
     wb.save(ICI / "etat_stock.xlsx")
 

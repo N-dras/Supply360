@@ -39,7 +39,7 @@ COLONNES_ATTENDUES = {
 }
 
 COLONNES_TABLEAU = {
-    "PN": "PN", "STATUT": "Statut", "Qty_a_commander": "À commander", "QTY_GEAV": "Besoin", "QTY_STOCK": "Stock",
+    "PN": "PN", "TL": "TL", "STATUT": "Statut", "Qty_a_commander": "À commander", "QTY_GEAV": "Besoin", "QTY_STOCK": "Stock",
     "QTY_CDE": "En cmd", "PSD": "PSD", "FOURNISSEUR": "Fournisseur", "CODE_ACHETEUR": "Acheteur", "ACTION": "Action",
     "Commande": "N° commande", "CODE_FOURNISSEUR": "Code fournisseur", "TRFX": "TRFX", "CCN": "CCN", "GESTION": "Gestion",
     "CLASS_CODE": "Class code", "GEAV_DATE": "Date chantier",
@@ -54,6 +54,8 @@ COLUMN_CONFIG = {
     "En cmd": st.column_config.NumberColumn("En cmd", format="%d"),
     "À commander": st.column_config.NumberColumn("À commander", format="%d"),
     "Action": st.column_config.TextColumn("Action", width="large"),
+    "TL": st.column_config.TextColumn("TL", help="Tracking level (État du stock) : 0 = consommable (TL0), 1 = réparable (TL1)",
+                                      width="small"),
 }
 ACTION_COULEURS = {"commander": COLORS["ko"], "relancer_urgent": COLORS["accent"], "relancer": COLORS["warn"],
                    "inconnu": COLORS["muted"], "en_cours": COLORS["navy_2"], "hors_perimetre": COLORS["gris"], "ok": COLORS["ok"]}

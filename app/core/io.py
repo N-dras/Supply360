@@ -351,6 +351,7 @@ def lire_etat_stock(data: bytes):
     c_desc = trouver_colonne(df, "description")
     c_ccn = trouver_colonne(df, "ccn", exact=True)
     c_class = trouver_colonne(df, "class code", exact=True)
+    c_tl = trouver_colonne(df, "tracking level")
     if c_pnr is None:
         raise ColonneIntrouvable("PNR", FICHIER_STOCK, feuille, df.columns)
     if c_stock is None:
@@ -368,6 +369,8 @@ def lire_etat_stock(data: bytes):
         "Description_stock": df[c_desc] if c_desc else np.nan,
         "CCN": _code(df[c_ccn]) if c_ccn else np.nan,
         "CLASS_CODE_STOCK": nombre(df[c_class]) if c_class else np.full(n, np.nan),
+        # TRACKING LEVEL → TL : « 0 » (consommable) ou « 1 » (réparable), quelle que soit l'écriture (TL0, 1, 1.0…)
+        "TL": texte(df[c_tl]).str.extract(r"([01])", expand=False) if c_tl else np.full(n, np.nan),
     })
     noms = {normaliser(c): c for c in df.columns}
     for cible, norm in STOCK_COMPLEMENTS.items():

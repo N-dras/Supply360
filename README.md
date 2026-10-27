@@ -75,7 +75,8 @@ périmètre (par défaut 245, 246, 247, 400, 401, 230).
 | Commandes (SAP) — feuille « Toutes les commandes » de préférence | `PN` | `Commande`, `Code acheteur`, `Gestion`, `Code fournisseur`, `Fournisseur`, `Date de livraison promise`, `Date de livraison demandée`, `Class code`, `CCN` |
 
 **Résultat** : synthèse, actions à lancer (classe 8/9 en tête), répartition des actions, tableau
-filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx`.
+filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx`. Colonne **TL** (tracking
+level, colonne `TRACKING LEVEL` de l'État du stock) : 0 = consommable, 1 = réparable.
 
 ### 🧵 Textile cabine
 
@@ -92,9 +93,9 @@ Seul l'État du stock est indispensable ; les autres fichiers complètent l'anal
 demande en plus le fichier Pièces par avion.
 
 **Sous-onglets** : Synthèse (relances fournisseurs, valeur et activité du stock par catégorie),
-Prévision (commandes à passer, par fournisseur), Commandes (statuts, livraisons, profondeur des retards,
-toutes les lignes), Fournisseurs (Pareto, retards, délais promis, BFE, vue par fournisseur),
-Consommation (par année, 12/18/24 mois, top PN, par PN). Un filtre par catégorie s'applique à toutes
+Commandes (statuts, livraisons, profondeur des retards, toutes les lignes avec la qté sur étagère),
+Fournisseurs (Pareto, retards, délais promis, BFE, vue par fournisseur avec la qté sur étagère),
+Consommation (par année, 12/18/24 mois, top PN, par PN), Prévision (commandes à passer, par fournisseur). Un filtre par catégorie s'applique à toutes
 les vues. Export `Supply360_textiles_AAAAMMJJ.xlsx` (avec les feuilles de prévision si elle est calculée).
 
 **Règles** : retard = date promise − date demandée au-delà de 10 jours de tolérance ; date promise 2001,

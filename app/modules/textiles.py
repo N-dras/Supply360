@@ -23,7 +23,7 @@ TAB_ICON = "🧵"
 TAB_DESCRIPTION = "Stock, consommation, commandes et prévision de commandes des ceintures, housses, mousses et rideaux."
 
 K = f"{TAB_ID}__"
-SECTIONS = ["Synthèse", "Prévision", "Commandes", "Fournisseurs", "Consommation"]
+SECTIONS = ["Synthèse", "Commandes", "Fournisseurs", "Consommation", "Prévision"]
 ICONES = {"Synthèse": "📊", "Prévision": "🧮", "Commandes": "📦", "Fournisseurs": "🏭", "Consommation": "📈"}
 TOUTES = "Toutes"
 
@@ -60,6 +60,7 @@ CFG = {
     "Mois de livraison souhaité": st.column_config.DateColumn("Mois de livraison souhaité", format="MM/YYYY"),
     "Retard (j)": st.column_config.NumberColumn("Retard (j)", format="%d"),
     "Reste à livrer": st.column_config.NumberColumn("Reste à livrer", format="%d"),
+    "Qté sur étagère": st.column_config.NumberColumn("Qté sur étagère", format="%d", help="Stock du PN (État du stock)"),
     "Valeur stock (€)": st.column_config.NumberColumn("Valeur stock (€)", format="%.0f €"),
     "Valeur en commande (€)": st.column_config.NumberColumn("Valeur en commande (€)", format="%.0f €"),
     "Valeur maintenant (€)": st.column_config.NumberColumn("Valeur maintenant (€)", format="%.0f €"),
@@ -67,6 +68,16 @@ CFG = {
     "Valeur (€)": st.column_config.NumberColumn("Valeur (€)", format="%.0f €"),
     "Dernière conso": st.column_config.DateColumn("Dernière conso", format="DD/MM/YYYY"),
 }
+def _avec_stock(cols: dict) -> dict:
+    """Colonnes d'un tableau de commandes avec « Qté sur étagère » (stock du PN) juste après le PN."""
+    out = {}
+    for k, v in cols.items():
+        out[k] = v
+        if k == "PNR":
+            out["QTE SUR ÉTAGÈRE"] = "Qté sur étagère"
+    return out
+
+
 STATUT_ICONES = {"En retard": "🔴 En retard", "Sans date promise": "🟠 Sans date promise", "En attente BFE": "🟣 En attente BFE",
                  "A l'heure": "🟢 À l'heure"}
 
@@ -385,7 +396,7 @@ def _lignes(o):
                   | d["Fournisseur"].astype(str).str.upper().str.contains(qq, na=False, regex=False)]
         if statut:
             d = d[d["Statut commande"].isin(statut)]
-        cols = {**COL_RELANCES, "Date emission commande": "Émise", "Classe de retard": "Classe de retard"}
+        cols = _avec_stock({**COL_RELANCES, "Date emission commande": "Émise", "Classe de retard": "Classe de retard"})
         t = d[[c for c in cols if c in d.columns]].rename(columns=cols)
         t["Statut"] = t["Statut"].map(STATUT_ICONES)
         ui.tableau(t, column_config=CFG, height=420)
@@ -445,7 +456,7 @@ def _vue_fournisseur(o):
             ui.kpi_card("Retard moyen", f"{late['Jours de retard'].mean():.0f} j" if len(late) else "—", "", "warn"),
             ui.kpi_card("Reste à livrer", charts.entier(d["Qte restante"].fillna(0).sum()), "pièces", "info"),
         ])
-        cols = {**COL_RELANCES, "Date emission commande": "Émise", "Ecart promis vs demandé (j)": "Écart (j)"}
+        cols = _avec_stock({**COL_RELANCES, "Date emission commande": "Émise", "Ecart promis vs demandé (j)": "Écart (j)"})
         t = d.sort_values("Date livraison promise")[[c for c in cols if c in d.columns]].rename(columns=cols)
         t["Statut"] = t["Statut"].map(STATUT_ICONES)
         ui.tableau(t, column_config=CFG, height=min(38 + 35 * len(t), 380))

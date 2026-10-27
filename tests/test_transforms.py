@@ -316,3 +316,16 @@ def test_regles_de_nommage_textile():
     assert r["T/Résultat 20261020.xlsx"] == "stock" and r["T/autre stock.xlsx"] is None
     assert r["T/textile_all_parts.csv"] == "pieces" and r["T/ME2N.xlsx"] == "commandes"
     assert d.appliquer_noms({"T/stock.xlsx": "stock"}, regles) == {"T/stock.xlsx": "stock"}   # aucun « Résultat » : contenu
+
+
+def test_tracking_level_lu_dans_etat_du_stock():
+    """TRACKING LEVEL → TL « 0 » / « 1 », quelle que soit l'écriture ; absent → vide."""
+    df = pd.DataFrame({"PNR": ["A1", "B2", "C3", "D4"], "QTE SUR ÉTAGÈRE": [1, 2, 3, 4],
+                       "TRACKING LEVEL": ["TL0", "1", "TL 1", None]})
+    lignes, _ = sio.lire_etat_stock(sio.exporter_excel({"Stock": df}))
+    assert lignes.set_index("PN")["TL"].to_dict() == {"A1": "0", "B2": "1", "C3": "1", "D4": np.nan} or \
+        lignes.set_index("PN")["TL"].fillna("vide").to_dict() == {"A1": "0", "B2": "1", "C3": "1", "D4": "vide"}
+    agg = tf.agreger_stock(lignes)
+    assert agg.set_index("PN").loc["B2", "TL"] == "1"
+    sans, _ = sio.lire_etat_stock(sio.exporter_excel({"Stock": df.drop(columns="TRACKING LEVEL")}))
+    assert sans["TL"].isna().all()

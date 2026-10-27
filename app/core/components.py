@@ -141,7 +141,9 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
     obligeait à réimporter ses fichiers. La mémoire peut aussi être remplie par `import_groupe`.
     `on_import(nom)` est appelé (en callback) quand un nouveau fichier est importé ici.
     """
-    memoire, cle_up, vu = f"{cle}__data", f"{cle}__upload", f"{cle}__vu"
+    # La clé du widget porte un numéro de version : vider_emplacement() l'incrémente pour effacer le fichier affiché.
+    version = st.session_state.get(f"{cle}__v", 0)
+    memoire, cle_up, vu = f"{cle}__data", f"{cle}__upload" + (str(version) if version else ""), f"{cle}__vu"
 
     def _maj():
         f = st.session_state.get(cle_up)
@@ -166,6 +168,14 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
                                   for nom, aide, obl in colonnes))
             st.caption("Détection automatique de la feuille et de la ligne d'en-tête, sans tenir compte des accents ni des majuscules.")
     return garde[:2] if garde else None
+
+
+def vider_emplacement(cle: str, garder_donnees: bool = False) -> None:
+    """Efface le fichier affiché dans l'import `fichier(cle)` (nouvelle version du widget) et, sauf
+    `garder_donnees`, le fichier gardé en mémoire. À appeler dans un callback."""
+    st.session_state[f"{cle}__v"] = st.session_state.get(f"{cle}__v", 0) + 1
+    if not garder_donnees:
+        st.session_state.pop(f"{cle}__data", None)
 
 
 LIBELLES_SOURCES = {"besoins": sio.FICHIER_BESOINS, "asreq": sio.FICHIER_ASREQ, "stock": sio.FICHIER_STOCK,
@@ -195,7 +205,7 @@ def bouton_commandes() -> None:
     contenu puis rangé dans l'import commun `commun__commandes` (partagé par tous les onglets)."""
     bouton_dossier("COMMANDE", "commun__dossier_commande__upload", mode="dernier")
     with st.container(key="s360cache_commande"):  # zone de dépôt du bouton, masquée (CSS)
-        import_dossier("commun__dossier_commande", {"commandes": "commun__commandes"})
+        import_dossier("commun__dossier_commande", {"commandes": "commun__commandes"}, resume=False)
 
 
 def import_commandes(colonnes) -> tuple[str, bytes] | None:
@@ -219,7 +229,7 @@ def lien_sharepoint(url: str, dossier: str) -> None:
 
 
 def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "",
-                   noms: dict[str, str] | None = None) -> None:
+                   noms: dict[str, str] | None = None, resume: bool = True) -> None:
     """Import de tout un dossier : chaque fichier est reconnu par son contenu (à défaut son nom) et rangé
     dans l'emplacement `fichier` correspondant (`cibles` = {source: clé du fichier}).
 
@@ -230,10 +240,12 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     `noms` = {source: motif} : règles de nommage prioritaires (voir dossiers.appliquer_noms).
     Un fichier Commandes (SAP) trouvé ici est ignoré si `commandes` n'est pas une cible : seul le dossier COMMANDE fait foi.
     """
-    cle_up, cle_idx, cle_ch, cle_bilan = f"{cle}__upload", f"{cle}__index", f"{cle}__chantier", f"{cle}__bilan"
+    version = st.session_state.get(f"{cle}__v", 0)
+    cle_up, cle_idx, cle_ch, cle_bilan = f"{cle}__upload{version}", f"{cle}__index", f"{cle}__chantier", f"{cle}__bilan"
 
     def _ranger(source, chemin):
         nom, data, fid = st.session_state[cle_idx][chemin]
+        vider_emplacement(cibles[source])  # efface un ancien fichier importé à la main dans cet emplacement
         st.session_state[f"{cibles[source]}__data"] = (dossiers.nom_court(nom), data, fid)
 
     def _appliquer():
@@ -247,13 +259,22 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
             if source in cibles:
                 _ranger(source, liste[0])
                 st.session_state[f"{cle}__alt__{source}"] = liste[0]
+        if dossier:  # nouveau chantier : aucun fichier de l'ancien ne doit rester
+            for source in cibles:
+                if source not in par_source:
+                    vider_emplacement(cibles[source])
         st.session_state[cle_bilan] = (par_source, inconnus)
         if on_choix:
             on_choix(ch, par_source)
 
     def _charger():
-        fs = st.session_state.get(cle_up) or []
-        st.session_state[cle_idx] = {f.name: (f.name, f.getvalue(), f.file_id) for f in fs if _fichier_valide(f)}
+        # Chaque sélection REMPLACE la précédente (Streamlit, lui, ajouterait les fichiers aux anciens) : on garde
+        # les fichiers en mémoire et on vide la zone d'import (nouvelle version du widget).
+        fs = [f for f in st.session_state.get(cle_up) or [] if _fichier_valide(f)]
+        if not fs:
+            return
+        st.session_state[cle_idx] = {f.name: (f.name, f.getvalue(), f.file_id) for f in fs}
+        st.session_state[f"{cle}__v"] = version + 1
         chantiers = dossiers.chantiers_tries(dossiers.regrouper(list(st.session_state[cle_idx])))
         if st.session_state.get(cle_ch) not in chantiers:
             st.session_state[cle_ch] = chantiers[0] if chantiers else dossiers.HORS_CHANTIER
@@ -286,6 +307,10 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     manquants = [LIBELLES_SOURCES[s] for s in cibles if s not in par_source and s not in ("asreq", "commandes")
                  and not (s == "besoins" and "asreq" in par_source)]
     notes = []
+    ch = st.session_state.get(cle_ch, dossiers.HORS_CHANTIER)
+    nb = sum(len(l) for l in par_source.values()) + len(inconnus)
+    if resume:
+        notes.append(f"Importé : <b>{escape(ch)}</b> ({nb} fichier(s))" if ch else f"Importé : {nb} fichier(s)")
     if manquants:
         notes.append("Absent(s) du dossier : <b>" + ", ".join(escape(m) for m in manquants) + "</b> (import séparé ci-dessous)")
     if "commandes" in par_source and "commandes" not in cibles:

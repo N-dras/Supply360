@@ -135,6 +135,7 @@ def agreger_stock(lignes: pd.DataFrame) -> pd.DataFrame:
         "DERNIER_FOURNISSEUR": g["DERNIER_FOURNISSEUR"].first(),
         "Description_stock": g["Description_stock"].first(),
         "CCN": g["CCN"].first(),
+        "TL": g["TL"].first() if "TL" in lignes else np.nan,
     })
     out["CLASS_CODE_STOCK"] = _premier_prioritaire(lignes, "PN", "CLASS_CODE_STOCK", CLASSES_RISQUE)
     return out.reset_index()

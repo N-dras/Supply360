@@ -105,6 +105,14 @@ TEMPLATE = """<!doctype html>
 @keyframes s360-glisse { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
 @keyframes s360-vol { from { transform: translateX(0); } to { transform: translateX(260vw); } }
 #s360-loading .lent { display: none; color: var(--muted); font-size: .9375rem; }
+#s360-loading .etape { color: var(--navy); font-size: .9375rem; font-weight: 700; min-height: 1.4em; }
+#s360-loading .erreur { display: none; max-width: 26rem; padding: .6rem .8rem; border-radius: 8px; background: #FDECEC;
+  color: var(--ko); font-size: .875rem; text-align: left; white-space: pre-wrap; word-break: break-word; }
+#s360-loading.echec .erreur, #s360-loading.echec .lent { display: block; }
+#s360-loading.echec .barre, #s360-loading.echec .avion { display: none; }
+/* Étapes de stlite (en anglais) : reprises en français sur l'écran de chargement, jamais affichées en bas de page. */
+.Toastify__toast:not(.Toastify__toast--error) { display: none !important; }
+.Toastify { position: relative; z-index: 1000001; }
 #s360-loading.lent .lent { display: block; }
 #s360-loading button {
   font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
@@ -120,17 +128,64 @@ TEMPLATE = """<!doctype html>
     <div class="titre">Supply<span>360</span></div>
     <div class="barre"></div>
     <div class="texte">Chargement de Supply360… le premier lancement peut prendre jusqu'à une minute.</div>
-    <div class="lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à cdn.jsdelivr.net
-      et pypi.org.<br><br>
+    <div class="etape" id="s360-etape">Téléchargement du moteur (stlite)…</div>
+    <div class="erreur" id="s360-erreur"></div>
+    <div class="lent"><span id="s360-lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à
+      cdn.jsdelivr.net et pypi.org (proxy).</span><br><br>
       <button type="button" onclick="location.reload()">Recharger</button>
       <button type="button" onclick="document.getElementById('s360-loading').classList.add('fini')">Afficher la page</button>
     </div>
   </div>
 </div>
 <div id="root"></div>
+<script>
+// Surveillance du chargement (script classique : elle fonctionne même si stlite ne se télécharge pas).
+(function () {
+  const ecran = document.getElementById("s360-loading");
+  const etape = document.getElementById("s360-etape");
+  const erreur = document.getElementById("s360-erreur");
+  const lent = document.getElementById("s360-lent");
+  const debut = Date.now();
+  const ETAPES = [
+    [/Loading Pyodide/i, "Téléchargement du moteur Python (cdn.jsdelivr.net)…", "cdn.jsdelivr.net"],
+    [/Mounting files|Unpacking archives/i, "Préparation des fichiers de l'application…", ""],
+    [/Installing packages/i, "Installation de pandas, numpy… (cdn.jsdelivr.net, pypi.org)", "cdn.jsdelivr.net et pypi.org"],
+    [/Loading streamlit/i, "Chargement de Streamlit…", "cdn.jsdelivr.net"],
+    [/loggers|Mocking|Booting/i, "Démarrage de l'application…", ""],
+  ];
+  let libelle = etape.textContent, hote = "cdn.jsdelivr.net";
+  const pret = () => document.querySelector(".s360-header, .stException, [data-testid='stException']");
+  window.s360Echec = (message) => {
+    if (ecran.classList.contains("echec")) return;
+    erreur.textContent = "Le chargement a échoué : " + message;
+    lent.textContent = "Vérifiez l'accès à cdn.jsdelivr.net et pypi.org (proxy), puis rechargez la page.";
+    ecran.classList.add("echec");
+  };
+  const suivre = () => {
+    if (pret()) { ecran.classList.add("fini"); clearInterval(minuteur); obs.disconnect(); return; }
+    const toasts = document.querySelectorAll(".Toastify__toast");
+    const err = document.querySelector(".Toastify__toast--error");
+    if (err) window.s360Echec(err.innerText.trim().slice(0, 400));
+    if (toasts.length) {
+      const t = toasts[toasts.length - 1].innerText;
+      for (const [motif, texte, h] of ETAPES) if (motif.test(t)) { libelle = texte; if (h) hote = h; }
+    }
+    const sec = Math.round((Date.now() - debut) / 1000);
+    const texte = libelle + "  " + sec + " s";
+    if (etape.textContent !== texte) etape.textContent = texte;  // n'écrit que si besoin (pas de boucle)
+    if (sec >= 60 && !ecran.classList.contains("echec") && !ecran.classList.contains("lent")) {
+      lent.textContent = "Le chargement est plus long que prévu (étape : " + libelle.replace(/….*$/, "") +
+        "). Le navigateur doit pouvoir accéder à " + hote + " ; le premier lancement sur un nouveau poste ou une nouvelle adresse est le plus long.";
+      if (!ecran.classList.contains("lent")) ecran.classList.add("lent");
+    }
+  };
+  // Observe uniquement l'app (#root, où stlite affiche ses étapes), jamais l'écran de chargement lui-même.
+  const obs = new MutationObserver(suivre);
+  obs.observe(document.getElementById("root"), { childList: true, subtree: true });
+  const minuteur = setInterval(suivre, 1000);
+})();
+</script>
 <script type="module">
-import { mount } from "__CDN__/stlite.js";
-
 // Import d'un dossier : stlite n'envoie que le nom du fichier. On transmet son chemin relatif
 // (« R2/F-HRBA - 151126/extraction.xlsx ») pour que l'app regroupe les fichiers par dossier chantier.
 const ajouterFormData = FormData.prototype.append;
@@ -141,25 +196,18 @@ FormData.prototype.append = function (nom, valeur, fichier) {
   return ajouterFormData.apply(this, arguments);
 };
 
-mount(
-  {
-    entrypoint: "app/main.py",
-    requirements: __REQUIREMENTS__,
-    files: __FILES__,
-    streamlitConfig: __CONFIG__,
-    disableProgressToasts: true,
-  },
-  document.getElementById("root"),
-);
-
-// Masque l'écran de chargement dès que l'app (ou une erreur) est affichée.
-const ecran = document.getElementById("s360-loading");
-const pret = () => document.querySelector(".s360-header, .stException, [data-testid='stException']");
-const obs = new MutationObserver(() => {
-  if (pret()) { ecran.classList.add("fini"); obs.disconnect(); }
-});
-obs.observe(document.body, { childList: true, subtree: true });
-setTimeout(() => { if (!pret()) ecran.classList.add("lent"); }, 60000);
+// Import dynamique : un échec de téléchargement de stlite est affiché au lieu de bloquer l'écran de chargement.
+import("__CDN__/stlite.js")
+  .then(({ mount }) => mount(
+    {
+      entrypoint: "app/main.py",
+      requirements: __REQUIREMENTS__,
+      files: __FILES__,
+      streamlitConfig: __CONFIG__,
+    },
+    document.getElementById("root"),
+  ))
+  .catch((e) => window.s360Echec("impossible de télécharger stlite depuis cdn.jsdelivr.net (" + e + ")"));
 </script>
 <!-- Thème Supply360 (app/core/theme.css), images incluses : chargé une seule fois.
      Placé en fin de <body> pour passer après les styles que Streamlit ajoute au <head>. -->

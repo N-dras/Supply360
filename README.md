@@ -23,31 +23,33 @@ Version en ligne : **https://n-dras.github.io/Supply360/** (republiée automatiq
 jour). Les fichiers importés restent dans le navigateur : rien n'est envoyé, ni à GitHub ni ailleurs.
 
 ```
-SharePoint
-├── 00_Commun/
-│   └── Commandes (SAP)
-├── Textile/
-│   └── État du stock, Références textile, Pièces par avion
-└── R2/                                   un dossier par chantier : <IMMAT> - <JJMMAA>
-    ├── F-HRBA - 151126/
-    │   └── Besoins LOGOPS (ou étude ASREQ), État du stock
+SharePoint (canal Teams MS-LGT1-Analystes, bibliothèque Documents)
+├── COMMANDE/          fichier Commandes (SAP) à jour (le plus récent est pris)
+├── Textile/           État du stock, Références textile, Pièces par avion
+└── R2/                un dossier par chantier : <IMMAT> - <JJMMAA>
+    ├── F-HRBA - 151126/   Besoins LOGOPS (ou étude ASREQ), État du stock
     └── F-GZCA - 030227/
 ```
 
-- **Stock par chantier** : « 📂 Choisir le dossier du chantier dans R2 ». Choisissez le dossier du chantier,
-  ou R2 entier puis le chantier dans la liste (triée par date de début). L'immatriculation et la date de
-  début viennent du nom du dossier ; le type d'étude (Classique / ASREQ) des fichiers trouvés.
-- **Textile** : « 📂 Importer les fichiers du dossier Textile », sélectionnez tous les fichiers (Ctrl+A).
-- **Commandes (SAP)** : commun à tous les onglets, importé une fois (dossier 00_Commun).
+**Première utilisation (une fois par poste)** : aide « 🔗 Première utilisation » de l'onglet → ouvrir le dossier
+sur SharePoint → « Ajouter un raccourci à Mon OneDrive » (idéalement la bibliothèque Documents entière). Les
+dossiers apparaissent dans l'Explorateur et restent à jour ; rien n'est copié, chacun le fait avec son compte.
+
+**Ensuite (Edge ou Chrome)** : boutons **📂 Ouvrir R2**, **📂 Ouvrir Textile**, **📂 Ouvrir COMMANDE**. La première
+fois, choisissez le dossier ; le navigateur le retient (« dossier mémorisé »). Les fois suivantes, même après
+actualisation : clic sur le bouton → **Autoriser** →
+- **R2** : liste des chantiers (à venir d'abord, avec J-x), recherche par immatriculation ; seuls les fichiers du
+  chantier choisi sont lus ;
+- **Textile** : tous les fichiers du dossier ;
+- **COMMANDE** : le fichier le plus récemment modifié, commun à tous les onglets.
+
+« Changer de dossier » pour en choisir un autre. Sans Edge/Chrome : « Parcourir » (import manuel), toujours disponible.
 
 Les fichiers sont reconnus par leur **contenu** (en-têtes de colonnes), quel que soit leur nom ; à défaut
 par un mot du nom (`logops`, `asreq`, `stock`, `commande`/`sap`, `reference`, `piece`). Si un dossier
 contient plusieurs fichiers du même type, le plus récent (date dans le nom, ex. `20261020`) est retenu et
-peut être changé dans la liste. Les fichiers non reconnus sont ignorés et signalés.
-
-Astuce : synchronisez les dossiers SharePoint avec OneDrive (« Ajouter un raccourci à Mon OneDrive ») pour
-les retrouver directement dans la fenêtre de sélection. Choisir R2 entier charge tous ses fichiers : si
-R2 devient volumineux, choisissez directement le dossier du chantier.
+peut être changé dans la liste. Les fichiers non reconnus sont ignorés et signalés. Tout est lu localement :
+rien n'est envoyé.
 
 ## Onglets
 

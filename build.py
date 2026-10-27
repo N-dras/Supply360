@@ -185,13 +185,140 @@ TEMPLATE = """<!doctype html>
   const minuteur = setInterval(suivre, 1000);
 })();
 </script>
+<script>
+// Dossiers mémorisés (Edge / Chrome, API File System Access) : le dossier R2 ou Textile, choisi une fois,
+// est retenu dans le navigateur (IndexedDB). Ensuite « Ouvrir R2 » + « Autoriser » liste les chantiers ; les
+// fichiers du chantier choisi sont déposés dans la zone d'import de l'app, comme un « Parcourir ». Rien ne
+// sort du poste : les fichiers sont lus localement, dans le dossier OneDrive synchronisé.
+window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif (« R2/F-HRBA - 151126/x.xlsx »)
+(function () {
+  const EXT = /\\.(xlsx|xlsm|csv)$/i;
+  const CHANTIER = /([A-Z]{1,2}-?[A-Z0-9]{3,5})\\s*-\\s*(\\d{2})(\\d{2})(\\d{2})(?!\\d)/i;
+  const base = () => new Promise((ok, ko) => {
+    const r = indexedDB.open("supply360", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("dossiers");
+    r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
+  });
+  const lire = async (cle) => { const db = await base(); return new Promise((ok, ko) => {
+    const t = db.transaction("dossiers").objectStore("dossiers").get(cle); t.onsuccess = () => ok(t.result); t.onerror = () => ko(t.error); }); };
+  const ecrire = async (cle, v) => { const db = await base(); return new Promise((ok, ko) => {
+    const t = db.transaction("dossiers", "readwrite"); t.objectStore("dossiers").put(v, cle); t.oncomplete = ok; t.onerror = () => ko(t.error); }); };
+  const autoriser = async (h) => {
+    if (!h.queryPermission || (await h.queryPermission({ mode: "read" })) === "granted") return true;
+    return (await h.requestPermission({ mode: "read" })) === "granted";
+  };
+  async function fichiers(dir, chemin, profondeur) {
+    const out = [];
+    for await (const [nom, e] of dir.entries()) {
+      if (e.kind === "file" && EXT.test(nom) && !nom.startsWith("~$")) {
+        const f = await e.getFile();
+        window.s360Chemins.set(`${f.name}|${f.size}|${f.lastModified}`, `${chemin}/${nom}`);
+        out.push(f);
+      } else if (e.kind === "directory" && profondeur > 0) {
+        out.push(...await fichiers(e, `${chemin}/${nom}`, profondeur - 1));
+      }
+    }
+    return out;
+  }
+  function deposer(cible, liste) {
+    const input = document.querySelector(`.st-key-${cible} input[type=file]`);
+    if (!input) throw new Error("zone d'import introuvable sur la page");
+    const dt = new DataTransfer();
+    liste.forEach((f) => dt.items.add(f));
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  function fenetre(html) {
+    fermer();
+    const f = document.createElement("div");
+    f.id = "s360-fenetre";
+    f.innerHTML = `<div class="boite" role="dialog" aria-modal="true"><button type="button" class="fermer" aria-label="Fermer">✕</button>${html}</div>`;
+    f.addEventListener("click", (e) => { if (e.target === f || e.target.closest(".fermer")) fermer(); });
+    document.body.append(f);
+    return f;
+  }
+  const fermer = () => document.getElementById("s360-fenetre")?.remove();
+  const message = (texte) => fenetre(`<p class="msg">${texte}</p>`);
+  async function listeChantiers(h, cible) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const items = [];
+    for await (const [nom, e] of h.entries()) {
+      const m = e.kind === "directory" && nom.match(CHANTIER);
+      if (!m) continue;
+      const d = new Date(2000 + +m[4], +m[3] - 1, +m[2]);
+      if (!isNaN(d)) items.push({ nom, e, immat: m[1].toUpperCase(), d, j: Math.round((d - today) / 864e5) });
+    }
+    if (!items.length) {
+      message(`Aucun dossier « IMMAT - JJMMAA » dans « ${h.name} ». Vérifiez le dossier choisi (bouton « Changer de dossier »).`);
+      return;
+    }
+    const avenir = items.filter((x) => x.j >= 0).sort((a, b) => a.d - b.d);
+    const passes = items.filter((x) => x.j < 0).sort((a, b) => b.d - a.d);
+    const dernier = localStorage.getItem("s360-dernier-chantier");
+    const ligne = (x, i) => `<button type="button" class="ch${x.nom === dernier ? " dernier" : ""}" data-i="${i}">
+      <b>${x.immat}</b><span>début ${x.d.toLocaleDateString("fr-FR")}</span>
+      <em>${x.j > 0 ? "À venir · J-" + x.j : x.j === 0 ? "Aujourd'hui" : "Démarré il y a " + -x.j + " j"}</em></button>`;
+    const tous = [...avenir, ...passes];
+    const f = fenetre(`<h3>Chantier à analyser</h3><p class="sous">Dossier « ${h.name} » · ${tous.length} chantiers</p>
+      <input type="search" placeholder="🔎 Immatriculation…" class="filtre">
+      <div class="liste">${avenir.map((x) => ligne(x, tous.indexOf(x))).join("")}
+      ${passes.length ? `<div class="sep">Chantiers démarrés</div>${passes.map((x) => ligne(x, tous.indexOf(x))).join("")}` : ""}</div>`);
+    const filtre = f.querySelector(".filtre");
+    filtre.focus();
+    filtre.addEventListener("input", () => f.querySelectorAll(".ch").forEach((b) => {
+      b.style.display = b.textContent.toUpperCase().includes(filtre.value.trim().toUpperCase()) ? "" : "none"; }));
+    f.querySelectorAll(".ch").forEach((b) => b.addEventListener("click", async () => {
+      const x = tous[+b.dataset.i];
+      localStorage.setItem("s360-dernier-chantier", x.nom);
+      message(`Lecture du dossier ${x.nom}…`);
+      try {
+        const liste = await fichiers(x.e, `${h.name}/${x.nom}`, 2);
+        if (!liste.length) { message(`Aucun fichier Excel dans « ${x.nom} ».`); return; }
+        deposer(cible, liste); fermer();
+      } catch (err) { message("Lecture impossible : " + err.message); }
+    }));
+  }
+  document.addEventListener("click", async (ev) => {
+    const b = ev.target.closest(".s360-dossier-btn");
+    if (!b) return;
+    ev.preventDefault();
+    const { dossier, cible, mode } = b.dataset;
+    if (!window.showDirectoryPicker) {
+      message("Le dossier mémorisé fonctionne avec Edge ou Chrome. Utilisez « Parcourir » ci-dessous.");
+      return;
+    }
+    try {
+      let h = b.dataset.changer ? null : await lire(dossier);
+      if (h && !(await autoriser(h))) return;
+      if (!h) {
+        h = await window.showDirectoryPicker({ id: `s360-${dossier}`, mode: "read" });
+        await ecrire(dossier, h);
+      }
+      if (mode === "chantier") await listeChantiers(h, cible);
+      else if (mode === "dernier") {  // dossier COMMANDE : le fichier le plus récemment modifié
+        const liste = await fichiers(h, h.name, 0);
+        if (!liste.length) { message(`Aucun fichier Excel dans « ${h.name} ».`); return; }
+        deposer(cible, [liste.reduce((a, b) => (b.lastModified > a.lastModified ? b : a))]);
+      } else {
+        message(`Lecture du dossier ${h.name}…`);
+        const liste = await fichiers(h, h.name, 0);
+        if (!liste.length) { message(`Aucun fichier Excel ou CSV dans « ${h.name} ».`); return; }
+        deposer(cible, liste); fermer();
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") message("Accès au dossier impossible : " + err.message);
+    }
+  });
+})();
+</script>
 <script type="module">
 // Import d'un dossier : stlite n'envoie que le nom du fichier. On transmet son chemin relatif
 // (« R2/F-HRBA - 151126/extraction.xlsx ») pour que l'app regroupe les fichiers par dossier chantier.
 const ajouterFormData = FormData.prototype.append;
 FormData.prototype.append = function (nom, valeur, fichier) {
-  if (valeur instanceof File && valeur.webkitRelativePath && fichier === undefined) {
-    return ajouterFormData.call(this, nom, valeur, valeur.webkitRelativePath);
+  if (valeur instanceof File && fichier === undefined) {
+    const chemin = window.s360Chemins.get(`${valeur.name}|${valeur.size}|${valeur.lastModified}`) || valeur.webkitRelativePath;
+    if (chemin) return ajouterFormData.call(this, nom, valeur, chemin);
   }
   return ajouterFormData.apply(this, arguments);
 };

@@ -178,15 +178,21 @@ NOMMAGE = ("Dossier Textile : État du stock, Références textile et Pièces pa
 
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
-        ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Textile")
+        d1, d2, d3 = st.columns([1.1, 1.1, 1], vertical_alignment="center")
+        with d1:
+            ui.bouton_dossier("Textile", K + "dossier__upload")
+        with d2:
+            ui.bouton_commandes()
+        with d3:
+            ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Textile")
         ui.import_dossier(K + "dossier", {"stock": K + "stock", "commandes": "commun__commandes", "references": K + "references",
-                                          "pieces": K + "pieces"}, label="📂 Importer les fichiers du dossier Textile (Ctrl+A)",
+                                          "pieces": K + "pieces"}, label="… ou importer les fichiers avec Parcourir (Ctrl+A pour tout sélectionner)",
                           aide=NOMMAGE)
         c1, c2, c3 = st.columns(3)
         with c1:
             f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
         with c2:
-            f_cmd = ui.fichier(sio.FICHIER_COMMANDES, "commun__commandes", ["xlsx", "xlsm"], COLONNES_ATTENDUES["commandes"])
+            f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
         with c3:
             f_ref = ui.fichier(sio.FICHIER_REFERENCES, K + "references", ["xlsx", "xlsm"], COLONNES_ATTENDUES["references"])
         d1, d2, d3 = st.columns(3)

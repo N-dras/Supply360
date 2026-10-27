@@ -178,6 +178,31 @@ def _source_fichier(data: bytes, nom: str):
     return sio.identifier_fichier(data, nom)
 
 
+def bouton_dossier(dossier: str, cible: str, mode: str = "fichiers") -> None:
+    """Boutons « Ouvrir <dossier> » / « Changer de dossier » (dossier mémorisé, géré en JavaScript par build.py).
+
+    Le dossier choisi une fois est retenu par le navigateur. Selon `mode`, on dépose dans le `file_uploader` de
+    clé `cible` : tous ses fichiers (« fichiers »), ceux du chantier choisi dans la liste (« chantier ») ou le
+    fichier le plus récemment modifié (« dernier »). Sans effet en développement local.
+    """
+    attrs = f'data-dossier="{escape(dossier)}" data-cible="{escape(cible)}" data-mode="{escape(mode)}"'
+    st.html(f'<div class="s360-dossiers"><button type="button" class="s360-dossier-btn" {attrs}>📂 Ouvrir {escape(dossier)}</button>'
+            f'<button type="button" class="s360-dossier-btn autre" {attrs} data-changer="1">Changer de dossier</button></div>')
+
+
+def bouton_commandes() -> None:
+    """Bouton « Ouvrir COMMANDE » : fichier Commandes (SAP) le plus récent du dossier mémorisé, reconnu par son
+    contenu puis rangé dans l'import commun `commun__commandes` (partagé par tous les onglets)."""
+    bouton_dossier("COMMANDE", "commun__dossier_commande__upload", mode="dernier")
+    with st.container(key="s360cache_commande"):  # zone de dépôt du bouton, masquée (CSS)
+        import_dossier("commun__dossier_commande", {"commandes": "commun__commandes"})
+
+
+def import_commandes(colonnes) -> tuple[str, bytes] | None:
+    """Import manuel du fichier Commandes (SAP), commun à tous les onglets. Renvoie (nom, octets) ou None."""
+    return fichier(sio.FICHIER_COMMANDES, "commun__commandes", ["xlsx", "xlsm"], colonnes)
+
+
 def lien_sharepoint(url: str, dossier: str) -> None:
     """Aide « première utilisation » : synchroniser le dossier Teams avec OneDrive pour le voir dans « Parcourir »."""
     with st.popover(f"🔗 Première utilisation : synchroniser le dossier {dossier}"):
@@ -187,7 +212,10 @@ def lien_sharepoint(url: str, dossier: str) -> None:
             f"1. [Ouvrir le dossier {dossier} sur SharePoint]({url}) (nouvel onglet).\n"
             "2. En haut de la page, cliquer sur **« Ajouter un raccourci à Mon OneDrive »** (ou **« Synchroniser »**).\n"
             f"3. Le dossier apparaît dans l'Explorateur sous **OneDrive – Air France-KLM › {dossier}**, et reste à jour tout seul.\n\n"
-            "Ensuite, dans Supply360 : **Parcourir** → ce dossier. Rien à télécharger à la main.")
+            "Ensuite, dans Supply360 : **📂 Ouvrir** puis **Autoriser** (le dossier est choisi une seule fois, puis retenu "
+            "par le navigateur ; Edge ou Chrome). Rien à télécharger à la main.\n\n"
+            "Astuce : ajoutez en raccourci la bibliothèque **Documents** entière du canal : R2, Textile et COMMANDE "
+            "seront tous disponibles d'un coup.")
 
 
 def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "") -> None:
@@ -251,7 +279,7 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
             next(cols).selectbox(f"{LIBELLES_SOURCES[source]} : {len(liste)} fichiers, le plus récent est retenu", liste,
                                  key=f"{cle}__alt__{source}", format_func=dossiers.nom_court, persist_state="page",
                                  on_change=lambda s=source: _ranger(s, st.session_state[f"{cle}__alt__{s}"]))
-    manquants = [LIBELLES_SOURCES[s] for s in cibles if s not in par_source and s != "asreq"
+    manquants = [LIBELLES_SOURCES[s] for s in cibles if s not in par_source and s not in ("asreq", "commandes")
                  and not (s == "besoins" and "asreq" in par_source)]
     notes = []
     if manquants:

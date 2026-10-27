@@ -227,6 +227,32 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-lien { display: inline-flex; align-items: center; gap: .4rem; margin: .1rem 0 -.2rem; padding: .35rem .9rem; border-radius: 99px;
   background: #E8F0FD; color: var(--navy) !important; font-size: .875rem; font-weight: 700; text-decoration: none !important; }
 .s360-lien:hover { background: #D6E4FB; }
+/* Dossier mémorisé : boutons et fenêtre de choix du chantier (JavaScript de build.py) */
+.s360-dossiers { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.s360-dossier-btn { font: inherit; font-weight: 700; font-size: .9375rem; cursor: pointer; border: 0; border-radius: 99px;
+  padding: .55rem 1.2rem; color: #fff; background: var(--navy); box-shadow: 0 3px 12px rgba(11, 42, 91, .3); }
+.s360-dossier-btn:hover { background: var(--navy-2); }
+.s360-dossier-btn.autre { color: var(--navy); background: #fff; border: 1px solid #CFD8E5; box-shadow: none; font-size: .8125rem;
+  padding: .45rem .9rem; }
+#s360-fenetre { position: fixed; inset: 0; z-index: 1000002; display: grid; place-items: center; padding: 1rem;
+  background: rgba(11, 26, 51, .45); font-family: var(--font); }
+#s360-fenetre .boite { position: relative; width: min(34rem, 100%); max-height: 85vh; display: flex; flex-direction: column; gap: .6rem;
+  padding: 1.3rem 1.4rem; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+#s360-fenetre h3 { margin: 0; color: var(--navy); font-size: 1.3rem; font-weight: 800; }
+#s360-fenetre .sous, #s360-fenetre .msg { margin: 0; color: var(--muted); font-size: .9375rem; }
+#s360-fenetre .msg { padding: .6rem 2rem .3rem 0; color: var(--text); }
+#s360-fenetre .fermer { position: absolute; top: .7rem; right: .8rem; border: 0; background: none; font-size: 1.1rem; cursor: pointer; color: var(--muted); }
+#s360-fenetre .filtre { font: inherit; padding: .55rem .8rem; border: 1px solid #CFD8E5; border-radius: 10px; }
+#s360-fenetre .liste { overflow-y: auto; display: flex; flex-direction: column; gap: .35rem; padding-right: .2rem; }
+#s360-fenetre .ch { display: grid; grid-template-columns: 7rem 1fr auto; gap: .6rem; align-items: center; text-align: left; font: inherit;
+  padding: .6rem .8rem; border: 1px solid #E3E9F1; border-radius: 10px; background: var(--tile); cursor: pointer; }
+#s360-fenetre .ch:hover { border-color: var(--navy-2); background: #E8F0FD; }
+#s360-fenetre .ch.dernier { border-color: var(--navy); }
+#s360-fenetre .ch b { color: var(--navy); font-size: 1rem; }
+#s360-fenetre .ch span { color: var(--text); font-size: .9375rem; }
+#s360-fenetre .ch em { font-style: normal; font-size: .8125rem; font-weight: 700; color: var(--muted); }
+#s360-fenetre .sep { margin: .5rem 0 .1rem; color: var(--muted); font-size: .8125rem; font-weight: 700; text-transform: uppercase; }
+.st-key-s360cache_commande [data-testid="stFileUploader"] { display: none; }
 .s360-note { margin: -.2rem 0 .3rem; color: var(--muted); font-size: .8125rem; }
 [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; }
 [data-testid="stExpander"] details { border-color: var(--border); border-radius: 10px; background: #fff; }

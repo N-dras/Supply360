@@ -24,8 +24,9 @@ jour). Les fichiers importés restent dans le navigateur : rien n'est envoyé, n
 
 ```
 SharePoint (canal Teams MS-LGT1-Analystes, bibliothèque Documents)
-├── COMMANDE/          fichier Commandes (SAP) à jour (le plus récent est pris)
-├── Textile/           État du stock, Références textile, Pièces par avion
+├── COMMANDE/          fichier Commandes (SAP) à jour (le plus récent est pris) — c'est lui qui fait foi
+├── Textile/           « Résultat… » (État du stock), « textile_master_export » (Références textile),
+│                      « textile_all_parts » (Pièces par avion)
 └── R2/                un dossier par chantier : <IMMAT> - <JJMMAA>
     ├── F-HRBA - 151126/   Besoins LOGOPS (ou étude ASREQ), État du stock
     └── F-GZCA - 030227/
@@ -45,7 +46,13 @@ actualisation : clic sur le bouton → **Autoriser** →
 
 « Changer de dossier » pour en choisir un autre. Sans Edge/Chrome : « Parcourir » (import manuel), toujours disponible.
 
-Les fichiers sont reconnus par leur **contenu** (en-têtes de colonnes), quel que soit leur nom ; à défaut
+**Commandes (SAP)** : seul le fichier du dossier COMMANDE fait foi ; un fichier de commandes trouvé dans un dossier
+R2 ou Textile est ignoré (c'est signalé).
+
+**Textile** : le nom fait foi — « Résultat… », « textile_master_export », « textile_all_parts ». Si aucun fichier ne
+porte ce nom, la reconnaissance par le contenu prend le relais.
+
+Sinon, les fichiers sont reconnus par leur **contenu** (en-têtes de colonnes), quel que soit leur nom ; à défaut
 par un mot du nom (`logops`, `asreq`, `stock`, `commande`/`sap`, `reference`, `piece`). Si un dossier
 contient plusieurs fichiers du même type, le plus récent (date dans le nom, ex. `20261020`) est retenu et
 peut être changé dans la liste. Les fichiers non reconnus sont ignorés et signalés. Tout est lu localement :

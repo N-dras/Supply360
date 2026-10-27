@@ -218,7 +218,8 @@ def lien_sharepoint(url: str, dossier: str) -> None:
             "seront tous disponibles d'un coup.")
 
 
-def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "") -> None:
+def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "",
+                   noms: dict[str, str] | None = None) -> None:
     """Import de tout un dossier : chaque fichier est reconnu par son contenu (à défaut son nom) et rangé
     dans l'emplacement `fichier` correspondant (`cibles` = {source: clé du fichier}).
 
@@ -226,6 +227,8 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     sont regroupés par dossier chantier et, s'il y en a plusieurs, on choisit le chantier à analyser.
     Si une source a plusieurs fichiers, le plus récent (date dans le nom) est retenu et peut être changé.
     `on_choix(dossier_chantier, {source: [chemins]})` est appelé après chaque répartition.
+    `noms` = {source: motif} : règles de nommage prioritaires (voir dossiers.appliquer_noms).
+    Un fichier Commandes (SAP) trouvé ici est ignoré si `commandes` n'est pas une cible : seul le dossier COMMANDE fait foi.
     """
     cle_up, cle_idx, cle_ch, cle_bilan = f"{cle}__upload", f"{cle}__index", f"{cle}__chantier", f"{cle}__bilan"
 
@@ -238,7 +241,8 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
         groupes = dossiers.regrouper(list(index))
         ch = st.session_state.get(cle_ch, dossiers.HORS_CHANTIER)
         chemins = groupes.get(ch, []) + (groupes.get(dossiers.HORS_CHANTIER, []) if ch != dossiers.HORS_CHANTIER else [])
-        par_source, inconnus = dossiers.repartir({c: _source_fichier(index[c][1], c) for c in chemins})
+        sources = {c: _source_fichier(index[c][1], c) for c in chemins}
+        par_source, inconnus = dossiers.repartir(dossiers.appliquer_noms(sources, noms) if noms else sources)
         for source, liste in par_source.items():
             if source in cibles:
                 _ranger(source, liste[0])
@@ -284,7 +288,11 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     notes = []
     if manquants:
         notes.append("Absent(s) du dossier : <b>" + ", ".join(escape(m) for m in manquants) + "</b> (import séparé ci-dessous)")
-    hors = [dossiers.nom_court(c) for c in inconnus] + [dossiers.nom_court(l[0]) for s, l in par_source.items() if s not in cibles]
+    if "commandes" in par_source and "commandes" not in cibles:
+        notes.append(f"Commandes (SAP) du dossier non utilisé ({escape(dossiers.nom_court(par_source['commandes'][0]))}) : "
+                     "le fichier du dossier <b>COMMANDE</b> fait foi")
+    hors = [dossiers.nom_court(c) for c in inconnus] + [dossiers.nom_court(c) for s, l in par_source.items()
+                                                       if s not in cibles and s != "commandes" for c in l]
     if hors:
         notes.append("Ignoré(s) : " + ", ".join(escape(n) for n in hors))
     if notes:

@@ -304,3 +304,15 @@ def test_dossiers_regroupement_et_choix():
     assert d.date_dans_nom("stock 15.10.26.xlsx") == date(2026, 10, 15)
     par_source, inconnus = d.repartir({"x/stock 20250101.xlsx": "stock", "x/stock 20261020.xlsx": "stock", "x/photo.xlsx": None})
     assert par_source["stock"][0] == "x/stock 20261020.xlsx" and inconnus == ["x/photo.xlsx"]
+
+
+def test_regles_de_nommage_textile():
+    """Dossier Textile : le nom fait foi (« Résultat… », textile_master_export, textile_all_parts), sinon le contenu."""
+    from core import dossiers as d
+    regles = {"stock": r"^resultat", "references": r"textile_master_export", "pieces": r"textile_all_parts"}
+    sources = {"T/Résultat 20261020.xlsx": "stock", "T/autre stock.xlsx": "stock", "T/textile_master_export.xlsx": "references",
+               "T/textile_all_parts.csv": None, "T/ME2N.xlsx": "commandes"}
+    r = d.appliquer_noms(sources, regles)
+    assert r["T/Résultat 20261020.xlsx"] == "stock" and r["T/autre stock.xlsx"] is None
+    assert r["T/textile_all_parts.csv"] == "pieces" and r["T/ME2N.xlsx"] == "commandes"
+    assert d.appliquer_noms({"T/stock.xlsx": "stock"}, regles) == {"T/stock.xlsx": "stock"}   # aucun « Résultat » : contenu

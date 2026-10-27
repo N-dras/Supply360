@@ -74,3 +74,22 @@ def repartir(sources: dict[str, str | None]) -> tuple[dict[str, list[str]], list
         retenu = meilleur(liste)
         par_source[source] = [retenu] + sorted((c for c in liste if c != retenu), key=nom_court)
     return par_source, inconnus
+
+
+def appliquer_noms(sources: dict[str, str | None], regles: dict[str, str]) -> dict[str, str | None]:
+    """Règles de nommage propres à un dossier ({source: motif regex sur le nom normalisé, sans accents ni majuscules}).
+
+    Si au moins un fichier correspond au motif d'une source, il fait foi : il prend cette source et les autres
+    fichiers reconnus comme cette source par leur contenu sont écartés. Sinon la détection par contenu s'applique.
+    """
+    sources = dict(sources)
+    for source, motif in regles.items():
+        retenus = [c for c in sources if re.search(motif, sio.normaliser(nom_court(c)))]
+        if not retenus:
+            continue
+        for c in sources:
+            if c in retenus:
+                sources[c] = source
+            elif sources[c] == source:
+                sources[c] = None
+    return sources

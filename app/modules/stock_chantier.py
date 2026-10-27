@@ -157,8 +157,9 @@ def _bloc_import():
             ui.bouton_commandes()
         with d3:
             ui.lien_sharepoint(SHAREPOINT_R2, "R2")
-        ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock",
-                                          "commandes": "commun__commandes"}, dossier=True, on_choix=_choix_chantier,
+        # Pas de cible « commandes » : seul le fichier du dossier COMMANDE fait foi.
+        ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock"},
+                          dossier=True, on_choix=_choix_chantier,
                           label="… ou choisir le dossier du chantier avec Parcourir", aide=NOMMAGE)
         p1, p2, p3 = st.columns([1.1, 1, 2.2])
         etude = p1.radio("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], horizontal=True, key=K + "etude", persist_state="page")

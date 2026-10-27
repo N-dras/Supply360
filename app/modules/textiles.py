@@ -171,9 +171,11 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
 
 SHAREPOINT_TEXTILE = ("https://afkl.sharepoint.com/:f:/r/teams/MS-LGT1-Analystes/Shared%20Documents/Textile"
                       "?d=w58572b00036a42e395a6b6435ecf4000&csf=1&web=1&e=ExlJGH")
-NOMMAGE = ("Dossier Textile : État du stock, Références textile et Pièces par avion (et Commandes (SAP) si présent). "
-           "Les fichiers sont reconnus par leur contenu, quel que soit leur nom ; s'il y en a plusieurs du même type, "
-           "le plus récent (date dans le nom) est retenu.")
+# Noms des fichiers du dossier Textile (prioritaires sur la reconnaissance par le contenu), sans accents ni majuscules.
+NOMS_DOSSIER = {"stock": r"^resultat", "references": r"textile_master_export", "pieces": r"textile_all_parts"}
+NOMMAGE = ("Dossier Textile : « Résultat… » = État du stock, « textile_master_export » = Références textile, "
+           "« textile_all_parts » = Pièces par avion. À défaut, les fichiers sont reconnus par leur contenu ; s'il y en a "
+           "plusieurs du même type, le plus récent (date dans le nom) est retenu. Commandes (SAP) : dossier COMMANDE.")
 
 
 def _bloc_import():
@@ -185,9 +187,9 @@ def _bloc_import():
             ui.bouton_commandes()
         with d3:
             ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Textile")
-        ui.import_dossier(K + "dossier", {"stock": K + "stock", "commandes": "commun__commandes", "references": K + "references",
-                                          "pieces": K + "pieces"}, label="… ou importer les fichiers avec Parcourir (Ctrl+A pour tout sélectionner)",
-                          aide=NOMMAGE)
+        ui.import_dossier(K + "dossier", {"stock": K + "stock", "references": K + "references", "pieces": K + "pieces"},
+                          label="… ou importer les fichiers avec Parcourir (Ctrl+A pour tout sélectionner)", aide=NOMMAGE,
+                          noms=NOMS_DOSSIER)
         c1, c2, c3 = st.columns(3)
         with c1:
             f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])

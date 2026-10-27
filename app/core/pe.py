@@ -273,8 +273,12 @@ def stock_securite(cal: pd.DataFrame, mousses: pd.DataFrame, p: ParamsPE) -> pd.
 
 def forecast(ev: pd.DataFrame, articles: pd.DataFrame, livraisons_cmd: pd.DataFrame, securite: pd.Series,
              today: date, horizon: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Calcul mois par mois, par PN : besoin, arrivées des commandes en cours, stock projeté, livraisons à prévoir.
+    """Calcul mois par mois, par PN : besoin, commandes en cours, livraisons à prévoir, commandes à avancer.
 
+    Les commandes en cours sont déjà passées : elles sont TOUJOURS déduites, quelle que soit leur date promise.
+    À commander sur l'horizon = max(0, besoin + stock de sécurité − stock − commandes en cours) ; les livraisons
+    sont placées le mois où il en faut. Une commande en cours promise APRÈS le mois où elle est nécessaire est
+    signalée « à avancer » (relance fournisseur), au lieu d'être commandée une seconde fois.
     `articles` : PN (index) → Stock, Prix ; `livraisons_cmd` : PN, Mois, Qté (commandes en cours).
     Renvoie (tableau long PN × mois, synthèse par PN avec les totaux à 12 / 24 / 36 mois).
     """
@@ -288,21 +292,24 @@ def forecast(ev: pd.DataFrame, articles: pd.DataFrame, livraisons_cmd: pd.DataFr
     stock = articles.reindex(pns)["Stock"].fillna(0).to_numpy(float)
     ss = securite.reindex(pns).fillna(0).to_numpy(float)
     B, A = besoin.to_numpy(float), arrivees.to_numpy(float)
-    proj = stock[:, None] + np.cumsum(A - B, axis=1)          # stock projeté sans nouvelle commande
-    livr = np.zeros_like(B)
-    deja = np.zeros(len(pns))
-    for t in range(len(mois)):                                 # MRP : on livre ce qui manque pour rester au stock de sécurité
-        manque = ss - (proj[:, t] + deja)
-        livr[:, t] = np.maximum(manque, 0)
-        deja += livr[:, t]
+    en_cmd = cmd.groupby("PN")["Qté"].sum().reindex(pns).fillna(0).to_numpy()
+    proj = stock[:, None] + np.cumsum(A - B, axis=1)          # stock projeté sans nouvelle commande (dates promises réelles)
+    # Nouvelles commandes : stock + TOUTES les commandes en cours comme point de départ, on livre ce qui manque
+    # chaque mois pour rester au stock de sécurité (cumul = besoin + sécurité − stock − commandes en cours).
+    dispo = (stock + en_cmd)[:, None] - np.cumsum(B, axis=1)
+    cumul = np.maximum.accumulate(np.maximum(ss[:, None] - dispo, 0), axis=1)
+    livr = np.diff(cumul, axis=1, prepend=0)
+    # Commandes en cours à avancer : manque restant avec leurs vraies dates, une fois les nouvelles livraisons faites.
+    reste = np.maximum(ss[:, None] - (proj + cumul), 0)
+    a_avancer = np.minimum(reste.max(axis=1), en_cmd)
     long = pd.DataFrame({
         "PN": np.repeat(pns, len(mois)), "Mois": np.tile(mois, len(pns)),
         "Besoin": B.ravel(), "Arrivées commandes": A.ravel(), "Stock projeté sans commande": proj.ravel(),
-        "À livrer": livr.ravel(),
+        "À livrer": livr.ravel(), "Stock projeté": (proj + cumul).ravel(),
     })
     synth = pd.DataFrame(index=pd.Index(pns, name="PN"))
     synth["Stock"] = stock
-    synth["En commande"] = cmd.groupby("PN")["Qté"].sum().reindex(pns).fillna(0).to_numpy()
+    synth["En commande"] = en_cmd
     synth["Stock de sécurité"] = ss
     for h in HORIZONS:
         if h <= len(mois):
@@ -310,6 +317,8 @@ def forecast(ev: pd.DataFrame, articles: pd.DataFrame, livraisons_cmd: pd.DataFr
             synth[f"À commander {h} mois"] = livr[:, :h].sum(axis=1)
     rupture = [mois[np.argmax(row < 0)] if (row < 0).any() else pd.NaT for row in proj]
     synth["Rupture sans commande"] = rupture
+    synth["À avancer (commandes en cours)"] = a_avancer
+    synth["À avancer avant"] = [mois[np.argmax(row > 0)] if (row > 0).any() else pd.NaT for row in reste]
     premier = [mois[np.argmax(row > 0)] if (row > 0).any() else pd.NaT for row in B]
     synth["Premier besoin"] = premier
     return long, synth.reset_index()

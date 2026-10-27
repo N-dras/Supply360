@@ -80,8 +80,13 @@ def test_forecast_mois_par_mois(planning):
     long = planning["long"].set_index(["PN", "Mois"])
     oct_, jan = pd.Timestamp(2026, 10, 1), pd.Timestamp(2027, 1, 1)
     assert long.loc[("FM-1004", oct_), "Besoin"] == 1398                       # retard rattrapé dès ce mois-ci
-    assert long.loc[("FM-1004", oct_), "À livrer"] == 1398 - 300 + 566         # stock 300, sécurité 566
-    assert long.loc[("FM-1004", jan), "Arrivées commandes"] == 150 and long.loc[("FM-1004", jan), "À livrer"] == 266 - 150
+    # commande en cours (150, promise en janvier) déduite dès maintenant : on ne la commande pas une 2e fois…
+    assert long.loc[("FM-1004", oct_), "À livrer"] == 1398 + 566 - 300 - 150
+    assert long.loc[("FM-1004", jan), "Arrivées commandes"] == 150 and long.loc[("FM-1004", jan), "À livrer"] == 266
+    s0 = planning["synth"].set_index("PN").loc["FM-1004"]
+    assert s0["À commander 12 mois"] == s0["Besoin 12 mois"] + s0["Stock de sécurité"] - s0["Stock"] - s0["En commande"]
+    # … mais elle arrive après le besoin d'octobre : à avancer (relance fournisseur)
+    assert s0["À avancer (commandes en cours)"] == 150 and s0["À avancer avant"] == oct_
     s = planning["synth"].set_index("PN")
     assert s.loc["FM-1004", "À commander 12 mois"] == pytest.approx(planning["long"].query("PN == 'FM-1004'")["À livrer"].head(12).sum())
     assert s.loc["FM-1004", "Fournisseur"] == "Fournisseur Tango" and s.loc["FM-1004", "Prix unitaire (€)"] == 45

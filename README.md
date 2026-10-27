@@ -141,8 +141,10 @@ Règles (paramètres dans « ⚙️ Paramètres PE ») :
   dossier = « FOAM BACKREST / BACK… » ;
 - stock de sécurité par PN : pour chaque flotte, 10 % des avions qui l'utilisent (arrondi au-dessus, au moins 1)
   × quantité par avion ;
-- à commander : chaque mois, ce qui manque pour garder stock + commandes en cours − besoins au niveau du stock de
-  sécurité. Le fichier étant régénéré chaque mois, un remplacement fait remet l'âge à zéro : rien à saisir.
+- à commander, par PN = besoin + stock de sécurité − stock − commandes en cours (déjà passées : toujours déduites,
+  quelle que soit leur date promise), livré le mois où il en faut ; une commande en cours promise après le mois où elle
+  est nécessaire est signalée « à avancer » (relance fournisseur) au lieu d'être commandée deux fois. Le fichier étant
+  régénéré chaque mois, un remplacement fait remet l'âge à zéro : rien à saisir.
 
 ### Graphiques
 

@@ -35,7 +35,10 @@ CFG = {
                                                       help="10 % des avions de chaque flotte qui utilisent le PN × quantité par avion"),
     "Besoin": st.column_config.NumberColumn("Besoin", format="%d", help="Mousses à remplacer sur l'horizon"),
     "À commander": st.column_config.NumberColumn("À commander", format="%d",
-                                                help="Besoin + stock de sécurité − stock − commandes en cours"),
+                                                help="Besoin + stock de sécurité − stock − commandes en cours (toutes, déjà passées)"),
+    "À avancer": st.column_config.NumberColumn("À avancer", format="%d",
+                                              help="Commandes en cours promises après le mois où elles sont nécessaires : à relancer"),
+    "Avant": st.column_config.DateColumn("Avant", format="MM/YYYY", help="Mois où la commande en cours est nécessaire"),
     "Total": st.column_config.NumberColumn("Total", format="%d"),
 }
 ICONES_STATUT = {"En retard": "🔴 En retard", "Délai toléré": "🟠 Délai toléré", "À faire < 3 mois": "🟡 À faire < 3 mois",
@@ -202,7 +205,7 @@ def _horizon() -> int:
 def _forecast(ev, synth, long, today) -> int:
     debut = pd.Timestamp(today).to_period("M").start_time
     with ui.section("textiles_pe_forecast", "Forecast des mousses à commander",
-                    "Besoin = remplacements PE planifiés ; à commander = besoin + stock de sécurité − stock − commandes en cours"):
+                    "À commander = besoin + stock de sécurité − stock − commandes en cours (déjà passées, toujours déduites), par PN"):
         a, _ = st.columns([1, 2])
         with a:
             h = _horizon()
@@ -212,11 +215,17 @@ def _forecast(ev, synth, long, today) -> int:
         besoin, rattrapage = e["Qté"].sum(), e.loc[e["Rattrapage du retard"], "Qté"].sum()
         a_cmd, valeur = lg["À livrer"].sum(), lg["Valeur à livrer (€)"].sum()
         fours = lg.loc[lg["À livrer"] > 0, "Fournisseur"].nunique()
+        avancer = synth[synth["À avancer (commandes en cours)"] > 0]
+        if len(avancer):
+            ui.callout(f"<b>{charts.entier(avancer['À avancer (commandes en cours)'].sum())} pièces en commande à faire avancer</b> "
+                       f"sur {len(avancer)} PN : elles sont promises après le mois où elles sont nécessaires. "
+                       "Relancez les fournisseurs (colonnes « À avancer » et « Avant » du tableau par PN) plutôt que de recommander.",
+                       "warn", "📌")
         ui.kpi_grid([
             ui.kpi_card(f"Mousses à remplacer ({h} mois)", charts.entier(besoin), f"dont {charts.entier(rattrapage)} de retard à rattraper", "navy"),
-            ui.kpi_card("À commander", charts.entier(a_cmd), f"sur {lg.loc[lg['À livrer'] > 0, 'PN'].nunique()} PN", "ko"),
+            ui.kpi_card("À commander", charts.entier(a_cmd), "besoin + sécurité − stock − en commande", "ko"),
             ui.kpi_card("Valeur à commander", charts.euros(valeur), f"horizon {h} mois", "ko"),
-            ui.kpi_card("Stock disponible", charts.entier(synth["Stock"].sum()), f"+ {charts.entier(synth['En commande'].sum())} en commande", "info"),
+            ui.kpi_card("Stock disponible", charts.entier(synth["Stock"].sum()), f"+ {charts.entier(synth['En commande'].sum())} déjà en commande (déduits)", "info"),
             ui.kpi_card("Fournisseurs", charts.entier(fours), "à solliciter", "violet"),
         ])
         mois = pd.date_range(debut, periods=h, freq="MS")
@@ -242,7 +251,7 @@ def _forecast(ev, synth, long, today) -> int:
         cols = {"PN": "PN", "Désignation": "Désignation", "Classes": "Classe", "Composant": "Élément", "Flottes": "Flottes",
                 "Fournisseur": "Fournisseur", "Prix unitaire (€)": "Prix (€)", "Stock": "Stock", "En commande": "En commande",
                 "Stock de sécurité": "Stock de sécurité", "Besoin": "Besoin", "À commander": "À commander", "Valeur (€)": "Valeur (€)",
-                "Rupture sans commande": "Rupture sans commande"}
+                "À avancer (commandes en cours)": "À avancer", "À avancer avant": "Avant", "Rupture sans commande": "Rupture sans commande"}
         st.markdown(f"**Par PN** · horizon {h} mois")
         ui.tableau(t[list(cols)].rename(columns=cols), column_config=CFG, height=min(38 + 35 * len(t), 420))
     return h

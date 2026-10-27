@@ -258,3 +258,27 @@ def test_export_excel_mis_en_forme(croise):
 
 def test_nom_export():
     assert sio.nom_export("stock_chantier", date(2026, 10, 22)) == "Supply360_stock_chantier_20261022.xlsx"
+
+
+# --------------------------------------------------------------------------
+# Reconnaissance des fichiers par leur nom (import groupé d'un dossier)
+# --------------------------------------------------------------------------
+def test_reconnaitre_fichier():
+    attendu = {
+        "F-HRBA - 151126 - LOGOPS.xlsx": "besoins",
+        "F-GZCA - 030227 - ASREQ.xlsm": "asreq",
+        "Etat_stock_20261020.xlsx": "stock",
+        "État du Stock.xlsx": "stock",
+        "Commandes_SAP_20261020.xlsx": "commandes",
+        "References_textile.xlsx": "references",
+        "Pièces par avion.csv": "pieces",
+        "export (3).xlsx": None,
+    }
+    assert {n: sio.reconnaitre_fichier(n) for n in attendu} == attendu
+
+
+def test_chantier_depuis_nom():
+    assert sio.chantier_depuis_nom("F-HRBA - 151126 - LOGOPS.xlsx") == ("F-HRBA", date(2026, 11, 15))
+    assert sio.chantier_depuis_nom("f-gzca-030227 asreq.xlsm") == ("F-GZCA", date(2027, 2, 3))
+    assert sio.chantier_depuis_nom("F-HRBA - 321326 - LOGOPS.xlsx") is None      # date invalide
+    assert sio.chantier_depuis_nom("Etat_stock_20261020.xlsx") is None

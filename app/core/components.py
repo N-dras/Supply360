@@ -10,6 +10,8 @@ from html import escape
 
 import streamlit as st
 
+from core import io as sio
+
 TONES = {
     "navy": "var(--navy)", "info": "var(--navy-2)", "accent": "var(--accent)", "ok": "var(--ok)",
     "warn": "var(--warn)", "ko": "var(--ko)", "muted": "var(--muted)", "violet": "#6D28D9",
@@ -131,13 +133,14 @@ def _fichier_valide(f) -> bool:
     return f is not None and hasattr(f, "getvalue") and hasattr(f, "name")
 
 
-def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, str, bool]] | None = None):
+def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, str, bool]] | None = None, on_import=None):
     """`file_uploader` dont le contenu survit au changement d'onglet. Renvoie (nom, octets) ou None.
 
     Streamlit efface un widget qui n'est pas affiché : sans cette mémoire, revenir sur un onglet
-    obligeait à réimporter ses fichiers.
+    obligeait à réimporter ses fichiers. La mémoire peut aussi être remplie par `import_groupe`.
+    `on_import(nom)` est appelé (en callback) quand un nouveau fichier est importé ici.
     """
-    memoire, cle_up = f"{cle}__data", f"{cle}__upload"
+    memoire, cle_up, vu = f"{cle}__data", f"{cle}__upload", f"{cle}__vu"
 
     def _maj():
         f = st.session_state.get(cle_up)
@@ -145,12 +148,16 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
             st.session_state.pop(memoire, None)   # l'utilisateur a retiré le fichier
         elif _fichier_valide(f):
             st.session_state[memoire] = (f.name, f.getvalue(), f.file_id)
+            st.session_state[vu] = f.file_id
+            if on_import:
+                on_import(f.name)
 
     up = st.file_uploader(label, type=types, key=cle_up, on_change=_maj)
     garde = st.session_state.get(memoire)
-    if _fichier_valide(up) and (garde is None or garde[2] != up.file_id):
+    if _fichier_valide(up) and st.session_state.get(vu) != up.file_id:
         garde = st.session_state[memoire] = (up.name, up.getvalue(), up.file_id)
-    if not _fichier_valide(up) and garde:
+        st.session_state[vu] = up.file_id
+    if garde and not (_fichier_valide(up) and up.file_id == garde[2]):
         st.html(f'<div class="s360-file">✓ <span>{escape(garde[0])}</span></div>')
     if colonnes:
         with st.popover("Colonnes attendues", width="stretch"):
@@ -158,6 +165,42 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
                                   for nom, aide, obl in colonnes))
             st.caption("Détection automatique de la feuille et de la ligne d'en-tête, sans tenir compte des accents ni des majuscules.")
     return garde[:2] if garde else None
+
+
+def import_groupe(cle: str, cibles: dict[str, str], on_import=None, aide: str = "") -> None:
+    """Import de plusieurs fichiers d'un coup (tout un dossier) : chaque fichier est rangé d'après son nom.
+
+    `cibles` = {source: clé du `fichier` correspondant} (sources : voir io.reconnaitre_fichier) ;
+    `on_import(source, nom)` est appelé pour chaque fichier rangé. Le fichier apparaît ensuite dans
+    son emplacement (« ✓ nom ») ; les fichiers non reconnus sont signalés.
+    """
+    cle_up, bilan = f"{cle}__upload", f"{cle}__bilan"
+
+    def _repartir():
+        ignores = []
+        for f in st.session_state.get(cle_up) or []:
+            if not _fichier_valide(f):
+                continue
+            source = sio.reconnaitre_fichier(f.name)
+            if source in cibles:
+                st.session_state[f"{cibles[source]}__data"] = (f.name, f.getvalue(), f.file_id)
+                if on_import:
+                    on_import(source, f.name)
+            else:
+                ignores.append(f.name)
+        st.session_state[bilan] = ignores
+
+    st.file_uploader("📂 Importer tout le dossier : sélectionnez tous ses fichiers (Ctrl+A), ils sont rangés d'après leur nom",
+                     type=["xlsx", "xlsm", "csv"], accept_multiple_files=True, key=cle_up, on_change=_repartir, help=aide or None)
+    ignores = st.session_state.get(bilan, [])
+    if ignores:
+        callout("<b>Fichier(s) non reconnu(s)</b> : " + ", ".join(escape(n) for n in ignores)
+                + ". Le nom doit contenir l'un des mots : " + ", ".join(escape(m) for m in aide_mots(cibles)) + ".", "warn", "⚠️")
+
+
+def aide_mots(cibles) -> list[str]:
+    """Mots-clés attendus dans les noms de fichiers, pour les sources d'un onglet."""
+    return [m for source, mots in sio.MOTS_CLES_SOURCES if source in cibles for m in mots]
 
 
 def telecharger(data: bytes, nom: str, cle: str, label: str = "⬇️ Télécharger (Excel)") -> None:

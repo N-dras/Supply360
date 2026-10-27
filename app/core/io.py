@@ -43,6 +43,41 @@ FICHIER_REFERENCES = "Références textile"
 
 
 # --------------------------------------------------------------------------
+# Reconnaissance des fichiers par leur nom (import groupé d'un dossier SharePoint)
+# --------------------------------------------------------------------------
+# Mots-clés cherchés dans le nom du fichier (sans accents ni majuscules), par ordre de priorité.
+MOTS_CLES_SOURCES = [
+    ("besoins", ("logops",)),
+    ("asreq", ("asreq", "noreq")),
+    ("pieces", ("piece",)),
+    ("references", ("reference", "catalog")),
+    ("commandes", ("commande", "sap")),
+    ("stock", ("stock",)),
+]
+CHANTIER_DANS_NOM = re.compile(r"(?<![A-Z0-9])([A-Z]{1,2}-?[A-Z0-9]{3,5})\s*-\s*(\d{2})(\d{2})(\d{2})(?!\d)")
+
+
+def reconnaitre_fichier(nom: str) -> str | None:
+    """Source d'un fichier d'après son nom : besoins, asreq, pieces, references, commandes, stock (ou None)."""
+    n = normaliser(nom.rsplit(".", 1)[0])
+    for source, mots in MOTS_CLES_SOURCES:
+        if any(m in n for m in mots):
+            return source
+    return None
+
+
+def chantier_depuis_nom(nom: str) -> tuple[str, date] | None:
+    """« F-HRBA - 151126 - LOGOPS.xlsx » → ("F-HRBA", date(2026, 11, 15)) ; None si absent ou date invalide."""
+    m = CHANTIER_DANS_NOM.search(nom.upper())
+    if not m:
+        return None
+    try:
+        return m.group(1), date(2000 + int(m.group(4)), int(m.group(3)), int(m.group(2)))
+    except ValueError:
+        return None
+
+
+# --------------------------------------------------------------------------
 # Normalisation des en-têtes et recherche de colonnes
 # --------------------------------------------------------------------------
 def normaliser(s) -> str:

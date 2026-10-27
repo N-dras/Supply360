@@ -126,8 +126,29 @@ def _export(b_besoin: bytes, etude: str, b_stock: bytes, b_cmd: bytes, gestions:
 # --------------------------------------------------------------------------
 # Rendu
 # --------------------------------------------------------------------------
+NOMMAGE = ("Dossier du chantier « <IMMAT> - <JJMMAA> » : le nom du fichier LOGOPS reprend ce préfixe "
+           "(ex. « F-HRBA - 151126 - LOGOPS.xlsx ») pour remplir la date de début et l'immatriculation. "
+           "Mots-clés reconnus : logops / asreq (besoins), stock, commande ou sap.")
+
+
+def _infos_chantier(nom: str) -> None:
+    """Callback d'import : « <IMMAT> - <JJMMAA> » dans le nom du fichier → immatriculation et date de début."""
+    info = sio.chantier_depuis_nom(nom)
+    if info:
+        st.session_state[K + "immat"], st.session_state[K + "date"] = info
+
+
+def _import_dossier(source: str, nom: str) -> None:
+    """Callback de l'import groupé : type d'étude et infos chantier déduits des noms de fichiers."""
+    if source in ("besoins", "asreq"):
+        st.session_state[K + "etude"] = ETUDE_CLASSIQUE if source == "besoins" else ETUDE_ASREQ
+        _infos_chantier(nom)
+
+
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
+        ui.import_groupe(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock",
+                                         "commandes": "commun__commandes"}, on_import=_import_dossier, aide=NOMMAGE)
         p1, p2, p3 = st.columns([1.1, 1, 2.2])
         etude = p1.radio("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], horizontal=True, key=K + "etude", persist_state="page")
         date_chantier = p2.date_input("Début du chantier", value=date.today(), format="DD/MM/YYYY", key=K + "date",
@@ -137,11 +158,13 @@ def _bloc_import():
         c1, c2, c3 = st.columns(3)
         with c1:
             if etude == ETUDE_CLASSIQUE:
-                f_besoin = ui.fichier(sio.FICHIER_BESOINS, K + "besoin_classique", ["xlsx", "xlsm"], COLONNES_ATTENDUES[etude])
+                f_besoin = ui.fichier(sio.FICHIER_BESOINS, K + "besoin_classique", ["xlsx", "xlsm"], COLONNES_ATTENDUES[etude],
+                                      on_import=_infos_chantier)
             else:
-                f_besoin = ui.fichier(f"{sio.FICHIER_ASREQ} (.xlsm)", K + "besoin_asreq", ["xlsm", "xlsx"], COLONNES_ATTENDUES[etude])
+                f_besoin = ui.fichier(f"{sio.FICHIER_ASREQ} (.xlsm)", K + "besoin_asreq", ["xlsm", "xlsx"], COLONNES_ATTENDUES[etude],
+                                      on_import=_infos_chantier)
         with c2:
-            f_stock = ui.fichier(sio.FICHIER_STOCK, "commun__stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
+            f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
         with c3:
             f_cmd = ui.fichier(sio.FICHIER_COMMANDES, "commun__commandes", ["xlsx", "xlsm"], COLONNES_ATTENDUES["commandes"])
     return etude, date_chantier, gestions, f_besoin, f_stock, f_cmd
@@ -176,10 +199,11 @@ def render() -> None:
         return
 
     s = tf.synthese_geav(m_scope)
+    immat = st.session_state.get(K + "immat", "")
     statut = _statut_chantier(date_chantier)
 
     # ---- Synthèse ----
-    with ui.section(f"{TAB_ID}_synthese", "Synthèse", f"Chantier du {date_chantier:%d/%m/%Y} · étude {etude}", tag=statut):
+    with ui.section(f"{TAB_ID}_synthese", "Synthèse", f"Chantier {immat + ' ' if immat else ''}du {date_chantier:%d/%m/%Y} · étude {etude}", tag=statut):
         if s["n_commander"] or s["n_relance"]:
             ui.callout(f"<b>{s['n_commander']} référence(s) à commander</b> ({s['qty_a_commander']} unités) et "
                        f"<b>{s['n_relance']} relance(s) fournisseur</b> avant le {date_chantier:%d/%m/%Y}.",

@@ -169,11 +169,17 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
     return p, regles
 
 
+NOMMAGE = ("Dossier Textile : État du stock, Références textile et Pièces par avion ; Commandes (SAP) dans le dossier commun. "
+           "Mots-clés reconnus dans les noms : stock, commande ou sap, reference, piece.")
+
+
 def _bloc_import():
     with ui.section(f"{TAB_ID}_import", "Import et paramètres"):
+        ui.import_groupe(K + "dossier", {"stock": K + "stock", "commandes": "commun__commandes", "references": K + "references",
+                                         "pieces": K + "pieces"}, aide=NOMMAGE)
         c1, c2, c3 = st.columns(3)
         with c1:
-            f_stock = ui.fichier(sio.FICHIER_STOCK, "commun__stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
+            f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
         with c2:
             f_cmd = ui.fichier(sio.FICHIER_COMMANDES, "commun__commandes", ["xlsx", "xlsm"], COLONNES_ATTENDUES["commandes"])
         with c3:

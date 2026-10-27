@@ -11,11 +11,43 @@ fichier HTML** : `dist/supply360.html`.
    doivent être accessibles via le proxy. Les lancements suivants profitent du cache du navigateur.
 3. Importer les fichiers dans l'onglet voulu. Ils sont **traités localement dans le navigateur** et
    ne sont envoyés nulle part.
-4. Les fichiers **État du stock** et **Commandes (SAP)** sont communs : importés une fois, ils servent
-   à tous les onglets. Changer d'onglet conserve fichiers, filtres et paramètres.
+4. Le fichier **Commandes (SAP)** est commun : importé une fois, il sert à tous les onglets. L'**État du
+   stock** est propre à chaque onglet. Changer d'onglet conserve fichiers, filtres et paramètres.
 5. Rafraîchir la page **réinitialise tout** : il faut alors réimporter les fichiers.
 
 Pendant un calcul, la barre sous le header s'anime et la pastille « Calcul en cours… » s'affiche.
+
+## Organisation des dossiers et import groupé
+
+En tête de chaque onglet, « 📂 Importer tout le dossier » : sélectionnez tous les fichiers du dossier
+(Ctrl+A) ; chacun est rangé d'après son nom. Un fichier non reconnu est signalé.
+
+```
+Supply360 (SharePoint)
+├── 00_Commun/
+│   └── Commandes_SAP_AAAAMMJJ.xlsx
+├── Textile/
+│   ├── Etat_stock_AAAAMMJJ.xlsx
+│   ├── References_textile.xlsx
+│   └── Pieces_par_avion.csv
+└── Stock par chantier/
+    └── F-HRBA - 151126/                      <IMMAT> - <JJMMAA>
+        ├── F-HRBA - 151126 - LOGOPS.xlsx     (ou … - ASREQ.xlsm)
+        └── Etat_stock_AAAAMMJJ.xlsx
+```
+
+| Mot dans le nom du fichier | Source |
+|---|---|
+| `logops` / `asreq`, `noreq` | Besoins chantier / étude ASREQ-NOREQ |
+| `stock` | État du stock |
+| `commande` ou `sap` | Commandes (SAP) |
+| `reference` | Références textile |
+| `piece` | Pièces par avion |
+
+Stock par chantier : si le nom du fichier LOGOPS commence par « <IMMAT> - <JJMMAA> », l'immatriculation
+et la date de début du chantier sont remplies automatiquement (le navigateur ne transmet que le nom du
+fichier, pas celui du dossier). Astuce : synchronisez le dossier SharePoint avec OneDrive pour le
+retrouver directement dans l'Explorateur au moment de l'import.
 
 ## Onglets
 

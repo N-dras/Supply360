@@ -329,3 +329,18 @@ def test_tracking_level_lu_dans_etat_du_stock():
     assert agg.set_index("PN").loc["B2", "TL"] == "1"
     sans, _ = sio.lire_etat_stock(sio.exporter_excel({"Stock": df.drop(columns="TRACKING LEVEL")}))
     assert sans["TL"].isna().all()
+
+
+def test_apercu_rapide_des_en_tetes(monkeypatch):
+    """La reconnaissance par aperçu du XML (rapide) donne le même résultat que la lecture complète des feuilles."""
+    for f in sorted(FIX.glob("*.xls*")):
+        data = f.read_bytes()
+        rapide = sio.detecter_source(data, "x.xlsx")
+        xl = sio.ouvrir_excel(data, "x")
+        feuille_rapide = sio.choisir_feuille(xl, ["pnr", "qte sur etagere"])
+        with monkeypatch.context() as m:
+            m.setattr(sio, "apercu_xlsx", lambda *a, **k: None)
+            assert sio.detecter_source(data, "x.xlsx") == rapide, f.name
+            assert sio.choisir_feuille(sio.ouvrir_excel(data, "x"), ["pnr", "qte sur etagere"]) == feuille_rapide, f.name
+    lignes = dict(sio.apercu_xlsx((FIX / "commandes_sap.xlsx").read_bytes()))["Toutes les commandes"]
+    assert lignes[3][:2] == ["PN", "Commande"]          # en-tête en 4e ligne, après les lignes de titre

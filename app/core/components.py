@@ -152,6 +152,9 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
         elif _fichier_valide(f):
             st.session_state[memoire] = (f.name, f.getvalue(), f.file_id)
             st.session_state[vu] = f.file_id
+            # Zone d'import vidée (nouvelle version du widget) : Streamlit libère sa propre copie du fichier, seule
+            # la mémoire ci-dessus reste (le fichier n'est plus gardé deux fois).
+            vider_emplacement(cle, garder_donnees=True)
             if on_import:
                 on_import(f.name)
 

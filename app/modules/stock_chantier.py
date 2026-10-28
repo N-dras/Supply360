@@ -155,9 +155,13 @@ def _bloc_import():
         a, b, c, d = st.columns([2.7, 1, 1.3, 1], vertical_alignment="bottom")
         with a:
             ui.boutons_dossiers("R2", K + "dossier__upload", mode="chantier")
-        date_chantier = b.date_input("Début du chantier", value=date.today(), format="DD/MM/YYYY", key=K + "date",
+        # Valeur initiale par le Session State (pas de `value=`) : la date est aussi écrite par l'import du dossier
+        # chantier, et Streamlit avertit quand un widget a les deux.
+        st.session_state.setdefault(K + "date", date.today())
+        date_chantier = b.date_input("Début du chantier", format="DD/MM/YYYY", key=K + "date",
                                      persist_state="page", help="Lue dans le nom du dossier « <IMMAT> - <JJMMAA> ».")
-        etude = c.segmented_control("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], default=ETUDE_CLASSIQUE, key=K + "etude",
+        st.session_state.setdefault(K + "etude", ETUDE_CLASSIQUE)  # aussi écrit par l'import du dossier
+        etude = c.segmented_control("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], key=K + "etude",
                                     required=True, persist_state="page") or ETUDE_CLASSIQUE
         n = len(st.session_state.get(K + "gestions", GESTIONS_DEFAUT))
         with d.popover(f"⚙️ Périmètre · {n} code{'s' if n > 1 else ''}", width="stretch"):

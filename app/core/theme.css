@@ -86,7 +86,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
   content: ""; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px;
   background: linear-gradient(90deg, var(--navy), var(--navy-2));
 }
-.stApp[data-test-script-state="running"] .s360-header::after {
+.stApp[data-test-script-state="running"] .s360-header::after, body.s360-attente .s360-header::after {
   background: linear-gradient(90deg, var(--navy) 0%, var(--accent) 50%, var(--navy) 100%);
   background-size: 200% 100%;
   animation: s360-calc 1s linear infinite;
@@ -96,7 +96,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
   padding: .45rem 1rem; border-radius: 99px; background: var(--navy); color: #fff;
   font-size: .875rem; font-weight: 700; box-shadow: var(--shadow);
 }
-.stApp[data-test-script-state="running"] .s360-busy { display: block; animation: s360-pop .2s ease-out; }
+.stApp[data-test-script-state="running"] .s360-busy, body.s360-attente .s360-busy { display: block; animation: s360-pop .2s ease-out; }
 @keyframes s360-calc { from { background-position: 200% 0; } to { background-position: 0 0; } }
 @keyframes s360-pop { from { opacity: 0; transform: translateY(-4px); } }
 
@@ -349,7 +349,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-stack span[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
 .s360-share .rw { display: grid; grid-template-columns: minmax(6rem, 12rem) 1fr; gap: .8rem; align-items: center; padding: .5rem 0; font-size: .875rem; }
 .s360-share .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.s360-jauge .rw { position: relative; display: grid; grid-template-columns: minmax(7rem, 15rem) 1fr minmax(3rem, auto); gap: .8rem;
+.s360-jauge .rw { position: relative; display: grid; grid-template-columns: minmax(7rem, 15rem) 1fr 7.5rem; gap: .8rem;
   align-items: center; padding: .28rem .3rem; border-radius: 6px; font-size: .8125rem; }
 .s360-jauge .rw:hover { background: rgba(31, 78, 156, .07); }
 .s360-jauge .rw[data-tip]:hover::after { bottom: 100%; left: 30%; }
@@ -362,6 +362,10 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-jauge .rp { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--text); }
 .s360-jauge b { font-weight: 800; white-space: nowrap; }
 .s360-jauge-scroll { overflow-y: auto; padding-right: .3rem; }
+/* Infobulles des premières lignes affichées SOUS la ligne : au-dessus, elles étaient coupées par le haut du graphe */
+.s360-jauge .rw:nth-child(-n+2)[data-tip]:hover::after,
+.s360-rows .rw:nth-child(-n+2)[data-tip]:hover::after { bottom: auto; top: calc(100% + 4px); }
+.s360-share .rw:nth-child(-n+2) .s360-stack span[data-tip]:hover::after { bottom: auto; top: calc(100% + 6px); }
 .s360-legend i.tr { width: 3px; height: .9rem; border-radius: 2px; vertical-align: -3px; }
 .s360-heat { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: .8125rem; table-layout: fixed; }
 .s360-heat th { color: var(--muted); font-weight: 600; text-align: center; padding: .2rem; white-space: nowrap; }

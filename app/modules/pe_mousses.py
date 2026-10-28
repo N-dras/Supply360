@@ -434,10 +434,37 @@ def _liste_ccn(m: pd.DataFrame):
         x = x[x["Action"].isin(actions)]
     if coter:
         x = x[x["À coter"]]
-    v = x.sort_values("Taux de couverture (%)")
-    lignes = [(f"{r['CCN']} · {r['PN']}", [("Stock", r["Stock"], COLORS["ok"]), ("En commande", r["En commande"], COLORS["navy_2"])],
-               r["Besoin"], charts.pourcent(r["Taux de couverture (%)"]) if pd.notna(r["Taux de couverture (%)"]) else "—")
-              for _, r in v.iterrows()]
-    leg = [("Stock", COLORS["ok"], "barre"), ("En commande", COLORS["navy_2"], "barre"), ("Besoin de l'année", COLORS["text"], "trait")]
-    ui.graphe(charts.jauges(lignes, f"Couverture du besoin par CCN ({len(v)})", leg, repere_nom="Besoin", hauteur_max="32rem"))
+    ui.graphe(_graphe_couverture(x))
     ui.tableau(_tableau_ccn(x), column_config=CFG, height="content" if len(x) <= 10 else 440)
+
+
+MANQUE = "#F2A7A7"
+
+
+def _graphe_couverture(x: pd.DataFrame) -> str:
+    """Une barre par CCN = 100 % de son besoin de l'année : part couverte par le stock, par les commandes en cours,
+    et ce qui manque (à commander). Les moins couverts en premier ; au-delà de 100 %, le surplus est indiqué à droite."""
+    v = x[x["Besoin"] > 0].copy()
+    if v.empty:
+        return charts.vide("Aucun besoin sur la sélection")
+    b = v["Besoin"].astype(float)
+    v["p_stock"] = (v["Stock"].clip(upper=b) / b * 100)
+    v["p_cde"] = (v["En commande"].clip(upper=(b - v["Stock"]).clip(lower=0)) / b * 100)
+    v["p_manque"] = (100 - v["p_stock"] - v["p_cde"]).clip(lower=0)
+    v = v.sort_values(["p_manque", "Besoin"], ascending=[False, False])
+    lignes = []
+    for _, r in v.iterrows():
+        manque = int(r["À demander (PR)"])
+        surplus = r["Couverture"] - r["Besoin"]
+        texte = f"manque {charts.entier(manque)}" if manque > 0 else (f"✓ +{charts.entier(surplus)}" if surplus > 0 else "✓ couvert")
+        info = [f"Besoin {charts.entier(r['Besoin'])} · stock {charts.entier(r['Stock'])} · en commande {charts.entier(r['En commande'])}",
+                f"À demander (PR) : {charts.entier(manque)}" if manque > 0 else "Couvert" + (" par le stock" if r["Stock"] >= r["Besoin"] else " avec les commandes")]
+        if pd.notna(r.get("Prochaine livraison")):
+            info.append(f"Prochaine livraison : {pd.Timestamp(r['Prochaine livraison']):%d/%m/%Y}")
+        lignes.append((f"{r['CCN']} · {r['PN']}",
+                       [("Stock", r["p_stock"], COLORS["ok"]), ("Commandes en cours", r["p_cde"], COLORS["navy_2"]),
+                        ("Manque (à commander)", r["p_manque"], MANQUE)], None, texte, info))
+    leg = [("Couvert par le stock", COLORS["ok"], "barre"), ("Couvert par les commandes en cours", COLORS["navy_2"], "barre"),
+           ("Manque : à commander", MANQUE, "barre")]
+    return charts.jauges(lignes, f"Couverture du besoin de l'année par CCN, en % du besoin ({len(v)} CCN, les moins couverts en haut)",
+                         leg, fmt=lambda val: f"{val:.0f} %", hauteur_max="34rem")

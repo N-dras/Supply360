@@ -7,9 +7,11 @@ Lecture avec calamine (moteur Rust inclus dans Pyodide, ~10× plus rapide qu'ope
 export avec core/xlsx.py (bibliothèque standard).
 """
 
+import html
 import io
 import re
 import unicodedata
+import zipfile
 from datetime import date
 
 import numpy as np
@@ -79,6 +81,80 @@ SIGNATURES_SOURCES = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Aperçu rapide d'un classeur .xlsx / .xlsm (en-têtes seulement)
+# --------------------------------------------------------------------------
+def _texte_xml(fragment: str) -> str:
+    return html.unescape("".join(re.findall(r"<t[^>]*>(.*?)</t>", fragment, re.S)))
+
+
+def apercu_xlsx(data: bytes, max_lignes: int = 15, max_feuilles: int = 10, octets: int = 400_000):
+    """[(feuille, lignes)] : les premières lignes de chaque feuille, en ne lisant que le début du fichier XML.
+
+    Le moteur Excel charge une feuille ENTIÈRE même pour en lire 15 lignes : sous Pyodide, reconnaître un gros État
+    du stock prenait plusieurs secondes et beaucoup de mémoire, pendant lesquelles la page semblait figée. Ici, on
+    décompresse seulement le début de chaque feuille (et des textes partagés). None si le fichier n'est pas un .xlsx.
+    """
+    try:
+        z = zipfile.ZipFile(io.BytesIO(data))
+        classeur = z.read("xl/workbook.xml").decode("utf-8", "ignore")
+        liens = z.read("xl/_rels/workbook.xml.rels").decode("utf-8", "ignore")
+    except Exception:
+        return None
+    cibles = {}
+    for rel in re.findall(r"<Relationship\b[^>]*>", liens):
+        i, t = re.search(r'\bId="([^"]+)"', rel), re.search(r'\bTarget="([^"]+)"', rel)
+        if i and t:
+            cibles[i.group(1)] = t.group(1).lstrip("/") if t.group(1).startswith("/") else "xl/" + t.group(1)
+    feuilles = []
+    for balise in re.findall(r"<sheet\b[^>]*>", classeur):
+        n, r = re.search(r'\bname="([^"]*)"', balise), re.search(r'\br:id="([^"]+)"', balise)
+        if n and r and r.group(1) in cibles:
+            feuilles.append((html.unescape(n.group(1)), cibles[r.group(1)]))
+    lignes_par_feuille, besoins = [], set()
+    for nom, chemin in feuilles[:max_feuilles]:
+        try:
+            with z.open(chemin) as f:
+                xml = f.read(octets).decode("utf-8", "ignore")
+        except KeyError:
+            continue
+        lignes = []
+        for attrs_ligne, ligne in re.findall(r"<row\b([^>]*)>(.*?)</row>", xml, re.S):
+            num = re.search(r'\br="(\d+)"', attrs_ligne)
+            rang = int(num.group(1)) - 1 if num else len(lignes)  # rang réel (lignes vides absentes du XML)
+            if rang >= max_lignes:
+                break
+            lignes += [[] for _ in range(rang - len(lignes))]
+            cellules = []
+            for attrs, corps in re.findall(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", ligne, re.S):
+                v = re.search(r"<v>(.*?)</v>", corps or "", re.S)
+                if 't="s"' in attrs and v:
+                    besoins.add(int(v.group(1)))
+                    cellules.append(("s", int(v.group(1))))
+                elif 't="inlineStr"' in attrs:
+                    cellules.append(("t", _texte_xml(corps or "")))
+                else:
+                    cellules.append(("t", html.unescape(v.group(1)) if v else ""))
+            lignes.append(cellules)
+        lignes_par_feuille.append((nom, lignes))
+    partages = []
+    if besoins and "xl/sharedStrings.xml" in z.namelist():
+        with z.open("xl/sharedStrings.xml") as f:  # lecture progressive jusqu'au dernier texte utile
+            reste = ""
+            while len(partages) <= max(besoins):
+                bloc = f.read(262_144)
+                if not bloc:
+                    break
+                reste += bloc.decode("utf-8", "ignore")
+                fin = reste.rfind("</si>")
+                if fin < 0:
+                    continue
+                partages += [_texte_xml(si) for si in re.findall(r"<si>(.*?)</si>", reste[:fin + 5], re.S)]
+                reste = reste[fin + 5:]
+    return [(nom, [[(partages[v] if v < len(partages) else "") if k == "s" else v for k, v in l] for l in lignes])
+            for nom, lignes in lignes_par_feuille]
+
+
 def detecter_source(data: bytes, nom: str) -> str | None:
     """Source d'un fichier d'après son CONTENU (en-têtes des 15 premières lignes de chaque feuille).
 
@@ -87,17 +163,24 @@ def detecter_source(data: bytes, nom: str) -> str | None:
     if nom.lower().endswith(".csv"):
         tete = normaliser(data[:4000].decode("utf-8-sig", errors="ignore").split("\n", 1)[0])
         return "pieces" if "qty_per_ac" in tete and "registration" in tete else None
-    try:
-        xl = ouvrir_excel(data, nom)
-    except FichierIllisible:
-        return None
-    if "Ordered" in xl.sheet_names:  # étude ASREQ/NOREQ (classeur .xlsm, feuille « Ordered »)
-        return "asreq"
-    if any("bottom_foam" in normaliser(f) or "backrest_foam" in normaliser(f) for f in xl.sheet_names):
-        return "pe"  # fichier PE mousses (feuilles BOTTOM FOAM / BACKREST FOAM)
-    for feuille in xl.sheet_names[:10]:
+    apercu = apercu_xlsx(data)
+    if apercu is None:  # pas un .xlsx (ex. .xls) : lecture classique
         try:
-            raw = xl.parse(feuille, header=None, nrows=15)
+            xl = ouvrir_excel(data, nom)
+        except FichierIllisible:
+            return None
+        noms = list(xl.sheet_names)
+        lire = lambda f: xl.parse(f, header=None, nrows=15)  # noqa: E731
+    else:
+        noms, contenus = [n for n, _ in apercu], dict(apercu)
+        lire = lambda f: pd.DataFrame(contenus[f])  # noqa: E731
+    if "Ordered" in noms:  # étude ASREQ/NOREQ (classeur .xlsm, feuille « Ordered »)
+        return "asreq"
+    if any("bottom_foam" in normaliser(f) or "backrest_foam" in normaliser(f) for f in noms):
+        return "pe"  # fichier PE mousses (feuilles BOTTOM FOAM / BACKREST FOAM)
+    for feuille in noms[:10]:
+        try:
+            raw = lire(feuille)
         except Exception:
             continue
         for source, mots in SIGNATURES_SOURCES:
@@ -182,7 +265,9 @@ def _moteur() -> str:
 
 def ouvrir_excel(data: bytes, fichier: str) -> pd.ExcelFile:
     try:
-        return pd.ExcelFile(io.BytesIO(data), engine=_moteur())
+        xl = pd.ExcelFile(io.BytesIO(data), engine=_moteur())
+        xl.s360_octets = data  # pour choisir_feuille : aperçu rapide des en-têtes (apercu_xlsx)
+        return xl
     except Exception as exc:  # format non Excel, fichier corrompu ou protégé
         raise FichierIllisible(
             f"Le fichier {fichier} n'a pas pu être ouvert comme classeur Excel ({exc})."
@@ -199,9 +284,11 @@ def choisir_feuille(xl: pd.ExcelFile, mots_cles, feuille_preferee: str | None = 
     if feuille_preferee:
         cible = normaliser(feuille_preferee)
         feuilles.sort(key=lambda s: 0 if cible in normaliser(s) else 1)
+    apercu = apercu_xlsx(xl.s360_octets) if getattr(xl, "s360_octets", None) is not None else None
+    apercu = dict(apercu) if apercu else None
     for s in feuilles:
-        try:
-            raw = xl.parse(s, header=None, nrows=15)
+        try:  # aperçu rapide (début du XML) plutôt que le chargement de toute la feuille
+            raw = pd.DataFrame(apercu[s]) if apercu is not None and s in apercu else xl.parse(s, header=None, nrows=15)
         except Exception:
             continue
         h = trouver_ligne_entete(raw, mots_cles)

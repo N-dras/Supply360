@@ -333,22 +333,44 @@ window.fetch = function (ressource, options) {
         titre + "\\n" + navigator.userAgent + "\\n" + M.journal.join("\\n"));
       bandeau.classList.add("visible");
     };
+    // Attente d'une réponse du moteur : « Calcul en cours » affiché tout de suite (même pendant un traitement d'import,
+    // avant que Streamlit ne signale le calcul). Sans réponse pendant 60 s (onglet visible, sonde comprise), le moteur
+    // est relancé AUTOMATIQUEMENT en gardant les fichiers ; une seconde fois en moins de 5 min : bandeau.
+    let attente = null, derniereRelance = 0, sondeEnvoyee = false;
+    const relancerAuto = (raison) => {
+      if (Date.now() - derniereRelance < 300000) return false;
+      derniereRelance = Date.now();
+      M.noter("Relance automatique : " + raison);
+      window.s360Relancer(raison);
+      return true;
+    };
     const verifier = () => {
       const e = M.etat, now = Date.now();
       const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
       depuis = enCours ? depuis || now : null;
+      attente = e.envoi > e.recu && !enCours ? attente || e.envoi : null;
+      if (!attente) sondeEnvoyee = false;
+      document.body.classList.toggle("s360-attente", !!attente && now - attente > 500 && !window.s360EnRelance);
+      const visible = document.visibilityState === "visible";
       if (window.s360EnRelance) afficher("", "");
-      else if (e.mort) afficher("⛔ Le moteur de calcul s'est arrêté.", "Relancez-le : vos fichiers sont réimportés automatiquement.");
-      else if (!enCours && e.envoi > e.recu && now - e.envoi > 20000)
-        afficher("⚠️ L'application ne répond plus.", "Relancez le moteur : vos fichiers sont réimportés automatiquement.");
-      else if (depuis && now - depuis > 90000)
-        afficher("⏳ Le calcul dure plus longtemps que prévu.", "Si la page ne répond plus, rechargez-la (fichiers à réimporter).");
+      else if (e.mort) {
+        if (!relancerAuto("moteur arrêté (" + e.mort + ")"))
+          afficher("⛔ Le moteur de calcul s'est arrêté.", "Relancez-le : vos fichiers sont réimportés automatiquement.");
+      } else if (attente && visible && now - attente > 45000 && !sondeEnvoyee) {
+        sondeEnvoyee = true; M.sonder();  // dernière vérification avant la relance
+      } else if (attente && visible && now - attente > 60000) {
+        if (!relancerAuto("aucune réponse depuis " + Math.round((now - attente) / 1000) + " s"))
+          afficher("⚠️ L'application ne répond plus.", "Relancez le moteur : vos fichiers sont réimportés automatiquement.");
+      } else if (depuis && now - depuis > 90000)
+        afficher("⏳ Le calcul dure plus longtemps que prévu.", "Si la page ne répond plus, relancez le moteur (fichiers conservés).");
       else afficher("", "");
-      if (!enCours && document.visibilityState === "visible" && e.envoi <= e.recu && now - e.recu > 30000) { e.envoi = now; M.sonder(); }
+      if (!enCours && visible && e.envoi <= e.recu && now - e.recu > 30000) { e.envoi = now; M.sonder(); }
     };
-    setInterval(verifier, 2000);
+    setInterval(verifier, 1000);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && M.etat.envoi <= M.etat.recu) { M.etat.envoi = Date.now(); M.sonder(); }
+      if (document.visibilityState !== "visible") return;
+      if (attente) attente = Date.now();  // onglet en arrière-plan : le moteur a pu être ralenti, on lui laisse 60 s
+      else { M.etat.envoi = Date.now(); M.sonder(); }
     });
   };
   // Préchargement (voir PRECHARGEMENT dans build.py) : un fichier à la fois, quand le navigateur est libre ;
@@ -616,11 +638,12 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     const b = [...document.querySelectorAll(".st-key-s360_nav button")].find((x) => x.textContent.includes(ONGLETS[id]));
     if (b && !b.matches('[aria-checked="true"], [data-selected="true"]')) { b.click(); await libre(); }
   };
-  window.s360Relancer = async () => {
+  window.s360Relancer = async (raison) => {
     const P = window.s360Progres, M = window.s360Moteur, retour = ongletActif();
+    if (window.s360EnRelance) return;
     window.s360EnRelance = true;
     try {
-      P.montrer("Relance du moteur Python…", 0, 0);
+      P.montrer(raison ? "Le moteur ne répondait plus : relance automatique…" : "Relance du moteur Python…", 0, 0);
       try { window.s360App && window.s360App.unmount(); } catch (_) { /* moteur déjà arrêté */ }
       M.etat.mort = ""; M.etat.envoi = 0; M.etat.recu = Date.now();
       await window.s360Monter();

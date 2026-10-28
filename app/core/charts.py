@@ -371,7 +371,7 @@ def jauges(lignes, titre="", legende_items=None, repere_nom="Objectif", fmt=cour
         rows.append(f'<div class="rw"{_tip(tip)}><span class="nm" title="{escape(str(nom))}">{escape(str(nom))}</span>'
                     f'<div class="trk">{"".join(parts_)}{marque}</div><b>{escape(str(txt))}</b></div>')
     corps = f'<div class="s360-jauge">{"".join(rows)}</div>'
-    if hauteur_max:
+    if hauteur_max and len(rows) > 14:  # zone défilante seulement si nécessaire (elle coupe les infobulles à ses bords)
         corps = f'<div class="s360-jauge-scroll" style="max-height:{hauteur_max}">{corps}</div>'
     items = list(legende_items or [])
     return f'<div class="s360-chart">{_titre(titre)}{corps}{legende(items)}</div>'

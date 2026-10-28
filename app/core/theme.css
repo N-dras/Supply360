@@ -97,6 +97,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
   font-size: .875rem; font-weight: 700; box-shadow: var(--shadow);
 }
 .stApp[data-test-script-state="running"] .s360-busy, body.s360-attente .s360-busy { display: block; animation: s360-pop .2s ease-out; }
+.s360-busy[data-duree]:not([data-duree=""])::after { content: " · " attr(data-duree); font-weight: 600; opacity: .85; }
 @keyframes s360-calc { from { background-position: 200% 0; } to { background-position: 0 0; } }
 @keyframes s360-pop { from { opacity: 0; transform: translateY(-4px); } }
 
@@ -314,6 +315,10 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
   font-size: .8125rem; font-weight: 600; line-height: 1.45; white-space: pre; text-align: left;
   box-shadow: 0 6px 18px rgba(0, 20, 60, .25);
 }
+/* L'élément survolé passe au premier plan : son infobulle n'est plus recouverte par les lignes, barres ou cases
+   suivantes (un filtre ou une opacité au survol crée un contexte d'empilement qui la confinait sous ses voisins). */
+[data-tip]:hover { z-index: 50; }
+.s360-rows .rw:hover, .s360-jauge .rw:hover, .s360-share .rw:hover, .s360-heat tr:hover { position: relative; z-index: 50; }
 .s360-plot .col[data-tip]:hover::after { top: .3rem; left: 50%; transform: translateX(-50%); }
 .s360-plot .col.tl[data-tip]:hover::after { left: 0; transform: none; }
 .s360-plot .col.tr[data-tip]:hover::after { left: auto; right: 0; transform: none; }
@@ -345,7 +350,7 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-stack span:first-child { border-radius: 7px 0 0 7px; }
 .s360-stack span:last-child { border-radius: 0 7px 7px 0; }
 .s360-stack span:only-child { border-radius: 7px; }
-.s360-stack span:hover { filter: brightness(1.12); }
+.s360-stack span:hover { filter: brightness(1.12); z-index: 50; }
 .s360-stack span[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
 .s360-share .rw { display: grid; grid-template-columns: minmax(6rem, 12rem) 1fr; gap: .8rem; align-items: center; padding: .5rem 0; font-size: .875rem; }
 .s360-share .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -38,7 +38,7 @@ NOMMAGE = ("Dossier Textile : « Besoin_Prod… » = Besoin Prod mousses (object
 COLONNES_ATTENDUES = {
     "besoin_prod": [("Feuille « QUOTE en euro »", "en-tête détecté automatiquement", False),
                     ("A/C, Flotte, Area, CCN, Qty per A/C, NB_AC", "type d'avion, classe, quantité par avion", True),
-                    ("NB_AC PE RESTANT", "avions restants (fichier) ; recalculé si PE mousses + textile_all_parts", False),
+                    ("NB_AC PE RESTANT", "avions restants (par défaut) ; recalcul possible (Paramètres) avec PE mousses + textile_all_parts", False),
                     ("P/N OEM Seat Supplier, Seat Supplier, Description, P.U forecast PE", "", False)],
     "stock": [("PNR, QTE SUR ÉTAGÈRE", "", True), ("CCN", "clé du croisement avec le Besoin Prod", True),
               ("QTE EN CDE, Dernier PU (achat) Euros", "", False)],
@@ -50,8 +50,9 @@ COLONNES_ATTENDUES = {
            ("Date dans le nom", "ex. PE_MOUSSE_29092026 : date des âges", False)],
     "pieces": [("equipment, registration, area, ccn, pn, description, qty_per_ac", "lignes MOUSSE", True)],
 }
-RESTANT_LIBELLES = {p26.RESTANT_AUTO: "Calculé avec le fichier PE mousses (sinon fichier Besoin Prod)",
-                    p26.RESTANT_FICHIER: "Colonne NB_AC PE RESTANT du Besoin Prod (règle d'origine)"}
+# Premier choix = valeur par défaut : la colonne NB_AC PE RESTANT du Besoin Prod (demande de l'auteur)
+RESTANT_LIBELLES = {p26.RESTANT_FICHIER: "Colonne NB_AC PE RESTANT du Besoin Prod (règle d'origine)",
+                    p26.RESTANT_AUTO: "Calculé avec le fichier PE mousses (sinon fichier Besoin Prod)"}
 SURPLUS = "#C9D3E3"  # au-delà de l'objectif (gris bleuté)
 CFG = {
     "Besoin": st.column_config.NumberColumn("Besoin", format="%d", help="Qté par avion × avions restants"),
@@ -158,7 +159,8 @@ def _bloc_import():
             with t_an:
                 mode = st.radio("Avions restant à traiter", list(RESTANT_LIBELLES), format_func=RESTANT_LIBELLES.get,
                                 key=K + "restant", persist_state="page",
-                                help="Calcul : NB_AC − avions du type dont la mousse (classe, assise ou dossier) a été remplacée "
+                                help="Par défaut : colonne NB_AC PE RESTANT du Besoin Prod (à défaut NB_AC). "
+                                     "Calcul : NB_AC − avions du type dont la mousse (classe, assise ou dossier) a été remplacée "
                                      "depuis le 1er janvier d'après le fichier PE mousses. Le type de chaque avion est "
                                      "retrouvé par ses CCN de mousses (textile_all_parts).")
             with t_pe:
@@ -177,8 +179,8 @@ def render() -> None:
     if not (f_besoin and f_stock):
         with ui.section(f"{TAB_ID}_vide", "PE mousses de l'année"):
             ui.empty_state("Importez le Besoin Prod et l'État du stock",
-                           "Le fichier PE mousses et textile_all_parts recalculent les avions restants ; les commandes (SAP) "
-                           "complètent la couverture.",
+                           "Avions restants : colonne NB_AC PE RESTANT (recalcul possible dans ⚙️ Paramètres avec le fichier "
+                           "PE mousses et textile_all_parts) ; les commandes (SAP) complètent la couverture.",
                            [(p26.FICHIER_BESOIN, bool(f_besoin)), (sio.FICHIER_STOCK, bool(f_stock)),
                             (sio.FICHIER_COMMANDES, bool(f_cmd)), (pe.FICHIER_PE, bool(f_pe)), (pv.FICHIER_PIECES, bool(f_pieces))],
                            icon="✈️")

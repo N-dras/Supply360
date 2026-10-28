@@ -3,15 +3,19 @@ page, qui les garde pour le bandeau « L'application ne répond plus » (bouton 
 
 Le moteur Python tourne dans un « worker » du navigateur : ses erreurs n'apparaissent que dans la console de
 développement, invisible pour l'utilisateur. Ici, elles sont envoyées à la page par `postMessage` (message
-interne au navigateur, aucun accès réseau). Sans effet en local (`streamlit run`).
+interne au navigateur, aucun accès réseau). `sante()` répond à la surveillance de la page : elle ne relance le
+moteur que sur une panne constatée, jamais pendant un long calcul. Sans effet en local (`streamlit run`).
 """
 
+import json
 import logging
 import re
 import sys
 import traceback
 
 IGNORES = ("Failed to scan component manifests",)
+_GARDES = [False]  # garde-fous installés (le compteur ci-dessous n'a de sens qu'avec eux)
+_RECUS = [0]  # messages de la page (clics, sondes) arrivés jusqu'au runtime : preuve que la session les lit
 
 
 def _envoyer(texte: str, evenement: str = "") -> None:
@@ -41,7 +45,7 @@ def proteger_runtime() -> None:
     sur « Calcul en cours ». Idem si l'envoi d'un message à la page échoue : la boucle d'envoi de Streamlit s'arrête.
     - une erreur sur un message reçu est journalisée et ignorée, la session continue ;
     - une erreur à l'envoi d'un message est journalisée et le message sauté, la boucle d'envoi continue ;
-    - si la session se ferme malgré tout, la page est prévenue tout de suite et relance le moteur.
+    - si la session se ferme malgré tout, la page est prévenue tout de suite : elle vérifie (`sante`) et relance.
     """
     from streamlit.runtime import Runtime
     from streamlit.runtime.session_manager import SessionClientDisconnectedError
@@ -49,6 +53,7 @@ def proteger_runtime() -> None:
     traiter, envoyer, deconnecter = Runtime.handle_backmsg, Runtime._send_message, Runtime.disconnect_session
 
     def handle_backmsg(self, *args, **kwargs):
+        _RECUS[0] += 1
         try:
             return traiter(self, *args, **kwargs)
         except Exception:
@@ -67,6 +72,31 @@ def proteger_runtime() -> None:
         return deconnecter(self, *args, **kwargs)
 
     Runtime.handle_backmsg, Runtime._send_message, Runtime.disconnect_session = handle_backmsg, _send_message, disconnect_session
+    _GARDES[0] = True
+
+
+def sante() -> str:
+    """État du moteur, demandé par la surveillance de la page (commande `run_python` de stlite, hors session).
+
+    Répondre prouve que Python est libre ; le contenu dit si la session est encore utilisable : sessions actives,
+    client fermé ou tâche d'envoi arrêtée (les réponses n'arrivent plus à la page), messages reçus (s'il ne bouge
+    plus alors que la page envoie, la lecture des clics est arrêtée).
+    """
+    etat = {"recus": _RECUS[0] if _GARDES[0] else -1, "sessions": -1, "ferme": False}
+    try:
+        import streamlit.runtime as rt
+
+        runtime = rt.get_instance() if hasattr(rt, "get_instance") else rt.Runtime._instance
+        infos = runtime._session_mgr.list_active_sessions()
+        etat["sessions"] = len(infos)
+        for info in infos:
+            client = info.client
+            ferme, envoi = getattr(client, "_closed", None), getattr(client, "_sender_task", None)
+            if (ferme is not None and ferme.is_set()) or (envoi is not None and envoi.done()):
+                etat["ferme"] = True
+    except Exception as exc:  # version de Streamlit différente : la page se fie au seul compteur
+        etat["inconnu"] = f"{type(exc).__name__}: {exc}"
+    return json.dumps(etat)
 
 
 class _VersPage(logging.Handler):
@@ -108,6 +138,7 @@ def installer() -> None:
     if sys.platform != "emscripten" or getattr(sys, "_s360_journal", False):
         return
     sys._s360_journal = True
+    sys._s360_sante = sante
     gestionnaire = _VersPage(level=logging.WARNING)
     # Les loggers de Streamlit ne remontent pas à leur parent (propagate=False) : on se branche sur chacun.
     noms = [""] + [n for n in logging.root.manager.loggerDict if n.startswith("streamlit")]

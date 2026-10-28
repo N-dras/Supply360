@@ -151,11 +151,12 @@ l'avancement avion par avion et le forecast des années suivantes. Tous les fich
 
 Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mousse ») :
 
-- **avions restants** (objectif) : par défaut **recalculés** = NB_AC − avions du type dont la mousse (même classe,
+- **avions restants** (objectif) : par défaut la colonne **`NB_AC PE RESTANT`** du Besoin Prod, à défaut `NB_AC`.
+  Autre choix dans « ⚙️ Paramètres » › Année : **recalculés** = NB_AC − avions du type dont la mousse (même classe,
   assise ou dossier) a été remplacée depuis le 1er janvier d'après le fichier PE mousses. Le type de chaque avion
-  (A350 AFR01, B777-300 14J…) est retrouvé par ses CCN de mousses dans textile_all_parts (type qui en partage le plus).
-  Sans ces fichiers, ou pour une classe non reconnue : colonne `NB_AC PE RESTANT`, à défaut `NB_AC`. Choix dans
-  « ⚙️ Paramètres » › Année ; comparaison fichier / calcul dans « ℹ️ Règles de calcul et avions restants » ;
+  (A350 AFR01, B777-300 14J…) est retrouvé par ses CCN de mousses dans textile_all_parts (type qui en partage le plus) ;
+  sans ces fichiers, ou pour une classe non reconnue : colonne `NB_AC PE RESTANT`. Comparaison fichier / calcul dans
+  « ℹ️ Règles de calcul et avions restants » ;
 - NB_AC compté une fois par type d'avion × classe (pas une fois par ligne) ; l'objectif et les avions faisables sont
   comptés **par classe** (un avion à traiter en J, W et Y compte 3 fois), l'équivalent en avions est indiqué sous l'objectif ;
 - besoin d'un CCN = qté par avion × avions restants, additionné sur les types d'avion ;
@@ -230,12 +231,15 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
 ### Imports et page qui ne répond plus
 
 - **📂 Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
-- Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt.
-- **Relance automatique du moteur** : si la session du moteur se ferme ou ne répond plus aux clics alors que Python
-  est disponible, il est relancé **tout de suite** ; si Python ne répond plus du tout, au bout de 30 s. Un écran
-  Supply360 (logo, barre d'avancement) suit la relance, puis **tous les fichiers sont réimportés**, onglet par onglet
-  (relus dans le dossier mémorisé quand ils en viennent ; gardés en mémoire de la page, jamais écrits sur le disque).
-  Une seconde fois en moins de 5 minutes : bandeau **Relancer en gardant mes fichiers** / **Recharger la page** ;
+- Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt, avec
+  sa durée au-delà de 10 s. **Un long calcul n'est jamais interrompu** : la page attend qu'il se termine (au-delà de
+  3 minutes, un bandeau propose de relancer, à votre choix).
+- **Relance automatique du moteur, seulement sur une panne constatée** : la page interroge le moteur (Python libre ?
+  session ouverte ? clics bien reçus ? réponses bien envoyées ?) et ne le relance que si la panne est confirmée deux
+  fois de suite (détection en 5 à 15 s). Un écran Supply360 (logo, barre d'avancement) suit la relance, puis **tous
+  les fichiers sont réimportés**, onglet par onglet (relus dans le dossier mémorisé quand ils en viennent ; gardés en
+  mémoire de la page, jamais écrits sur le disque). Une seconde panne en moins de 2 minutes : bandeau **Relancer en
+  gardant mes fichiers** / **Recharger la page** ;
   **Détails techniques › Copier** donne le diagnostic à transmettre à l'auteur.
 - **Exports Excel** : bouton **Exporter** → le fichier est fabriqué à ce moment-là, puis téléchargé automatiquement
   (il n'est plus fabriqué à chaque affichage d'onglet, ce qui ralentissait et chargeait la mémoire).

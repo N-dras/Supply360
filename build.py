@@ -260,9 +260,9 @@ TEMPLATE = """<!doctype html>
 </div>
 <div id="root"></div>
 <script>
-// Surveillance du moteur Python (Pyodide, dans un « worker » du navigateur). On note les messages envoyés à
-// l'application (clics) et reçus en retour, les erreurs, et on peut sonder le moteur (message « heartbeat » de
-// Streamlit, sans effet sur l'app). Si le moteur ne répond plus, un bandeau le signale au lieu d'une page figée.
+// Surveillance du moteur Python (Pyodide, dans un « worker » du navigateur). On note l'heure des messages envoyés à
+// l'application qui attendent une réponse (clics) et celle des réponses, les erreurs, et on peut diagnostiquer le
+// moteur (`diagnostic`, réponse de Python hors session) : la page ne relance le moteur que sur une panne constatée.
 window.s360Moteur = (function () {
   const journal = [];
   const noter = (m) => {
@@ -273,47 +273,79 @@ window.s360Moteur = (function () {
   window.addEventListener("unhandledrejection", (e) => noter("Erreur : " + ((e.reason && e.reason.message) || e.reason)));
   const consoleErreur = console.error;
   console.error = function (...a) { try { noter(a.map((x) => (x && x.message) || x).join(" ")); } catch (_) {} return consoleErreur.apply(this, a); };
-  const etat = { worker: null, envoi: 0, recu: Date.now(), mort: "" };
+  // alerte : un diagnostic est demandé au plus vite ; mort : panne constatée par le diagnostic (relance)
+  const etat = { worker: null, envoi: 0, recu: Date.now(), mort: "", alerte: 0, brut: null };
+  // Messages de la page (BackMsg, protobuf) qui attendent une réponse : relance du script (champ 11), arrêt (7),
+  // adresses de fichiers (16). Les autres (sonde 17, infos git 12, cache 5…) peuvent rester sans réponse : ils ne
+  // doivent pas faire croire que la page attend le moteur.
+  const AVEC_REPONSE = new Set([7, 11, 16]);
+  const champs = (p) => {
+    const b = p instanceof Uint8Array ? p : p instanceof ArrayBuffer ? new Uint8Array(p) : null;
+    const vus = [];
+    if (!b) return vus;
+    let i = 0;
+    const varint = () => { let v = 0, f = 1, c; do { c = b[i++]; v += (c & 127) * f; f *= 128; } while (c & 128 && i < b.length); return v; };
+    while (i < b.length && vus.length < 8) {
+      const tag = varint(), type = tag % 8;
+      vus.push(Math.floor(tag / 8));
+      if (type === 0) varint(); else if (type === 2) i += varint(); else if (type === 1) i += 8; else if (type === 5) i += 4; else break;
+    }
+    return vus;
+  };
   const W = window.Worker;
   window.Worker = function (...args) {
     const w = new W(...args);
     etat.worker = w;
     w.addEventListener("message", (e) => {
-      etat.recu = Date.now();
+      if (w !== etat.worker) return;  // ancien moteur (relance) : ignoré
       const d = e.data;
+      if (d && d.type === "websocket:message") etat.recu = Date.now();
       if (d && d.type === "s360:journal") {  // erreur Python transmise par core/journal.py
         noter("Python " + d.texte);
-        if (/report this bug|RuntimeStoppedError/.test(d.texte)) etat.mort = "erreur interne de Streamlit";
-        if (d.evenement === "session_fermee") etat.mort = "session du moteur fermée";
+        if (d.evenement === "session_fermee" || /report this bug|RuntimeStoppedError/.test(d.texte)) etat.alerte = Date.now();
       }
     });
-    w.addEventListener("error", (e) => { etat.mort = e.message || "erreur du moteur"; noter("Moteur arrêté : " + etat.mort); });
+    w.addEventListener("error", (e) => { if (w === etat.worker) { noter("Erreur du moteur : " + (e.message || "?")); etat.alerte = Date.now(); } });
     const envoyer = w.postMessage.bind(w);
     w.postMessage = function (m, t) {
-      if (m && m.type === "websocket:send") etat.envoi = Date.now();
+      if (m && m.type === "websocket:send") {
+        const f = champs(m.data && m.data.payload);
+        if (!f.length || f.some((n) => AVEC_REPONSE.has(n))) etat.envoi = Date.now();
+      }
       if (m && m.type === "http:request") window.s360Moteur.ecouteurs.forEach((f) => f(m));  // suivi des imports
       return envoyer(m, t);
     };
+    etat.brut = envoyer;
     return w;
   };
   window.Worker.prototype = W.prototype;
-  // BackMsg { appHeartbeat: true } (champ 17, booléen ; étiquette varint 0x88 0x01, valeur 1) : Streamlit répond par un « heartbeat_ack ».
+  // BackMsg { appHeartbeat: true } (champ 17, booléen ; étiquette varint 0x88 0x01, valeur 1) : Streamlit répond par un
+  // « heartbeat_ack ». Sans effet sur l'app : sert à vérifier que la session lit encore les messages de la page.
   const sonder = () => {
-    if (!etat.worker) return;
+    if (!etat.worker || !etat.brut) return;
     const canal = new MessageChannel();
     canal.port1.onmessage = () => canal.port1.close();
-    etat.worker.postMessage({ type: "websocket:send", data: { payload: new Uint8Array([136, 1, 1]) } }, [canal.port2]);
+    etat.brut({ type: "websocket:send", data: { payload: new Uint8Array([136, 1, 1]) } }, [canal.port2]);
   };
-  // Python lui-même répond-il ? (commande interne de stlite, hors session Streamlit) : s'il répond alors que la
-  // session ne répond plus, la session est bloquée (pas un long calcul) → relance immédiate.
-  const pingPython = (delai = 3000) => new Promise((ok) => {
-    if (!etat.worker) return ok(false);
+  // Diagnostic : commande interne de stlite (`run_python`, hors session Streamlit) qui renvoie l'état de la session
+  // (core/journal.py, sante). Pas de réponse = Python calcule (ou est figé) ; réponse en erreur = Python cassé.
+  const diagnostic = (delai = 4000) => new Promise((ok) => {
+    const w = etat.worker;
+    if (!w || !etat.brut) return ok({ etat: "absent" });
     const canal = new MessageChannel();
-    const t = setTimeout(() => ok(false), delai);
-    canal.port1.onmessage = () => { clearTimeout(t); canal.port1.close(); ok(true); };
-    etat.worker.postMessage({ type: "run_python", data: { code: "1" } }, [canal.port2]);
+    const t = setTimeout(() => { canal.port1.close(); ok({ etat: "occupé" }); }, delai);
+    canal.port1.onmessage = (e) => {
+      clearTimeout(t);
+      canal.port1.close();
+      const d = e.data || {};
+      if (d.error) return ok({ etat: "erreur", erreur: String(d.error.message || d.error).slice(0, 200) });
+      let r = {};
+      try { r = JSON.parse((d.data && d.data.result) || "{}"); } catch (_) { /* réponse inattendue : rien à conclure */ }
+      ok(Object.assign({ etat: "répond", recus: -1 }, r));
+    };
+    etat.brut({ type: "run_python", data: { code: 'import sys; getattr(sys, "_s360_sante", lambda: "{}")()' } }, [canal.port2]);
   });
-  return { etat, journal, noter, sonder, pingPython, ecouteurs: new Set() };
+  return { etat, journal, noter, sonder, diagnostic, ecouteurs: new Set() };
 })();
 </script>
 <script>
@@ -343,12 +375,10 @@ window.fetch = function (ressource, options) {
   ];
   let libelle = etape.textContent, hote = "cdn.jsdelivr.net";
   const pret = () => document.querySelector(".s360-header, .stException, [data-testid='stException']");
-  // Après le démarrage : bandeau si le moteur s'arrête, ne répond plus (aucune réponse 20 s après un clic ou une
-  // sonde) ou si un calcul dure anormalement (plus de 90 s). La sonde part toutes les 30 s d'inactivité, et dès
-  // que l'on revient sur l'onglet : un blocage est signalé avant même le prochain clic.
+  // Après le démarrage : surveillance du moteur. Il n'est relancé que sur une panne CONSTATÉE, jamais pendant un calcul.
   const surveiller = () => {
     const M = window.s360Moteur;
-    let depuis = null, affiche = "";
+    let affiche = "";
     const bandeau = document.createElement("div");
     bandeau.id = "s360-bloque";
     document.body.append(bandeau);
@@ -369,49 +399,80 @@ window.fetch = function (ressource, options) {
         titre + "\\n" + navigator.userAgent + "\\n" + M.journal.join("\\n"));
       bandeau.classList.add("visible");
     };
-    // Attente d'une réponse du moteur : « Calcul en cours » affiché tout de suite (même pendant un traitement d'import,
-    // avant que Streamlit ne signale le calcul). Sans réponse pendant 60 s (onglet visible, sonde comprise), le moteur
-    // est relancé AUTOMATIQUEMENT en gardant les fichiers ; une seconde fois en moins de 5 min : bandeau.
-    let attente = null, derniereRelance = 0, sondeEnvoyee = false, ping = "";
+    // Diagnostic (M.diagnostic : Python répond hors session) toutes les 10 s quand la page attend une réponse ou
+    // qu'un calcul tourne, toutes les 45 s sinon, aussitôt après une alerte (erreur, session fermée) ou un retour
+    // sur l'onglet :
+    //  - Python ne répond pas : il calcule. On attend sans limite ; au-delà de 3 min, un bandeau propose de relancer
+    //    (au choix de l'utilisateur, rien d'automatique : relancer rejouerait le même calcul).
+    //  - Python répond, mais en erreur, sans session, avec les réponses coupées, ou sans lire les clics (sonde
+    //    envoyée, compteur des messages reçus immobile) : panne. Confirmée par un second diagnostic, puis relance
+    //    AUTOMATIQUE en gardant les fichiers (une fois par 2 min au plus, sinon bandeau).
+    let attente = null, depuis = null, derniereRelance = 0, diagEnCours = false, prochainDiag = 0, pannes = 0;
+    const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
     const relancerAuto = (raison) => {
-      if (Date.now() - derniereRelance < 300000) return false;
+      if (Date.now() - derniereRelance < 120000) return false;
       derniereRelance = Date.now();
       M.noter("Relance automatique : " + raison);
       window.s360Relancer(raison);
       return true;
     };
-    const bloque = () => afficher("⚠️ L'application ne répond plus.", "Relancez le moteur : vos fichiers sont réimportés automatiquement.");
+    const examiner = async () => {
+      diagEnCours = true;
+      const w = M.etat.worker, attenteAvant = attente;
+      const perime = () => w !== M.etat.worker || window.s360EnRelance;
+      try {
+        const a = await M.diagnostic();
+        if (perime() || a.etat !== "répond" && a.etat !== "erreur") return;  // occupé : il calcule
+        let panne = a.etat === "erreur" ? "moteur Python en erreur (" + a.erreur + ")"
+          : a.sessions === 0 ? "session du moteur fermée"
+          : a.ferme ? "les réponses du moteur n'arrivent plus à la page" : "";
+        if (!panne && a.recus >= 0) {
+          M.sonder();
+          await pause(2500);
+          const b = await M.diagnostic();
+          if (perime() || b.etat !== "répond") return;  // un calcul a démarré entre-temps : rien à conclure
+          if (b.recus <= a.recus) panne = "le moteur ne lit plus les clics";
+          else if (attenteAvant && attente && Date.now() - attenteAvant > 15000) {
+            // Python libre, session saine, tous les messages lus : plus rien n'est attendu
+            M.etat.recu = Date.now();
+            M.noter("Attente levée : le moteur est libre et a tout reçu");
+          }
+        }
+        if (!panne) { pannes = 0; return; }
+        pannes++;
+        M.noter("Diagnostic : " + panne + (pannes < 2 ? " (à confirmer)" : " (confirmé)"));
+        if (pannes >= 2) { pannes = 0; M.etat.mort = panne; }
+        else prochainDiag = Date.now() + 1500;  // confirmation rapide
+      } catch (err) {
+        M.noter("Diagnostic impossible : " + err);
+      } finally {
+        diagEnCours = false;
+      }
+    };
+    const duree = (ms) => (ms < 60000 ? Math.round(ms / 1000) + " s" : Math.floor(ms / 60000) + " min");
     const verifier = () => {
       const e = M.etat, now = Date.now();
       const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
-      depuis = enCours ? depuis || now : null;
+      const avant = attente;
       attente = e.envoi > e.recu && !enCours ? attente || e.envoi : null;
-      if (!attente) { sondeEnvoyee = false; ping = ""; }
+      if (attente && !avant) prochainDiag = Math.min(prochainDiag, now + 5000);  // clic sans réponse : diagnostic sous 5 s
+      depuis = enCours || attente ? depuis || attente || now : null;
       document.body.classList.toggle("s360-attente", !!attente && now - attente > 500 && !window.s360EnRelance);
-      const visible = document.visibilityState === "visible";
-      if (window.s360EnRelance) { afficher("", ""); return; }
+      // durée affichée dans la pastille « Calcul en cours » au-delà de 10 s
+      const txt = depuis && now - depuis > 10000 ? duree(now - depuis) : "";
+      document.querySelectorAll(".s360-busy").forEach((x) => { if (x.dataset.duree !== txt) x.dataset.duree = txt; });
+      if (window.s360EnRelance) { afficher("", ""); pannes = 0; return; }
       if (e.mort) {
         if (!relancerAuto(e.mort)) afficher("⛔ Le moteur de calcul s'est arrêté.", "Relancez-le : vos fichiers sont réimportés automatiquement.");
         return;
       }
-      // 6 s sans réponse : Python répond-il en direct ? Oui → session bloquée : relance tout de suite.
-      // Non → Python calcule ou est arrêté : relance au bout de 30 s sans aucune réponse.
-      if (attente && visible && now - attente > 6000 && !ping) {
-        ping = "en cours";
-        M.pingPython().then((repond) => {
-          if (!attente) return;
-          ping = repond ? "session bloquée" : "occupé";
-          if (repond && !relancerAuto("session bloquée (le moteur répond, mais plus aux clics)")) bloque();
-        });
-      }
-      if (attente && visible && now - attente > 20000 && !sondeEnvoyee) { sondeEnvoyee = true; M.sonder(); }
-      // Python muet lui aussi (moteur arrêté, ou calcul bloquant hors calcul Streamlit) : relance au bout de 30 s.
-      if (attente && visible && now - attente > 30000 && ping === "occupé") {
-        if (!relancerAuto("aucune réponse depuis " + Math.round((now - attente) / 1000) + " s")) bloque();
-      } else if (depuis && now - depuis > 90000)
-        afficher("⏳ Le calcul dure plus longtemps que prévu.", "Si la page ne répond plus, relancez le moteur (fichiers conservés).");
-      else if (ping !== "session bloquée") afficher("", "");
-      if (!enCours && visible && e.envoi <= e.recu && now - e.recu > 30000) { e.envoi = now; M.sonder(); }
+      const visible = document.visibilityState === "visible";
+      if (e.alerte) { e.alerte = 0; prochainDiag = Math.min(prochainDiag, now + 1500); }
+      if (visible && !diagEnCours && now >= prochainDiag) { prochainDiag = now + (depuis ? 10000 : 45000); examiner(); }
+      if (depuis && now - depuis > 180000)
+        afficher("⏳ Calcul toujours en cours (" + duree(now - depuis) + ").",
+          "Le moteur travaille : patientez. S'il ne répond vraiment plus, vous pouvez le relancer, vos fichiers sont conservés.");
+      else afficher("", "");
     };
     setInterval(verifier, 1000);
     // Export Excel préparé à la demande (components.telecharger) : le bouton de téléchargement apparaît, on le clique.
@@ -422,9 +483,7 @@ window.fetch = function (ressource, options) {
       });
     }, 400);
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "visible") return;
-      if (attente) attente = Date.now();  // onglet en arrière-plan : le moteur a pu être ralenti, on lui laisse 60 s
-      else { M.etat.envoi = Date.now(); M.sonder(); }
+      if (document.visibilityState === "visible") prochainDiag = 0;  // retour sur l'onglet : diagnostic tout de suite
     });
   };
   // Préchargement (voir PRECHARGEMENT dans build.py) : un fichier à la fois, quand le navigateur est libre ;

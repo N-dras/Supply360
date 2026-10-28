@@ -209,6 +209,12 @@ TEMPLATE = """<!doctype html>
 #s360-progres.ok { border-left-color: var(--ok); }
 #s360-progres.ok i { background: var(--ok); }
 #s360-loading.lent .lent { display: block; }
+#s360-loading .avancement { display: none; width: 18rem; height: 8px; border-radius: 8px; overflow: hidden; background: #E3E9F1; }
+#s360-loading .avancement i { display: block; height: 100%; width: 3%; border-radius: 8px; transition: width .4s ease;
+  background: linear-gradient(90deg, var(--navy), var(--navy-2)); }
+#s360-loading.relance .avancement { display: block; }
+#s360-loading.relance .barre, #s360-loading.relance .lent, #s360-loading.relance .erreur { display: none; }
+#s360-loading.relance .texte { max-width: 26rem; text-align: center; color: var(--text); }
 #s360-loading button {
   font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
   background: var(--navy);
@@ -258,13 +264,14 @@ window.s360Moteur = (function () {
       if (d && d.type === "s360:journal") {  // erreur Python transmise par core/journal.py
         noter("Python " + d.texte);
         if (/report this bug|RuntimeStoppedError/.test(d.texte)) etat.mort = "erreur interne de Streamlit";
+        if (d.evenement === "session_fermee") etat.mort = "session du moteur fermée";
       }
     });
     w.addEventListener("error", (e) => { etat.mort = e.message || "erreur du moteur"; noter("Moteur arrêté : " + etat.mort); });
     const envoyer = w.postMessage.bind(w);
     w.postMessage = function (m, t) {
       if (m && m.type === "websocket:send") etat.envoi = Date.now();
-      if (m && m.type === "http:request" && window.s360Moteur.surEnvoi) window.s360Moteur.surEnvoi(m);  // barre de progression des imports
+      if (m && m.type === "http:request") window.s360Moteur.ecouteurs.forEach((f) => f(m));  // suivi des imports
       return envoyer(m, t);
     };
     return w;
@@ -277,7 +284,16 @@ window.s360Moteur = (function () {
     canal.port1.onmessage = () => canal.port1.close();
     etat.worker.postMessage({ type: "websocket:send", data: { payload: new Uint8Array([136, 1, 1]) } }, [canal.port2]);
   };
-  return { etat, journal, noter, sonder };
+  // Python lui-même répond-il ? (commande interne de stlite, hors session Streamlit) : s'il répond alors que la
+  // session ne répond plus, la session est bloquée (pas un long calcul) → relance immédiate.
+  const pingPython = (delai = 3000) => new Promise((ok) => {
+    if (!etat.worker) return ok(false);
+    const canal = new MessageChannel();
+    const t = setTimeout(() => ok(false), delai);
+    canal.port1.onmessage = () => { clearTimeout(t); canal.port1.close(); ok(true); };
+    etat.worker.postMessage({ type: "run_python", data: { code: "1" } }, [canal.port2]);
+  });
+  return { etat, journal, noter, sonder, pingPython, ecouteurs: new Set() };
 })();
 </script>
 <script>
@@ -336,7 +352,7 @@ window.fetch = function (ressource, options) {
     // Attente d'une réponse du moteur : « Calcul en cours » affiché tout de suite (même pendant un traitement d'import,
     // avant que Streamlit ne signale le calcul). Sans réponse pendant 60 s (onglet visible, sonde comprise), le moteur
     // est relancé AUTOMATIQUEMENT en gardant les fichiers ; une seconde fois en moins de 5 min : bandeau.
-    let attente = null, derniereRelance = 0, sondeEnvoyee = false;
+    let attente = null, derniereRelance = 0, sondeEnvoyee = false, ping = "";
     const relancerAuto = (raison) => {
       if (Date.now() - derniereRelance < 300000) return false;
       derniereRelance = Date.now();
@@ -344,29 +360,47 @@ window.fetch = function (ressource, options) {
       window.s360Relancer(raison);
       return true;
     };
+    const bloque = () => afficher("⚠️ L'application ne répond plus.", "Relancez le moteur : vos fichiers sont réimportés automatiquement.");
     const verifier = () => {
       const e = M.etat, now = Date.now();
       const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
       depuis = enCours ? depuis || now : null;
       attente = e.envoi > e.recu && !enCours ? attente || e.envoi : null;
-      if (!attente) sondeEnvoyee = false;
+      if (!attente) { sondeEnvoyee = false; ping = ""; }
       document.body.classList.toggle("s360-attente", !!attente && now - attente > 500 && !window.s360EnRelance);
       const visible = document.visibilityState === "visible";
-      if (window.s360EnRelance) afficher("", "");
-      else if (e.mort) {
-        if (!relancerAuto("moteur arrêté (" + e.mort + ")"))
-          afficher("⛔ Le moteur de calcul s'est arrêté.", "Relancez-le : vos fichiers sont réimportés automatiquement.");
-      } else if (attente && visible && now - attente > 45000 && !sondeEnvoyee) {
-        sondeEnvoyee = true; M.sonder();  // dernière vérification avant la relance
-      } else if (attente && visible && now - attente > 60000) {
-        if (!relancerAuto("aucune réponse depuis " + Math.round((now - attente) / 1000) + " s"))
-          afficher("⚠️ L'application ne répond plus.", "Relancez le moteur : vos fichiers sont réimportés automatiquement.");
+      if (window.s360EnRelance) { afficher("", ""); return; }
+      if (e.mort) {
+        if (!relancerAuto(e.mort)) afficher("⛔ Le moteur de calcul s'est arrêté.", "Relancez-le : vos fichiers sont réimportés automatiquement.");
+        return;
+      }
+      // 6 s sans réponse : Python répond-il en direct ? Oui → session bloquée : relance tout de suite.
+      // Non → Python calcule ou est arrêté : relance au bout de 30 s sans aucune réponse.
+      if (attente && visible && now - attente > 6000 && !ping) {
+        ping = "en cours";
+        M.pingPython().then((repond) => {
+          if (!attente) return;
+          ping = repond ? "session bloquée" : "occupé";
+          if (repond && !relancerAuto("session bloquée (le moteur répond, mais plus aux clics)")) bloque();
+        });
+      }
+      if (attente && visible && now - attente > 20000 && !sondeEnvoyee) { sondeEnvoyee = true; M.sonder(); }
+      // Python muet lui aussi (moteur arrêté, ou calcul bloquant hors calcul Streamlit) : relance au bout de 30 s.
+      if (attente && visible && now - attente > 30000 && ping === "occupé") {
+        if (!relancerAuto("aucune réponse depuis " + Math.round((now - attente) / 1000) + " s")) bloque();
       } else if (depuis && now - depuis > 90000)
         afficher("⏳ Le calcul dure plus longtemps que prévu.", "Si la page ne répond plus, relancez le moteur (fichiers conservés).");
-      else afficher("", "");
+      else if (ping !== "session bloquée") afficher("", "");
       if (!enCours && visible && e.envoi <= e.recu && now - e.recu > 30000) { e.envoi = now; M.sonder(); }
     };
     setInterval(verifier, 1000);
+    // Export Excel préparé à la demande (components.telecharger) : le bouton de téléchargement apparaît, on le clique.
+    setInterval(() => {
+      document.querySelectorAll('[class*="__auto"] [data-testid="stDownloadButton"] button:not([data-s360-clique])').forEach((b) => {
+        b.setAttribute("data-s360-clique", "1");
+        b.click();
+      });
+    }, 400);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") return;
       if (attente) attente = Date.now();  // onglet en arrière-plan : le moteur a pu être ralenti, on lui laisse 60 s
@@ -421,6 +455,7 @@ window.fetch = function (ressource, options) {
 // fichiers du chantier choisi sont déposés dans la zone d'import de l'app, comme un « Parcourir ». Rien ne
 // sort du poste : les fichiers sont lus localement, dans le dossier OneDrive synchronisé.
 window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif (« R2/F-XKAA - 151126/x.xlsx »)
+window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémorisé
 (function () {
   const EXT = /\\.(xlsx|xlsm|csv)$/i;
   const CHANTIER = /([A-Z]{1,2}-?[A-Z0-9]{3,5})\\s*-\\s*(\\d{2})(\\d{2})(\\d{2})(?!\\d)/i;
@@ -462,10 +497,11 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     const suivre = (n) => {
       const M = window.s360Moteur, debut = Date.now();
       let envoyes = 0, dernier = Date.now(), vu = false;
-      M.surEnvoi = (m) => {
+      const ecoute = (m) => {
         const r = (m.data && m.data.request) || {};
         if (/upload_file/.test(String(r.path || r.url || ""))) { envoyes++; dernier = Date.now(); }
       };
+      M.ecouteurs.add(ecoute);
       montrer("Envoi des fichiers à Supply360…", 0, n);
       const tic = setInterval(() => {
         const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
@@ -475,7 +511,7 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
         const fini = (vu && !enCours) || (envoyes >= n && !vu && Date.now() - dernier > 6000);
         if (fini || Date.now() - debut > 300000) {
           clearInterval(tic);
-          M.surEnvoi = null;
+          M.ecouteurs.delete(ecoute);
           cacher(fini ? `✓ ${n} fichier${n > 1 ? "s" : ""} importé${n > 1 ? "s" : ""}` : "");
         }
       }, 250);
@@ -497,6 +533,7 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
       progres.montrer("Lecture des fichiers…", i, poignees.length);
       const f = await e.getFile();
       window.s360Chemins.set(`${f.name}|${f.size}|${f.lastModified}`, ch);
+      window.s360Poignees.set(f, e);  // relance du moteur : fichier relu sur le disque (OneDrive a pu le mettre à jour)
       out.push(f);
     }
     return out;
@@ -623,54 +660,111 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     imports.push({ cle, onglet, fichiers: [...inp.files] });
   }, true);
   const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
-  const libre = async (max = 180000) => {  // attend la fin du calcul Streamlit
+  const M = () => window.s360Moteur;
+  const occupe = () => !document.querySelector(".s360-header") || !!document.querySelector(".stApp[data-test-script-state='running']")
+    || M().etat.envoi > M().etat.recu;
+  const libre = async (max = 180000) => {  // attend la fin du calcul Streamlit (et des réponses du moteur)
     const debut = Date.now();
     await pause(400);
     let calme = 0;
     while (Date.now() - debut < max) {
-      const occupe = !document.querySelector(".s360-header") || document.querySelector(".stApp[data-test-script-state='running']");
-      calme = occupe ? 0 : calme + 1;
-      if (calme >= 4) return;
+      calme = occupe() ? 0 : calme + 1;
+      if (calme >= 6) return;
       await pause(250);
     }
   };
+  // Dépôt de fichiers dans une zone d'import, puis attente : envoi de TOUS les fichiers au moteur, puis fin du calcul.
+  const deposerEtAttendre = (input, fichiers) => new Promise((ok) => {
+    let envoyes = 0, dernier = Date.now(), vu = false;
+    const debut = Date.now();
+    const ecoute = (m) => {
+      const r = (m.data && m.data.request) || {};
+      if (/upload_file/.test(String(r.path || ""))) { envoyes++; dernier = Date.now(); }
+    };
+    M().ecouteurs.add(ecoute);
+    const dt = new DataTransfer();
+    fichiers.forEach((f) => dt.items.add(f));
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const tic = setInterval(() => {
+      const o = occupe();
+      if (envoyes >= fichiers.length && o) vu = true;
+      const fini = envoyes >= fichiers.length && !o && Date.now() - dernier > 1200 && (vu || Date.now() - dernier > 6000);
+      if (fini || Date.now() - debut > 240000) { clearInterval(tic); M().ecouteurs.delete(ecoute); ok(fini); }
+    }, 150);
+  });
   const ouvrirOnglet = async (id) => {
     const b = [...document.querySelectorAll(".st-key-s360_nav button")].find((x) => x.textContent.includes(ONGLETS[id]));
     if (b && !b.matches('[aria-checked="true"], [data-selected="true"]')) { b.click(); await libre(); }
   };
+  // Écran de relance : celui du chargement (logo, Supply360, avion) avec une barre d'avancement.
+  const ecran = (() => {
+    const el = document.getElementById("s360-loading");
+    let barre = el.querySelector(".avancement");
+    if (!barre) {
+      barre = document.createElement("div");
+      barre.className = "avancement";
+      barre.innerHTML = "<i></i>";
+      el.querySelector(".barre").after(barre);
+    }
+    return {
+      montrer(texte, etape, pct) {
+        el.classList.remove("fini", "lent", "echec");
+        el.classList.add("relance");
+        el.querySelector(".texte").textContent = texte;
+        el.querySelector(".etape").textContent = etape;
+        barre.querySelector("i").style.width = Math.max(3, Math.min(100, pct)) + "%";
+      },
+      cacher() { el.classList.add("fini"); setTimeout(() => el.classList.remove("relance"), 600); },
+    };
+  })();
   window.s360Relancer = async (raison) => {
-    const P = window.s360Progres, M = window.s360Moteur, retour = ongletActif();
+    const Mo = M(), retour = ongletActif();
     if (window.s360EnRelance) return;
     window.s360EnRelance = true;
+    const titre = raison ? "Le moteur de calcul ne répondait plus : relance automatique, vos fichiers sont conservés."
+      : "Relance du moteur de calcul, vos fichiers sont conservés.";
+    let pct = 2;
+    const montee = setInterval(() => { pct += (55 - pct) * 0.06; ecran.montrer(titre, "Redémarrage du moteur Python…", pct); }, 400);
+    const echecs = [];
     try {
-      P.montrer(raison ? "Le moteur ne répondait plus : relance automatique…" : "Relance du moteur Python…", 0, 0);
+      ecran.montrer(titre, "Redémarrage du moteur Python…", pct);
       try { window.s360App && window.s360App.unmount(); } catch (_) { /* moteur déjà arrêté */ }
-      M.etat.mort = ""; M.etat.envoi = 0; M.etat.recu = Date.now();
+      Mo.etat.mort = ""; Mo.etat.envoi = 0; Mo.etat.recu = Date.now();
       await window.s360Monter();
       await libre(300000);
+      clearInterval(montee);
       rejeu = true;
       const ordre = [...new Set(imports.map((x) => x.onglet))];
       let n = 0;
       for (const id of ordre) {
         await ouvrirOnglet(id);
         for (const imp of imports.filter((x) => x.onglet === id)) {
-          P.montrer("Réimport de vos fichiers…", ++n, imports.length);
-          const input = document.querySelector(`[class*="st-key-${imp.cle}"] input[type=file]`);
-          if (!input) continue;
-          const dt = new DataTransfer();
-          imp.fichiers.forEach((f) => dt.items.add(f));
-          input.files = dt.files;
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-          await libre();
+          n++;
+          ecran.montrer(titre, `Réimport de vos fichiers (${n} / ${imports.length}) : ${ONGLETS[id] || ""}…`, 55 + 45 * (n - 1) / imports.length);
+          // fichiers relus sur le disque quand ils viennent d'un dossier mémorisé (version à jour, lisible)
+          const fichiers = [];
+          for (const f of imp.fichiers) {
+            const h = window.s360Poignees.get(f);
+            try { fichiers.push(h ? await h.getFile() : f); } catch (_) { fichiers.push(f); }
+          }
+          // zone d'origine ; à défaut (zone absente, ex. type d'étude différent) l'import du dossier de l'onglet,
+          // qui reconnaît chaque fichier par son contenu
+          const input = document.querySelector(`[class*="st-key-${imp.cle}"] input[type=file]`)
+            || document.querySelector(`[class*="st-key-${id}__dossier__upload"] input[type=file]`);
+          if (!input || !(await deposerEtAttendre(input, fichiers))) echecs.push(imp.fichiers.map((f) => f.name).join(", "));
         }
       }
       await ouvrirOnglet(retour);
-      P.cacher(imports.length ? "✓ Moteur relancé, fichiers réimportés" : "✓ Moteur relancé");
+      ecran.montrer(titre, echecs.length ? "Terminé, sauf : " + echecs.join(" ; ") : "✓ Moteur relancé, fichiers réimportés", 100);
+      if (echecs.length) Mo.noter("Réimport incomplet : " + echecs.join(" ; "));
+      await pause(echecs.length ? 4000 : 900);
+      ecran.cacher();
     } catch (err) {
-      P.cacher();
-      M.noter("Relance impossible : " + err);
+      Mo.noter("Relance impossible : " + err);
       location.reload();
     } finally {
+      clearInterval(montee);
       rejeu = false;
       window.s360EnRelance = false;
     }

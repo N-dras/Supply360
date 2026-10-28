@@ -334,7 +334,7 @@ def _forecast_fournisseur(ev, synth, long, today, h):
         ui.tableau(tab, column_config=CFG, height="content" if len(tab) <= 8 else 320)
         par_mois = piv.copy()
         par_mois.columns = [m_.strftime("%m/%Y") for m_ in par_mois.columns]
-        ui.telecharger(_export_fournisseur(f, an, par_mois, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"forecast_{f}"),
+        ui.telecharger(lambda: _export_fournisseur(f, an, par_mois, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"forecast_{f}"),
                        K + "export_fournisseur", label="⬇️ Forecast fournisseur (Excel)")
 
 
@@ -363,7 +363,7 @@ def _exports_controles(res, c, ev, synth, long, h):
                 "Livraisons à prévoir": liv[["Fournisseur", "PN", "Désignation", "Mois", "À livrer", "Valeur à livrer (€)"]],
                 "Besoins par avion": ev,
             }
-            ui.telecharger(sio.exporter_excel(feuilles), _nom_fichier("planning_PE"), K + "export_tout",
+            ui.telecharger(lambda: sio.exporter_excel(feuilles), _nom_fichier("planning_PE"), K + "export_tout",
                            label="⬇️ Planning PE complet (Excel)")
         with b, st.popover("🔎 Contrôles des données", width="stretch"):
             nr, sans, absents = res["non_reconnues"], res["sans_pn"], res["pn_absents_stock"]

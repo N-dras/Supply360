@@ -308,7 +308,7 @@ def _exports(res: dict):
             "Avions restants": _table_restants(b),
             "Rattachement avions": rat,
         }
-        ui.telecharger(sio.exporter_excel(feuilles), sio.nom_export(TAB_ID), K + "export", label="⬇️ PE mousses complète (Excel)")
+        ui.telecharger(lambda: sio.exporter_excel(feuilles), sio.nom_export(TAB_ID), K + "export", label="⬇️ PE mousses complète (Excel)")
     with c, st.popover("🔎 Contrôles des données", width="stretch"):
         absents = m[~m["Dans l'État du stock"]]
         st.markdown(f"- **{len(absents)}** CCN du Besoin Prod absents de l'État du stock (stock compté à 0)"

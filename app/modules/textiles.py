@@ -250,7 +250,6 @@ def render() -> None:
     try:
         s_all, o_all = _tables(*cle)
         cle_prev = (cle, (f_pieces[1], f_pieces[0]), params, regles) if f_pieces else None
-        prev = _prevision(*cle_prev) if cle_prev else None
     except ValueError as exc:
         ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "⛔")
         return
@@ -272,7 +271,12 @@ def render() -> None:
     s, o = _filtrer(s_all, o_all, cat)
     st.session_state[K + "cle_export"] = (cle, cat, cle_prev)
 
-    if section == "Prévision":
+    if section == "Prévision":  # calculée seulement ici (et pour l'export) : c'est le calcul le plus lourd de l'onglet
+        try:
+            prev = _prevision(*cle_prev) if cle_prev else None
+        except ValueError as exc:
+            ui.callout(f"<b>Prévision impossible.</b> {exc}", "ko", "⛔")
+            return
         _section_prevision(prev, cat, o)
     else:
         {"Synthèse": _synthese, "Commandes": _commandes, "Fournisseurs": _fournisseurs, "Consommation": _consommation}[section](s, o, today, cat)
@@ -298,7 +302,8 @@ def _synthese(s, o, today, cat):
             ui.kpi_card("Lignes en retard", charts.entier(r["en_retard"]), f"{r['sans_date']} sans date promise", "ko"),
             ui.kpi_card("Stock dormant", charts.euros(r["valeur_dormant"]), f"{r['dormants']} PN", "warn"),
         ])
-        ui.telecharger(_export(*st.session_state[K + "cle_export"]), sio.nom_export(TAB_ID), K + "export__btn")
+        cle_export = st.session_state[K + "cle_export"]
+        ui.telecharger(lambda: _export(*cle_export), sio.nom_export(TAB_ID), K + "export__btn")
 
     with ui.section(f"{TAB_ID}_rel", "Relances fournisseurs", "Du plus urgent au moins urgent", tag=str(len(rel))):
         if len(rel):
@@ -564,7 +569,8 @@ def _section_prevision(prev, cat, o):
         with c2.popover("📋 Tableaux détaillés", width="stretch"):
             _tableaux_prevision(s, plan, gs, res)
         with c3:
-            ui.telecharger(_export(*st.session_state[K + "cle_export"]), sio.nom_export(TAB_ID), K + "export_prev__btn")
+            cle_export = st.session_state[K + "cle_export"]
+            ui.telecharger(lambda: _export(*cle_export), sio.nom_export(TAB_ID), K + "export_prev__btn")
 
     fours = pv.par_fournisseur(s, plan)
     with ui.section(f"{TAB_ID}_prev_four", "Prévision par fournisseur",

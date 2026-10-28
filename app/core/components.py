@@ -360,10 +360,23 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
         st.html('<div class="s360-note">' + " · ".join(notes) + "</div>")
 
 
-def telecharger(data: bytes, nom: str, cle: str, label: str = "⬇️ Télécharger (Excel)") -> None:
-    """Bouton de téléchargement Excel. `on_click="ignore"` : télécharger ne relance pas les calculs."""
-    st.download_button(label, data=data, file_name=nom, key=cle, on_click="ignore",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+def telecharger(data, nom: str, cle: str, label: str = "⬇️ Télécharger (Excel)") -> None:
+    """Bouton de téléchargement Excel. `on_click="ignore"` : télécharger ne relance pas les calculs.
+
+    `data` : octets, ou de préférence une FONCTION sans argument qui les produit. Le fichier n'est alors fabriqué
+    qu'au clic, et non à chaque affichage de l'onglet (plusieurs secondes sur de gros fichiers, page figée) :
+    « Exporter » fabrique le fichier, puis le téléchargement part tout seul (JavaScript de build.py, clé « __auto »).
+    """
+    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if not callable(data):
+        st.download_button(label, data=data, file_name=nom, key=cle, on_click="ignore", mime=mime)
+        return
+    if st.session_state.pop(f"{cle}__pret", False):  # fabriqué pour cette exécution seulement
+        with st.spinner("Préparation du fichier Excel…"):
+            octets = data()
+        st.download_button(label, data=octets, file_name=nom, key=f"{cle}__auto", on_click="ignore", mime=mime)
+    else:
+        st.button(label, key=f"{cle}__prep", on_click=lambda: st.session_state.__setitem__(f"{cle}__pret", True))
 
 
 def sous_onglets(cle: str, options: list[str], icones: dict | None = None) -> str:

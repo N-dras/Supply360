@@ -217,7 +217,7 @@ def render() -> None:
     try:
         with st.spinner("Lecture et croisement des fichiers…"):
             m, m_scope = _analyse(*cle)
-            export = _export(*cle)
+        export = lambda: _export(*cle)  # noqa: E731 — fabriqué au clic seulement
     except ValueError as exc:  # ColonneIntrouvable, FichierIllisible
         ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "⛔")
         return

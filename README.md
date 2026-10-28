@@ -223,10 +223,14 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
 
 - **📂 Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
 - Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt.
-- Si le moteur de calcul s'arrête ou ne répond plus pendant 60 s (onglet affiché), il est **relancé automatiquement**
-  (sans recharger la page, ~20 s) et les fichiers sont réimportés, onglet par onglet (gardés en mémoire de la page,
-  jamais écrits sur le disque). Si cela se reproduit dans les 5 minutes, un bandeau propose **Relancer en gardant mes
-  fichiers** ou **Recharger la page** ; **Détails techniques › Copier** donne le diagnostic à transmettre à l'auteur.
+- **Relance automatique du moteur** : si la session du moteur se ferme ou ne répond plus aux clics alors que Python
+  est disponible, il est relancé **tout de suite** ; si Python ne répond plus du tout, au bout de 30 s. Un écran
+  Supply360 (logo, barre d'avancement) suit la relance, puis **tous les fichiers sont réimportés**, onglet par onglet
+  (relus dans le dossier mémorisé quand ils en viennent ; gardés en mémoire de la page, jamais écrits sur le disque).
+  Une seconde fois en moins de 5 minutes : bandeau **Relancer en gardant mes fichiers** / **Recharger la page** ;
+  **Détails techniques › Copier** donne le diagnostic à transmettre à l'auteur.
+- **Exports Excel** : bouton **Exporter** → le fichier est fabriqué à ce moment-là, puis téléchargé automatiquement
+  (il n'est plus fabriqué à chaque affichage d'onglet, ce qui ralentissait et chargeait la mémoire).
 - Mémoire : les gros fichiers (État du stock, Commandes) sont lus en ne gardant que les colonnes utiles ; les fichiers
   sont reconnus en ne lisant que leurs en-têtes ; chaque fichier n'est gardé qu'une fois (format Excel compressé).
 Conseil Edge : *Paramètres › Système et performances › Ne jamais mettre en veille ces sites* → ajouter l'adresse de Supply360.

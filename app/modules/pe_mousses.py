@@ -224,15 +224,18 @@ def _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today)
 # Synthèse
 # --------------------------------------------------------------------------
 def _kpis_avions(blocs: pd.DataFrame, annee: int) -> list[str]:
+    """Cartes de l'objectif. Unité : la CLASSE d'avion (un avion à traiter en J, W et Y compte 3 fois), car chaque
+    classe a ses propres CCN et son propre nombre d'avions restants."""
     obj, now = int(blocs["Objectif"].sum()), int(blocs["Complets maintenant"].sum())
     rec, coter, appro = int(blocs["Complets à réception"].sum()), int(blocs["À coter"].sum()), int(blocs["À approvisionner"].sum())
     taux = now / obj * 100 if obj else 0
     return [
-        ui.kpi_card(f"Objectif {annee}", charts.entier(obj), "avions restants, comptés par classe", "navy"),
-        ui.kpi_card("Complets maintenant", charts.entier(now), f"{taux:.0f} % de l'objectif · tous les CCN en stock", "ok"),
-        ui.kpi_card("Complets à réception", charts.entier(rec), "une fois les commandes en cours livrées", "info"),
-        ui.kpi_card("À coter", charts.entier(coter), "il ne manque que des CCN sans prix", "warn"),
-        ui.kpi_card("À approvisionner", charts.entier(appro), "CCN manquants à commander", "ko"),
+        ui.kpi_card(f"Objectif {annee} : classes à traiter", charts.entier(obj),
+                    f"soit {charts.entier(p26.avions_distincts(blocs))} avions · un avion compte une fois par classe", "navy"),
+        ui.kpi_card("Classes complètes maintenant", charts.entier(now), f"{taux:.0f} % de l'objectif · tous leurs CCN en stock", "ok"),
+        ui.kpi_card("Classes complètes à réception", charts.entier(rec), "une fois les commandes en cours livrées", "info"),
+        ui.kpi_card("Classes à coter", charts.entier(coter), "il ne manque que des CCN sans prix", "warn"),
+        ui.kpi_card("Classes à approvisionner", charts.entier(appro), "CCN manquants à commander", "ko"),
     ]
 
 
@@ -277,7 +280,7 @@ def _synthese(res: dict, today: date):
             ui.graphe(charts.barres_h([(act, n.get(act, 0), charts.entier(n.get(act, 0)), p26.ACTION_COULEURS[act])
                                        for act in p26.ACTIONS], titre="CCN par action"))
         with b:
-            ui.graphe(_jauges_blocs(blocs, "Avions par type et par classe, sur l'objectif"))
+            ui.graphe(_jauges_blocs(blocs, "Avions par type et par classe, sur l'objectif (une ligne = une classe d'un type d'avion)"))
         st.markdown("**Actions à lancer** · PR à émettre, du plus urgent au moins urgent")
         act = m[m["Priorité"] <= 2]
         if act.empty:
@@ -344,7 +347,7 @@ def _faisables(res: dict, today: date):
                     "Un avion d'une classe est complet quand tous ses CCN sont disponibles ; le stock d'un CCN commun est "
                     "réparti entre les types d'avion"):
         ui.kpi_grid(_kpis_avions(blocs, annee))
-        ui.graphe(_jauges_blocs(blocs, "Avancement par type d'avion et par classe (avions)"))
+        ui.graphe(_jauges_blocs(blocs, "Avancement par type d'avion et par classe (nombre d'avions de chaque classe)"))
         t = blocs.assign(Bloc=[p26.nom_bloc(x, y) for x, y in zip(blocs["Type avion"], blocs["Classe"])])
         cols = ["Type avion", "Flotte", "Classe", "Objectif", "Complets maintenant", "Complets à réception", "À coter", "À approvisionner",
                 "Taux (%)", "Nb CCN", "CCN couverts", "CCN communs", "CCN limitant", "PN à coter"]

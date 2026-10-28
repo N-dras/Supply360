@@ -338,6 +338,14 @@ def avions_faisables(b: pd.DataFrame, m: pd.DataFrame) -> tuple[pd.DataFrame, pd
     return blocs, d
 
 
+def avions_distincts(blocs: pd.DataFrame) -> int:
+    """Nombre d'avions de l'objectif (et non de classes) : par type d'avion, la classe qui en compte le plus.
+
+    L'objectif est suivi par classe (un avion à traiter en J, W et Y compte 3 fois) ; ce total donne l'ordre de
+    grandeur en avions. Exemple : 18 AFR01 en J, 18 en W, 17 en Y → 53 classes, 18 avions."""
+    return int(blocs.groupby("Type avion")["Objectif"].max().sum()) if len(blocs) else 0
+
+
 def date_debut_annee(date_ref: date) -> date:
     return date(date_ref.year, 1, 1)
 

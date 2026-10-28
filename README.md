@@ -156,7 +156,8 @@ Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mou
   (A350 AFR01, B777-300 14J…) est retrouvé par ses CCN de mousses dans textile_all_parts (type qui en partage le plus).
   Sans ces fichiers, ou pour une classe non reconnue : colonne `NB_AC PE RESTANT`, à défaut `NB_AC`. Choix dans
   « ⚙️ Paramètres » › Année ; comparaison fichier / calcul dans « ℹ️ Règles de calcul et avions restants » ;
-- NB_AC compté une fois par type d'avion × classe (pas une fois par ligne) ;
+- NB_AC compté une fois par type d'avion × classe (pas une fois par ligne) ; l'objectif et les avions faisables sont
+  comptés **par classe** (un avion à traiter en J, W et Y compte 3 fois), l'équivalent en avions est indiqué sous l'objectif ;
 - besoin d'un CCN = qté par avion × avions restants, additionné sur les types d'avion ;
 - stock d'un CCN = QTE SUR ÉTAGÈRE de l'État du stock (maximum des lignes du CCN) ; en commande = reste à livrer des
   commandes SAP du CCN (sans fichier Commandes : QTE EN CDE) ;

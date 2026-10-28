@@ -107,3 +107,9 @@ def test_avions_faisables(calcul):
     assert x["Besoin total CCN"] == 266 * 6 + 300 * 3 and x["Statut CCN"] == "À approvisionner"
     assert blocs.loc[("B777 14J", "Y"), "À approvisionner"] == 3   # FM-1004 manque aussi : pas seulement à coter
     assert blocs.loc[("A350 34J", "Y"), "CCN communs"] == 1
+
+
+def test_avions_distincts_et_classes(calcul):
+    blocs = calcul[3].reset_index()
+    # objectif suivi par classe (A350 : J 6, W 6, Y 6 ; B777 : 3, 3, 3) ; en avions : le maximum par type
+    assert blocs["Objectif"].sum() == 27 and p26.avions_distincts(blocs) == 6 + 3

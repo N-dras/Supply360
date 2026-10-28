@@ -134,7 +134,9 @@ def _avancement(c: pd.DataFrame, date_ref, today):
         exemple = c.groupby("Immatriculation").size()
         st.html(f'<div class="s360-note"><b>Comment lire</b> : {ELEMENT}, soumise à la PE (dossiers W et Y : jamais remplacés). '
                 f'{nb_avions} avions du fichier PE mousses × leurs éléments = <b>{n} éléments suivis</b>'
-                + (f" (ex. {exemple.index[0]} : {int(exemple.iloc[0])} éléments)" if len(exemple) else "") + ".</div>")
+                + (f" (ex. {exemple.index[0]} : {int(exemple.iloc[0])} éléments)" if len(exemple) else "") + ". "
+                "Tous les avions du fichier, quelle que soit leur échéance (l'objectif de l'année, lui, vient du Besoin Prod)."
+                "</div>")
         if retard:
             ui.callout(f"<b>{retard} éléments en retard</b>, répartis sur <b>{avions_retard} avions</b> : à rattraper en priorité "
                        f"(prévus dès ce mois-ci dans le forecast).", "ko", "🔴")

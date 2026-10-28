@@ -94,12 +94,16 @@ def test_avions_faisables(calcul):
     # Y : FM-1004 commun (300 en stock) → 1 avion A350 (266) ; plus rien pour le B777 (300), bloqué aussi par FM-2009
     assert blocs.loc[("A350 34J", "Y"), "Complets maintenant"] == 1 and blocs.loc[("B777 14J", "Y"), "Complets maintenant"] == 0
     assert blocs.loc[("B777 14J", "Y"), "PN à coter"] == 1
-    tot = blocs[["Complets maintenant", "Complets à réception", "À approvisionner"]].sum(axis=1)
+    tot = blocs[["Complets maintenant", "Complets à réception", "À coter", "À approvisionner"]].sum(axis=1)
     assert (tot == blocs["Objectif"]).all()
-    # chaque CCN seul (sans partage) : FM-1004 suffirait pour 1 avion de chaque type → potentiels > réalité
-    pot = d[d["CCN"] == "7104"].set_index("Type avion")["Avions (stock)"]
-    assert pot["A350 34J"] == 1 and pot["B777 14J"] == 1
+    # détail par CCN cohérent avec les avions complets : FM-1004 commun → 1 avion A350 en stock, 0 pour le B777
+    x = d[d["CCN"] == "7104"].set_index("Type avion")
+    assert x.loc["A350 34J", "Avions couverts par le stock"] == 1 and x.loc["B777 14J", "Avions couverts par le stock"] == 0
+    assert x["Stock"].sum() == pytest.approx(300)                      # stock commun partagé, jamais compté deux fois
+    seg = d[["Avions couverts par le stock", "Avions couverts à réception", "Avions manquants"]].sum(axis=1)
+    assert (seg == d["Objectif"]).all()
     # statut du CCN commun jugé sur son besoin TOTAL (A350 + B777) : à approvisionner malgré la commande en cours
     x = d[d["CCN"] == "7104"].iloc[0]
     assert x["Besoin total CCN"] == 266 * 6 + 300 * 3 and x["Statut CCN"] == "À approvisionner"
+    assert blocs.loc[("B777 14J", "Y"), "À approvisionner"] == 3   # FM-1004 manque aussi : pas seulement à coter
     assert blocs.loc[("A350 34J", "Y"), "CCN communs"] == 1

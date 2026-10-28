@@ -140,9 +140,11 @@ l'avancement avion par avion et le forecast des années suivantes. Tous les fich
   (PR à émettre), export Excel complet et contrôles des données.
 - **Avions faisables** : par type d'avion × classe, avions complets avec le stock, à réception des commandes, à
   approvisionner, CCN limitant, CCN communs ; détail d'un type d'avion : avions couvrables par chaque CCN (stock, + commandes,
-  trait = objectif de la classe). Couleur = statut du CCN sur son besoin **total** : stock suffisant, couvert à réception
-  des commandes, à coter, à approvisionner. Un CCN commun à plusieurs types peut suffire pour un type seul et manquer
-  quand même (l'autre type en a besoin aussi) : il est alors « à approvisionner ».
+  trait = objectif de la classe). **Code couleur commun à tous les graphes** : 🟢 couvert par le stock, 🔵 couvert à
+  réception des commandes en cours, 🟠 à coter (CCN sans prix), 🔴 à approvisionner (à commander), gris : au-delà de
+  l'objectif. Jamais de rouge sur ce que le stock couvre : 26 avions couverts sur un objectif de 28 = 26 en vert + 2 en
+  rouge. Un CCN commun à plusieurs types est partagé selon la répartition des avions complets (le détail par CCN
+  concorde avec l'avancement par classe).
 - **CCN et commandes** : une barre par CCN = 100 % de son besoin de l'année, découpée en part couverte par le stock,
   par les commandes en cours et manque à commander (les moins couverts en haut) ; recherche, filtre par action, CCN à coter.
 - **Avancement PE** et **Forecast** : voir ci-dessous (ex-sous-onglet « Planning PE » du Textile).

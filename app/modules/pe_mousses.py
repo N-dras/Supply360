@@ -23,7 +23,7 @@ from modules import _planning_pe as vue_pe
 
 TAB_ID = "pe_mousses"
 TAB_LABEL = "PE mousses"
-TAB_ICON = "🛠️"
+TAB_ICON = "🪑"
 TAB_DESCRIPTION = "Politique d'entretien des mousses : avions faisables cette année, CCN à commander, avancement et forecast."
 
 K = f"{TAB_ID}__"
@@ -52,7 +52,7 @@ COLONNES_ATTENDUES = {
 }
 RESTANT_LIBELLES = {p26.RESTANT_AUTO: "Calculé avec le fichier PE mousses (sinon fichier Besoin Prod)",
                     p26.RESTANT_FICHIER: "Colonne NB_AC PE RESTANT du Besoin Prod (règle d'origine)"}
-STATUT_CCN = {"Suffisant": COLORS["ok"], "À approvisionner": COLORS["ko"], "À coter": COLORS["warn"]}
+STATUT_CCN = dict(zip(p26.STATUTS_CCN, [COLORS["ok"], COLORS["navy_2"], COLORS["warn"], COLORS["ko"]]))
 FOND_COMMANDES = "#A9C1EA"
 CFG = {
     "Besoin": st.column_config.NumberColumn("Besoin", format="%d", help="Qté par avion × avions restants"),
@@ -237,10 +237,15 @@ def _kpis_avions(blocs: pd.DataFrame, annee: int) -> list[str]:
 
 
 def _jauges_blocs(blocs: pd.DataFrame, titre: str) -> str:
-    lignes = [(p26.nom_bloc(r["Type avion"], r["Classe"]),
-               [(n, r[n], p26.AVANCEMENT_COULEURS[n]) for n in p26.AVANCEMENT], None,
-               f"{int(r['Complets maintenant'])} / {int(r['Objectif'])}")
-              for _, r in blocs.sort_values(["Type avion", "Classe"]).iterrows() if r["Objectif"] > 0]
+    lignes = []
+    for _, r in blocs.sort_values(["Type avion", "Classe"]).iterrows():
+        if r["Objectif"] <= 0:
+            continue
+        info = [f"CCN limitant : {r['CCN limitant']}"] if r["Complets maintenant"] < r["Objectif"] else []
+        if r["À approvisionner"] and r["CCN communs"]:
+            info.append(f"{int(r['CCN communs'])} CCN commun(s) à d'autres types : stock et commandes partagés entre eux")
+        lignes.append((p26.nom_bloc(r["Type avion"], r["Classe"]), [(n, r[n], p26.AVANCEMENT_COULEURS[n]) for n in p26.AVANCEMENT],
+                       None, f"{int(r['Complets maintenant'])} / {int(r['Objectif'])}", info))
     leg = [(n, c, "barre") for n, c in p26.AVANCEMENT_COULEURS.items()]
     return charts.jauges(lignes, titre, leg, fmt=charts.entier, hauteur_max="30rem") if lignes else charts.vide("Aucun avion à traiter")
 
@@ -340,7 +345,7 @@ def _faisables(res: dict, today: date):
         ui.graphe(_jauges_blocs(blocs, "Avancement par type d'avion et par classe (avions)"))
         t = blocs.assign(Bloc=[p26.nom_bloc(x, y) for x, y in zip(blocs["Type avion"], blocs["Classe"])])
         cols = ["Type avion", "Flotte", "Classe", "Objectif", "Complets maintenant", "Complets à réception", "À approvisionner",
-                "Taux (%)", "Nb CCN", "CCN couverts", "CCN limitant", "PN à coter"]
+                "Taux (%)", "Nb CCN", "CCN couverts", "CCN communs", "CCN limitant", "PN à coter"]
         ui.tableau(t[cols], column_config=CFG, height="content" if len(t) <= 12 else 420)
         with st.popover("ℹ️ Règles de calcul et avions restants", width="content"):
             st.markdown(
@@ -348,7 +353,9 @@ def _faisables(res: dict, today: date):
                 "- **Complets maintenant** : avions équipables avec le stock ; un CCN commun à plusieurs types est réparti, "
                 "l'avion suivant allant toujours au type le moins avancé.\n"
                 "- **Complets à réception** : en plus, une fois les commandes en cours livrées (stock + en commande).\n"
-                "- **À approvisionner** : le reste de l'objectif, impossible sans nouvelle commande.\n"
+                "- **À approvisionner** : le reste de l'objectif, impossible sans nouvelle commande. Avec un **CCN commun** "
+                "à plusieurs types, les commandes en cours peuvent suffire pour un type seul mais pas pour tous : le reste "
+                "est alors à approvisionner (voir « CCN communs » et le détail par type).\n"
                 "- Le stock est partagé entre classes et types : ces chiffres montrent ce que permet le stock, pas une affectation.")
             ui.tableau(_table_restants(b), width=1100, height=360)
     _detail_type(d, blocs)
@@ -360,8 +367,8 @@ def _detail_type(d: pd.DataFrame, blocs: pd.DataFrame):
     if not types:
         return
     with ui.section(f"{TAB_ID}_detail_type", "Détail par type d'avion",
-                    "Avions couvrables par chaque CCN : stock (couleur) et avec les commandes en cours (fond bleu), "
-                    "trait = objectif de la classe"):
+                    "Avions couvrables par chaque CCN avec le stock (couleur = statut du CCN) et en plus avec les commandes "
+                    "en cours (bleu clair) ; trait = objectif de la classe"):
         a, b = st.columns([1.2, 2], vertical_alignment="center")
         typ = a.selectbox("Type d'avion", types, key=K + "type", persist_state="page", label_visibility="collapsed")
         x = d[d["Type avion"] == typ].sort_values(["Classe", "Avions (stock)"])
@@ -369,22 +376,26 @@ def _detail_type(d: pd.DataFrame, blocs: pd.DataFrame):
         with b:
             st.html('<div class="s360-note">' + " · ".join(
                 f"<b>{r['Classe']}</b> : {int(r['Complets maintenant'])} / {int(r['Objectif'])} complets maintenant"
+                + (f", {int(r['Complets à réception'])} à réception" if r["Complets à réception"] else "")
                 + (f" (limitant : {r['CCN limitant']})" if r["Complets maintenant"] < r["Objectif"] else "")
                 for _, r in bt.iterrows()) + "</div>")
         lignes = []
         for _, r in x.iterrows():
-            statut = "À coter" if r["À coter"] else "Suffisant" if r["Avions (stock)"] >= r["Objectif"] else "À approvisionner"
             plus = max(r["Avions (stock + commandes)"] - r["Avions (stock)"], 0)
-            partage = f" · commun à {r['Types partageant le CCN']} types" if r["Types partageant le CCN"] > 1 else ""
-            lignes.append((f"{r['Classe']} · {r['CCN']} · {r['PN']}{partage}",
-                           [("Avions (stock)", r["Avions (stock)"], STATUT_CCN[statut]), ("+ avec commandes", plus, FOND_COMMANDES)],
-                           r["Objectif"], f"{int(r['Avions (stock)'])} / {int(r['Objectif'])}"))
+            commun = r["Types partageant le CCN"] > 1
+            libelle = f"{r['Classe']} · {r['CCN']} · {r['PN']}" + (f" · commun à {r['Types partageant le CCN']} types" if commun else "")
+            segs = [(f"Avions avec le stock ({r['Statut CCN'].lower()})", r["Avions (stock)"], STATUT_CCN[r["Statut CCN"]]),
+                    ("+ avec les commandes en cours", plus, FOND_COMMANDES)]
+            info = [f"Statut : {r['Statut CCN']}", f"Stock {charts.entier(r['Stock'])} · stock + commandes "
+                    f"{charts.entier(r['Couverture'])} · besoin {charts.entier(r['Besoin total CCN'])}"
+                    + (" (tous types qui partagent le CCN)" if commun else "")]
+            lignes.append((libelle, segs, r["Objectif"], f"{int(r['Avions (stock)'])} / {int(r['Objectif'])}", info))
         leg = [(n, c, "barre") for n, c in STATUT_CCN.items()] + [("+ avec commandes", FOND_COMMANDES, "barre"),
                                                                  ("Objectif de la classe", COLORS["text"], "trait")]
         ui.graphe(charts.jauges(lignes, f"{typ} : avions couvrables par CCN", leg, repere_nom="Objectif", fmt=charts.entier,
                                 hauteur_max="34rem"))
-        t = x[["Classe", "CCN", "PN", "Désignation", "Qté par avion", "Objectif", "Besoin", "Stock", "Couverture",
-               "Avions (stock)", "Avions (stock + commandes)", "Manque (unités)", "PU (€)", "Types partageant le CCN"]]
+        t = x[["Statut CCN", "Classe", "CCN", "PN", "Désignation", "Qté par avion", "Objectif", "Besoin", "Besoin total CCN", "Stock",
+               "Couverture", "Avions (stock)", "Avions (stock + commandes)", "Manque (unités)", "PU (€)", "Types partageant le CCN"]]
         ui.tableau(t, column_config=CFG, height="content" if len(t) <= 10 else 380)
 
 

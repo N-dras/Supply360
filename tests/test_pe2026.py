@@ -99,3 +99,7 @@ def test_avions_faisables(calcul):
     # chaque CCN seul (sans partage) : FM-1004 suffirait pour 1 avion de chaque type → potentiels > réalité
     pot = d[d["CCN"] == "7104"].set_index("Type avion")["Avions (stock)"]
     assert pot["A350 34J"] == 1 and pot["B777 14J"] == 1
+    # statut du CCN commun jugé sur son besoin TOTAL (A350 + B777) : à approvisionner malgré la commande en cours
+    x = d[d["CCN"] == "7104"].iloc[0]
+    assert x["Besoin total CCN"] == 266 * 6 + 300 * 3 and x["Statut CCN"] == "À approvisionner"
+    assert blocs.loc[("A350 34J", "Y"), "CCN communs"] == 1

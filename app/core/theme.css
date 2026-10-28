@@ -371,9 +371,11 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-heat td:hover { outline: 2px solid var(--navy); }
 .s360-heat td[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
 /* Zone défilante : en-tête figé ; infobulle sous la case (au-dessus, elle passerait sous l'en-tête) */
-.s360-heat-scroll { overflow: auto; padding-bottom: 3.5rem; margin-bottom: -3rem; }
+/* (pas de marge négative : la zone recouvrait le bouton « Détail par avion » placé dessous, qui ne répondait plus) */
+.s360-heat-scroll { overflow: auto; }
 .s360-heat-scroll thead th { position: sticky; top: 0; z-index: 3; background: var(--surface); box-shadow: 0 3px 0 var(--surface); }
 .s360-heat-scroll td[data-tip]:hover::after { bottom: auto; top: calc(100% + 6px); }
+.s360-heat-scroll tr:nth-last-child(-n+3) td[data-tip]:hover::after { top: auto; bottom: calc(100% + 6px); }
 
 /* ---------------------------------------------------------------- avion décoratif (titre d'onglet) */
 .s360-hero::after {

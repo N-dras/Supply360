@@ -210,6 +210,54 @@ def choisir_feuille(xl: pd.ExcelFile, mots_cles, feuille_preferee: str | None = 
     return xl.sheet_names[0], 0
 
 
+def _cellule(v):
+    """Comme pandas : nombre entier → int, texte vide → None."""
+    if type(v) is float and v.is_integer():
+        return int(v)
+    return None if v == "" else v
+
+
+def lire_colonnes(xl: pd.ExcelFile, feuille: str, entete: int, mots_cles, garder) -> pd.DataFrame:
+    """Lecture ÉCONOME EN MÉMOIRE : seules les colonnes dont le nom normalisé satisfait `garder(nom)` sont gardées.
+
+    pandas crée un objet Python par cellule de TOUTES les colonnes (≈ 80 Mo pour 30 000 lignes × 23 colonnes sous
+    Pyodide, où la mémoire ne redescend jamais) : un gros État du stock pouvait saturer la mémoire du navigateur et
+    figer la page. Ici, les lignes sont lues une à une (moteur calamine) et seules les colonnes utiles sont gardées.
+    Sans calamine (développement local), lecture pandas classique.
+    """
+    livre = getattr(xl, "book", None)
+    if not hasattr(livre, "get_sheet_by_name"):
+        return lire_feuille(xl, feuille, entete)
+    lignes = livre.get_sheet_by_name(feuille).iter_rows()
+    cles = [normaliser(m) for m in mots_cles]
+    for i, ligne in enumerate(lignes):  # ligne d'en-tête : celle qui contient les mots-clés (comme trouver_ligne_entete)
+        cellules = [normaliser(v) for v in ligne]
+        jointes = "|".join(cellules)
+        if all(any(m in c for c in cellules) or m in jointes for m in cles):
+            break
+        if i >= 30:
+            return lire_feuille(xl, feuille, entete)
+    else:
+        return lire_feuille(xl, feuille, entete)
+    noms, vus = [], {}
+    for j, v in enumerate(ligne):  # noms de colonnes comme pandas : vides → « Unnamed: j », doublons → « X.1 »
+        n = str(v).replace("\n", " ").strip() if v not in (None, "") else f"Unnamed: {j}"
+        if n in vus:
+            vus[n] += 1
+            n = f"{n}.{vus[n]}"
+        else:
+            vus[n] = 0
+        noms.append(n)
+    idx = [j for j, n in enumerate(noms) if garder(normaliser(n))]
+    valeurs = {j: [] for j in idx}
+    for ligne in lignes:
+        n = len(ligne)
+        for j in idx:
+            valeurs[j].append(_cellule(ligne[j]) if j < n else None)
+    df = pd.DataFrame({noms[j]: pd.Series(valeurs[j], dtype=object) for j in idx})
+    return df.dropna(how="all").reset_index(drop=True)
+
+
 def lire_feuille(xl: pd.ExcelFile, feuille: str, entete: int) -> pd.DataFrame:
     """Lit une feuille en conservant les types bruts d'Excel (dtype=object) :
     un PN numérique reste un entier (pas de « 12345.0 »)."""
@@ -248,7 +296,8 @@ def nombre(serie: pd.Series, defaut=None) -> pd.Series:
 
 def dates(serie: pd.Series) -> pd.Series:
     """Dates Excel ou texte JJ/MM/AAAA → datetime64 (NaT si invalide)."""
-    return pd.to_datetime(serie, errors="coerce", dayfirst=True, format="mixed")
+    # Unité fixée (ns) : la précision dépend sinon du type des cellules (objets datetime ou Timestamp).
+    return pd.to_datetime(serie, errors="coerce", dayfirst=True, format="mixed").astype("datetime64[ns]")
 
 
 # --------------------------------------------------------------------------
@@ -335,6 +384,15 @@ STOCK_COMPLEMENTS = {
 }
 
 
+_STOCK_EXACT = {"pnr", "pn", "finalpnr", "gestion", "ccn", "class_code"}
+_STOCK_CONTIENT = ("pnr", "qte_sur_etagere", "qte_en_cde", "code_agt_appro", "code_fournisseur", "dernier_fournisseur",
+                   "description", "tracking_level", "qte_conso", "date_derniere_conso", *STOCK_COMPLEMENTS.values())
+
+
+def _garder_stock(n: str) -> bool:
+    return n in _STOCK_EXACT or any(c in n for c in _STOCK_CONTIENT)
+
+
 def lire_etat_stock(data: bytes):
     """État du stock (PNR, QTE SUR ÉTAGÈRE, QTE EN CDE, GESTION…). Renvoie (lignes, feuille).
 
@@ -343,7 +401,7 @@ def lire_etat_stock(data: bytes):
     """
     xl = ouvrir_excel(data, FICHIER_STOCK)
     feuille, entete = choisir_feuille(xl, ["pnr", "qte sur etagere"])
-    df = lire_feuille(xl, feuille, entete)
+    df = lire_colonnes(xl, feuille, entete, ["pnr", "qte sur etagere"], _garder_stock)
 
     c_pnr = (trouver_colonne(df, "pnr", exact=True) or trouver_colonne(df, "pnr")
              or trouver_colonne(df, "pn", "finalpnr", exact=True))
@@ -390,6 +448,15 @@ def lire_etat_stock(data: bytes):
     return out[out["PN"].notna()], feuille
 
 
+_CMD_EXACT = {"pn", "p/n", "part_number", "commande", "gestion", "ccn", "fournisseur", "statut"}
+_CMD_CONTIENT = ("code_acheteur", "code_fournisseur", "fournisseur", "livraison_promise", "livraison_demandee", "emission",
+                 "statut", "restant_a_livrer", "class_code", "code_classe")
+
+
+def _garder_commandes(n: str) -> bool:
+    return n in _CMD_EXACT or any(c in n for c in _CMD_CONTIENT)
+
+
 def lire_commandes_sap(data: bytes):
     """Commandes (SAP), feuille « Toutes les commandes » de préférence. Renvoie (lignes, feuille).
 
@@ -399,7 +466,7 @@ def lire_commandes_sap(data: bytes):
     xl = ouvrir_excel(data, FICHIER_COMMANDES)
     feuille, entete = choisir_feuille(xl, ["pn", "code acheteur", "commande"],
                                       feuille_preferee="Toutes les commandes")
-    df = lire_feuille(xl, feuille, entete).dropna(axis=1, how="all")
+    df = lire_colonnes(xl, feuille, entete, ["pn", "code acheteur", "commande"], _garder_commandes).dropna(axis=1, how="all")
 
     c_pn = trouver_colonne(df, "pn", exact=True) or trouver_colonne(df, "p/n", "part number", exact=True)
     c_cmd = trouver_colonne(df, "commande", exact=True)

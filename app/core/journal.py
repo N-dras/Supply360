@@ -7,6 +7,7 @@ interne au navigateur, aucun accès réseau). Sans effet en local (`streamlit ru
 """
 
 import logging
+import re
 import sys
 
 IGNORES = ("Failed to scan component manifests",)
@@ -46,7 +47,9 @@ class _Sortie:
         self._tampon += s
         if "\n" in self._tampon:
             bloc, self._tampon = self._tampon.rsplit("\n", 1)
-            if bloc.strip() and not any(i in bloc for i in IGNORES):
+            # Seulement les erreurs (traceback, exception) : pas les avertissements de dépréciation de pandas.
+            if bloc.strip() and not any(i in bloc for i in IGNORES) and re.search(r"Traceback|Error|Exception|report this bug", bloc) \
+                    and "Warning" not in bloc:
                 _envoyer("stderr : " + bloc)
         return n
 

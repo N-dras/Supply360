@@ -116,6 +116,18 @@ def js(obj) -> str:
     return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/").replace("<!--", "\\u003c!--")
 
 
+def onglets(fichiers: dict[str, str]) -> dict[str, str]:
+    """{TAB_ID: TAB_LABEL} des onglets du registre (relance du moteur : retrouver l'onglet de chaque import)."""
+    out = {}
+    for chemin, code in fichiers.items():
+        if chemin.startswith("app/modules/") and not Path(chemin).name.startswith("_"):
+            tab_id = re.search(r'^TAB_ID\s*=\s*"([^"]+)"', code, re.M)
+            label = re.search(r'^TAB_LABEL\s*=\s*"([^"]+)"', code, re.M)
+            if tab_id and label:
+                out[tab_id.group(1)] = label.group(1)
+    return out
+
+
 def modules_embarques(fichiers: dict[str, str]) -> list[str]:
     noms = []
     for chemin, code in fichiers.items():
@@ -178,9 +190,24 @@ TEMPLATE = """<!doctype html>
 #s360-bloque.visible { display: block; }
 #s360-bloque button { font: inherit; font-weight: 700; color: #fff; background: var(--navy); border: 0; border-radius: 99px;
   padding: .3rem .9rem; cursor: pointer; margin-left: .3rem; }
+#s360-bloque .actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+#s360-bloque .actions button { margin: 0; }
+#s360-bloque .recharger { background: #fff; color: var(--navy); border: 1px solid #CFD8E5; }
 #s360-bloque details { margin-top: .4rem; color: var(--muted); font-size: .8125rem; }
 #s360-bloque pre { max-height: 10rem; overflow: auto; white-space: pre-wrap; margin: .3rem 0; font-size: .75rem; }
 #s360-bloque .copier { background: #fff; color: var(--navy); border: 1px solid #CFD8E5; margin: 0; }
+#s360-progres { display: none; position: fixed; z-index: 1000001; left: 50%; top: 4.6rem; transform: translateX(-50%);
+  width: min(26rem, calc(100vw - 2rem)); padding: .7rem 1rem .8rem; border-radius: 12px; background: #fff;
+  font-family: var(--font); box-shadow: 0 10px 30px rgba(0, 20, 60, .22); border-left: 4px solid var(--navy-2); }
+#s360-progres.visible { display: block; }
+#s360-progres .l { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; font-size: .9375rem; color: var(--text); }
+#s360-progres .l span { color: var(--muted); font-weight: 700; }
+#s360-progres .piste { height: 6px; border-radius: 6px; overflow: hidden; background: #E3E9F1; }
+#s360-progres i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--navy), var(--navy-2));
+  transition: width .25s ease; }
+#s360-progres.indet i { width: 35%; animation: s360-glisse 1.2s ease-in-out infinite; }
+#s360-progres.ok { border-left-color: var(--ok); }
+#s360-progres.ok i { background: var(--ok); }
 #s360-loading.lent .lent { display: block; }
 #s360-loading button {
   font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
@@ -235,7 +262,11 @@ window.s360Moteur = (function () {
     });
     w.addEventListener("error", (e) => { etat.mort = e.message || "erreur du moteur"; noter("Moteur arrêté : " + etat.mort); });
     const envoyer = w.postMessage.bind(w);
-    w.postMessage = function (m, t) { if (m && m.type === "websocket:send") etat.envoi = Date.now(); return envoyer(m, t); };
+    w.postMessage = function (m, t) {
+      if (m && m.type === "websocket:send") etat.envoi = Date.now();
+      if (m && m.type === "http:request" && window.s360Moteur.surEnvoi) window.s360Moteur.surEnvoi(m);  // barre de progression des imports
+      return envoyer(m, t);
+    };
     return w;
   };
   window.Worker.prototype = W.prototype;
@@ -290,12 +321,14 @@ window.fetch = function (ressource, options) {
       if (cle === affiche) return;
       affiche = cle;
       if (!titre) { bandeau.classList.remove("visible"); return; }
-      bandeau.innerHTML = "<b></b> <span></span> <button type='button' class='recharger'>Recharger la page</button>" +
+      bandeau.innerHTML = "<b></b> <span></span><div class='actions'><button type='button' class='relancer'>Relancer en gardant mes " +
+        "fichiers</button><button type='button' class='recharger'>Recharger la page</button></div>" +
         "<details><summary>Détails techniques</summary><pre></pre><button type='button' class='copier'>Copier</button></details>";
       bandeau.querySelector("b").textContent = titre;
       bandeau.querySelector("span").textContent = texte;
       bandeau.querySelector("pre").textContent = M.journal.join("\\n") || "Aucune erreur enregistrée.";
       bandeau.querySelector(".recharger").onclick = () => location.reload();
+      bandeau.querySelector(".relancer").onclick = () => { bandeau.classList.remove("visible"); affiche = ""; window.s360Relancer(); };
       bandeau.querySelector(".copier").onclick = () => navigator.clipboard && navigator.clipboard.writeText(
         titre + "\\n" + navigator.userAgent + "\\n" + M.journal.join("\\n"));
       bandeau.classList.add("visible");
@@ -304,9 +337,10 @@ window.fetch = function (ressource, options) {
       const e = M.etat, now = Date.now();
       const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
       depuis = enCours ? depuis || now : null;
-      if (e.mort) afficher("⛔ Le moteur de calcul s'est arrêté.", "Rechargez la page puis réimportez les fichiers (📂 Ouvrir : un clic).");
+      if (window.s360EnRelance) afficher("", "");
+      else if (e.mort) afficher("⛔ Le moteur de calcul s'est arrêté.", "Relancez-le : vos fichiers sont réimportés automatiquement.");
       else if (!enCours && e.envoi > e.recu && now - e.envoi > 20000)
-        afficher("⚠️ L'application ne répond plus.", "Rechargez la page puis réimportez les fichiers (📂 Ouvrir : un clic).");
+        afficher("⚠️ L'application ne répond plus.", "Relancez le moteur : vos fichiers sont réimportés automatiquement.");
       else if (depuis && now - depuis > 90000)
         afficher("⏳ Le calcul dure plus longtemps que prévu.", "Si la page ne répond plus, rechargez-la (fichiers à réimporter).");
       else afficher("", "");
@@ -381,16 +415,67 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     if (!h.queryPermission || (await h.queryPermission({ mode: "read" })) === "granted") return true;
     return (await h.requestPermission({ mode: "read" })) === "granted";
   };
-  async function fichiers(dir, chemin, profondeur) {
-    const out = [];
-    for await (const [nom, e] of dir.entries()) {
-      if (e.kind === "file" && EXT.test(nom) && !nom.startsWith("~$")) {
-        const f = await e.getFile();
-        window.s360Chemins.set(`${f.name}|${f.size}|${f.lastModified}`, `${chemin}/${nom}`);
-        out.push(f);
-      } else if (e.kind === "directory" && profondeur > 0) {
-        out.push(...await fichiers(e, `${chemin}/${nom}`, profondeur - 1));
+  // Barre de progression des imports : lecture des fichiers (i / n), envoi au moteur Python (i / n : un fichier
+  // OneDrive « en ligne seulement » est téléchargé à ce moment-là), puis analyse (jusqu'à la fin du calcul).
+  const progres = (() => {
+    let el = null, fin = null;
+    const montrer = (titre, i, n) => {
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "s360-progres";
+        el.innerHTML = "<div class='l'><b></b><span></span></div><div class='piste'><i></i></div>";
+        document.body.append(el);
       }
+      clearTimeout(fin);
+      el.className = "visible" + (n ? "" : " indet");
+      el.querySelector("b").textContent = titre;
+      el.querySelector("span").textContent = n ? `${i} / ${n}` : "";
+      el.querySelector("i").style.width = n ? `${Math.max(4, Math.round(i / n * 100))}%` : "";
+    };
+    const cacher = (texte) => {
+      if (!el) return;
+      if (texte) { montrer(texte, 1, 1); el.classList.add("ok"); el.querySelector("span").textContent = ""; }
+      fin = setTimeout(() => el.classList.remove("visible"), texte ? 1800 : 0);
+    };
+    const suivre = (n) => {
+      const M = window.s360Moteur, debut = Date.now();
+      let envoyes = 0, dernier = Date.now(), vu = false;
+      M.surEnvoi = (m) => {
+        const r = (m.data && m.data.request) || {};
+        if (/upload_file/.test(String(r.path || r.url || ""))) { envoyes++; dernier = Date.now(); }
+      };
+      montrer("Envoi des fichiers à Supply360…", 0, n);
+      const tic = setInterval(() => {
+        const enCours = !!document.querySelector(".stApp[data-test-script-state='running']");
+        vu = vu || enCours;
+        if (!vu && envoyes < n) montrer("Envoi des fichiers à Supply360…", envoyes, n);
+        else if (enCours || !vu) montrer("Analyse des fichiers…", 0, 0);
+        const fini = (vu && !enCours) || (envoyes >= n && !vu && Date.now() - dernier > 6000);
+        if (fini || Date.now() - debut > 300000) {
+          clearInterval(tic);
+          M.surEnvoi = null;
+          cacher(fini ? `✓ ${n} fichier${n > 1 ? "s" : ""} importé${n > 1 ? "s" : ""}` : "");
+        }
+      }, 250);
+    };
+    return { montrer, cacher, suivre };
+  })();
+  window.s360Progres = progres;
+  async function fichiers(dir, chemin, profondeur) {
+    const poignees = [];
+    const parcourir = async (d, ch, p) => {
+      for await (const [nom, e] of d.entries()) {
+        if (e.kind === "file" && EXT.test(nom) && !nom.startsWith("~$")) poignees.push([e, `${ch}/${nom}`]);
+        else if (e.kind === "directory" && p > 0) await parcourir(e, `${ch}/${nom}`, p - 1);
+      }
+    };
+    await parcourir(dir, chemin, profondeur);
+    const out = [];
+    for (const [i, [e, ch]] of poignees.entries()) {
+      progres.montrer("Lecture des fichiers…", i, poignees.length);
+      const f = await e.getFile();
+      window.s360Chemins.set(`${f.name}|${f.size}|${f.lastModified}`, ch);
+      out.push(f);
     }
     return out;
   }
@@ -401,6 +486,7 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     liste.forEach((f) => dt.items.add(f));
     input.files = dt.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
+    progres.suivre(liste.length);
   }
   function fenetre(html) {
     fermer();
@@ -444,12 +530,12 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
     f.querySelectorAll(".ch").forEach((b) => b.addEventListener("click", async () => {
       const x = tous[+b.dataset.i];
       localStorage.setItem("s360-dernier-chantier", x.nom);
-      message(`Lecture du dossier ${x.nom}…`);
+      fermer();
       try {
         const liste = await fichiers(x.e, `${h.name}/${x.nom}`, 2);
-        if (!liste.length) { message(`Aucun fichier Excel dans « ${x.nom} ».`); return; }
-        deposer(cible, liste); fermer();
-      } catch (err) { message("Lecture impossible : " + err.message); }
+        if (!liste.length) { progres.cacher(); message(`Aucun fichier Excel dans « ${x.nom} ».`); return; }
+        deposer(cible, liste);
+      } catch (err) { progres.cacher(); message("Lecture impossible : " + err.message); }
     }));
   }
   document.addEventListener("click", async (ev) => {
@@ -471,18 +557,101 @@ window.s360Chemins = new Map();  // « nom|taille|date » → chemin relatif («
       if (mode === "chantier") await listeChantiers(h, cible);
       else if (mode === "dernier") {  // dossier COMMANDE : le fichier le plus récemment modifié
         const liste = await fichiers(h, h.name, 0);
-        if (!liste.length) { message(`Aucun fichier Excel dans « ${h.name} ».`); return; }
+        if (!liste.length) { progres.cacher(); message(`Aucun fichier Excel dans « ${h.name} ».`); return; }
         deposer(cible, [liste.reduce((a, b) => (b.lastModified > a.lastModified ? b : a))]);
       } else {
-        message(`Lecture du dossier ${h.name}…`);
         const liste = await fichiers(h, h.name, 0);
-        if (!liste.length) { message(`Aucun fichier Excel ou CSV dans « ${h.name} ».`); return; }
-        deposer(cible, liste); fermer();
+        if (!liste.length) { progres.cacher(); message(`Aucun fichier Excel ou CSV dans « ${h.name} ».`); return; }
+        deposer(cible, liste);
       }
     } catch (err) {
+      progres.cacher();
       if (err.name !== "AbortError") message("Accès au dossier impossible : " + err.message);
     }
   });
+})();
+</script>
+<script>
+// Relance du moteur sans perdre les fichiers. Chaque import (📂 Ouvrir ou Parcourir) est retenu EN MÉMOIRE de la
+// page (rien n'est écrit sur le disque) : clé de la zone d'import + fichiers. Si le moteur Python s'arrête ou ne
+// répond plus, « Relancer » redémarre stlite (sans recharger la page) puis redépose chaque import dans sa zone,
+// onglet par onglet, dans l'ordre d'origine.
+(function () {
+  const ONGLETS = __ONGLETS__;  // TAB_ID → libellé de l'onglet
+  const imports = [];
+  window.s360Imports = imports;  // (lecture seule : diagnostic)
+  let rejeu = false;
+  const cleDe = (el) => {
+    const c = el.closest('[class*="st-key-"]');
+    const m = c && [...c.classList].map((x) => x.match(/^st-key-(.+)$/)).find(Boolean);
+    return m ? m[1].replace(/(__upload)\\d*$/, "$1") : null;
+  };
+  const ongletActif = () => {
+    const b = document.querySelector('.st-key-s360_nav button[aria-checked="true"], .st-key-s360_nav button[data-selected="true"]');
+    const lib = b ? b.textContent : "";
+    return Object.keys(ONGLETS).find((id) => lib.includes(ONGLETS[id])) || Object.keys(ONGLETS)[0];
+  };
+  document.addEventListener("change", (e) => {
+    const inp = e.target;
+    if (rejeu || !(inp instanceof HTMLInputElement) || inp.type !== "file" || !inp.files || !inp.files.length) return;
+    const cle = cleDe(inp);
+    if (!cle) return;
+    const onglet = cle.startsWith("commun__") ? ongletActif() : cle.split("__")[0];
+    for (let i = imports.length - 1; i >= 0; i--) if (imports[i].cle === cle) imports.splice(i, 1);  // une sélection remplace l'autre
+    imports.push({ cle, onglet, fichiers: [...inp.files] });
+  }, true);
+  const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const libre = async (max = 180000) => {  // attend la fin du calcul Streamlit
+    const debut = Date.now();
+    await pause(400);
+    let calme = 0;
+    while (Date.now() - debut < max) {
+      const occupe = !document.querySelector(".s360-header") || document.querySelector(".stApp[data-test-script-state='running']");
+      calme = occupe ? 0 : calme + 1;
+      if (calme >= 4) return;
+      await pause(250);
+    }
+  };
+  const ouvrirOnglet = async (id) => {
+    const b = [...document.querySelectorAll(".st-key-s360_nav button")].find((x) => x.textContent.includes(ONGLETS[id]));
+    if (b && !b.matches('[aria-checked="true"], [data-selected="true"]')) { b.click(); await libre(); }
+  };
+  window.s360Relancer = async () => {
+    const P = window.s360Progres, M = window.s360Moteur, retour = ongletActif();
+    window.s360EnRelance = true;
+    try {
+      P.montrer("Relance du moteur Python…", 0, 0);
+      try { window.s360App && window.s360App.unmount(); } catch (_) { /* moteur déjà arrêté */ }
+      M.etat.mort = ""; M.etat.envoi = 0; M.etat.recu = Date.now();
+      await window.s360Monter();
+      await libre(300000);
+      rejeu = true;
+      const ordre = [...new Set(imports.map((x) => x.onglet))];
+      let n = 0;
+      for (const id of ordre) {
+        await ouvrirOnglet(id);
+        for (const imp of imports.filter((x) => x.onglet === id)) {
+          P.montrer("Réimport de vos fichiers…", ++n, imports.length);
+          const input = document.querySelector(`[class*="st-key-${imp.cle}"] input[type=file]`);
+          if (!input) continue;
+          const dt = new DataTransfer();
+          imp.fichiers.forEach((f) => dt.items.add(f));
+          input.files = dt.files;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          await libre();
+        }
+      }
+      await ouvrirOnglet(retour);
+      P.cacher(imports.length ? "✓ Moteur relancé, fichiers réimportés" : "✓ Moteur relancé");
+    } catch (err) {
+      P.cacher();
+      M.noter("Relance impossible : " + err);
+      location.reload();
+    } finally {
+      rejeu = false;
+      window.s360EnRelance = false;
+    }
+  };
 })();
 </script>
 <script type="module">
@@ -498,17 +667,17 @@ FormData.prototype.append = function (nom, valeur, fichier) {
 };
 
 // Import dynamique : un échec de téléchargement de stlite est affiché au lieu de bloquer l'écran de chargement.
-import("__CDN__/stlite.js")
-  .then(({ mount }) => mount(
-    {
-      entrypoint: "app/main.py",
-      requirements: __REQUIREMENTS__,
-      files: __FILES__,
-      streamlitConfig: __CONFIG__,
-    },
-    document.getElementById("root"),
-  ))
-  .catch((e) => window.s360Echec("impossible de télécharger stlite depuis cdn.jsdelivr.net (" + e + ")"));
+// s360Monter est réutilisé par la relance du moteur (bandeau « L'application ne répond plus »).
+const OPTIONS = {
+  entrypoint: "app/main.py",
+  requirements: __REQUIREMENTS__,
+  files: __FILES__,
+  streamlitConfig: __CONFIG__,
+};
+window.s360Monter = () => import("__CDN__/stlite.js").then(({ mount }) => {
+  window.s360App = mount(OPTIONS, document.getElementById("root"));
+});
+window.s360Monter().catch((e) => window.s360Echec("impossible de télécharger stlite depuis cdn.jsdelivr.net (" + e + ")"));
 </script>
 <!-- Thème Supply360 (app/core/theme.css), images incluses : chargé une seule fois.
      Placé en fin de <body> pour passer après les styles que Streamlit ajoute au <head>. -->
@@ -525,6 +694,7 @@ def main() -> None:
     reqs = lire_requirements()
     html = (TEMPLATE
             .replace("__PRECHARGEMENT__", js(PRECHARGEMENT))
+            .replace("__ONGLETS__", js(onglets(fichiers)))
             .replace("__CDN__", STLITE_CDN)
             .replace("__THEME__", css_complet(ASSETS))
             .replace("__REQUIREMENTS__", js(reqs))

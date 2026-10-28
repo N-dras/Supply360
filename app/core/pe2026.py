@@ -24,6 +24,7 @@ ACTION_COULEURS = dict(zip(ACTIONS, ["#C62828", "#F4A259", "#1F4E9C", "#1E8E5A"]
 AVANCEMENT = ["Complets maintenant", "Complets à réception", "À approvisionner"]
 AVANCEMENT_COULEURS = dict(zip(AVANCEMENT, ["#1E8E5A", "#1F4E9C", "#E4002B"]))
 RESTANT_AUTO, RESTANT_FICHIER = "auto", "fichier"
+STATUTS_CCN = ["Stock suffisant", "Couvert à réception", "À coter", "À approvisionner"]
 
 
 def code_ccn(serie: pd.Series) -> pd.Series:
@@ -270,6 +271,11 @@ def avions_faisables(b: pd.DataFrame, m: pd.DataFrame) -> tuple[pd.DataFrame, pd
     d["Avions (stock + commandes)"] = np.floor(d["Couverture"] / q).fillna(0).astype(int)
     d["Manque (unités)"] = d["CCN"].map(info["À demander (PR)"]).fillna(0).astype(int)
     d["CCN couvert"] = d["CCN"].map(info["Écart"]).fillna(1) <= 0  # stock + commandes ≥ besoin du CCN, tous types confondus
+    # Statut du CCN sur son besoin TOTAL (tous types d'avion qui le partagent) : un CCN commun peut suffire pour ce
+    # type seul et manquer quand même, l'autre type en ayant besoin aussi.
+    d["Besoin total CCN"] = d["CCN"].map(info["Besoin"]).fillna(d["Besoin"])
+    d["Statut CCN"] = np.select([d["Stock"] >= d["Besoin total CCN"], d["CCN couvert"], d["À coter"]],
+                                STATUTS_CCN[:3], STATUTS_CCN[3])
 
     blocs = d.groupby(["Type avion", "Classe"], sort=False).agg(**{
         "Flotte": ("Flotte", "first"), "Objectif": ("Objectif", "max"), "Nb CCN": ("CCN", "nunique")}).reset_index()
@@ -284,7 +290,9 @@ def avions_faisables(b: pd.DataFrame, m: pd.DataFrame) -> tuple[pd.DataFrame, pd
     blocs["Taux (%)"] = np.where(blocs["Objectif"] > 0, (blocs["Complets maintenant"] / blocs["Objectif"] * 100).round(0), np.nan)
     pire = d.sort_values("Avions (stock)").drop_duplicates(["Type avion", "Classe"]).set_index(["Type avion", "Classe"])
     blocs["CCN limitant"] = [pire["CCN"].get(k) for k in cles]
-    par_bloc = d.groupby(["Type avion", "Classe"], sort=False).agg(couverts=("CCN couvert", "sum"), a_coter=("À coter", "sum"))
+    par_bloc = d.assign(commun=d["Types partageant le CCN"] > 1).groupby(["Type avion", "Classe"], sort=False).agg(
+        couverts=("CCN couvert", "sum"), a_coter=("À coter", "sum"), communs=("commun", "sum"))
+    blocs["CCN communs"] = [int(par_bloc["communs"].get(k, 0)) for k in cles]
     blocs["CCN couverts"] = [int(par_bloc["couverts"].get(k, 0)) for k in cles]
     blocs["Tout commandé"] = blocs["CCN couverts"] == blocs["Nb CCN"]
     blocs["PN à coter"] = [int(par_bloc["a_coter"].get(k, 0)) for k in cles]

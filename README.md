@@ -139,8 +139,10 @@ l'avancement avion par avion et le forecast des années suivantes. Tous les fich
   en commande, à commander, besoin), CCN à coter, CCN par action, avancement par type × classe, **actions à lancer**
   (PR à émettre), export Excel complet et contrôles des données.
 - **Avions faisables** : par type d'avion × classe, avions complets avec le stock, à réception des commandes, à
-  approvisionner, CCN limitant ; détail d'un type d'avion : avions couvrables par chaque CCN (stock, + commandes,
-  trait = objectif de la classe).
+  approvisionner, CCN limitant, CCN communs ; détail d'un type d'avion : avions couvrables par chaque CCN (stock, + commandes,
+  trait = objectif de la classe). Couleur = statut du CCN sur son besoin **total** : stock suffisant, couvert à réception
+  des commandes, à coter, à approvisionner. Un CCN commun à plusieurs types peut suffire pour un type seul et manquer
+  quand même (l'autre type en a besoin aussi) : il est alors « à approvisionner ».
 - **CCN et commandes** : couverture du besoin par CCN (stock + en commande face au besoin), recherche, filtre par action,
   CCN à coter.
 - **Avancement PE** et **Forecast** : voir ci-dessous (ex-sous-onglet « Planning PE » du Textile).
@@ -217,8 +219,12 @@ python tests/fixtures/generer_fixtures.py   # régénérer les fichiers fictifs 
 Les fichiers de `tests/fixtures/` sont **fictifs** : ils permettent d'essayer l'application sans
 données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet.
 
-### Si la page ne répond plus
+### Imports et page qui ne répond plus
 
-Un bandeau apparaît en bas de page (« L'application ne répond plus » / « Le moteur de calcul s'est arrêté ») avec
-**Recharger la page** et **Détails techniques** (bouton **Copier** : à transmettre à l'auteur pour diagnostic).
+- **📂 Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
+- Si le moteur de calcul s'arrête ou ne répond plus, un bandeau apparaît en bas de page :
+  **Relancer en gardant mes fichiers** redémarre le moteur (sans recharger la page, ~20 s) et réimporte
+  automatiquement les fichiers, onglet par onglet (ils sont gardés en mémoire de la page, jamais écrits sur le disque) ;
+  **Recharger la page** repart de zéro ; **Détails techniques › Copier** donne le diagnostic à transmettre à l'auteur.
+- Les gros fichiers (État du stock, Commandes) sont lus en ne gardant que les colonnes utiles, pour limiter la mémoire.
 Conseil Edge : *Paramètres › Système et performances › Ne jamais mettre en veille ces sites* → ajouter l'adresse de Supply360.

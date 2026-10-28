@@ -343,7 +343,7 @@ def parts(tableau, couleurs: dict, titre="", afficher="nombre", **_) -> str:
 # Jauges horizontales : segments empilés + repère (objectif), même échelle pour toutes les lignes
 # --------------------------------------------------------------------------
 def jauges(lignes, titre="", legende_items=None, repere_nom="Objectif", fmt=court, hauteur_max: str | None = None) -> str:
-    """lignes : [(libellé, [(nom, valeur, couleur)], repère ou None, texte à droite)].
+    """lignes : [(libellé, [(nom, valeur, couleur)], repère ou None, texte à droite[, lignes d'infobulle en plus])].
 
     Les segments sont empilés de gauche à droite ; le repère est un trait vertical (ex. objectif d'avions).
     `hauteur_max` : zone défilante (beaucoup de lignes).
@@ -351,9 +351,9 @@ def jauges(lignes, titre="", legende_items=None, repere_nom="Objectif", fmt=cour
     lignes = list(lignes)
     if not lignes:
         return vide()
-    vmax = max(max(sum(max(float(v), 0) for _, v, _ in segs), float(r) if not _nan(r) else 0) for _, segs, r, _ in lignes) or 1
+    vmax = max(max(sum(max(float(v), 0) for _, v, _ in l[1]), float(l[2]) if not _nan(l[2]) else 0) for l in lignes) or 1
     rows = []
-    for nom, segs, rep, txt in lignes:
+    for nom, segs, rep, txt, *plus in lignes:
         parts_ = []
         tip = [nom]
         for n, v, c in segs:
@@ -367,6 +367,7 @@ def jauges(lignes, titre="", legende_items=None, repere_nom="Objectif", fmt=cour
         if not _nan(rep):
             tip.append(f"{repere_nom} : {fmt(rep)}")
             marque = f'<i class="rp" style="left:{float(rep) / vmax * 100:.2f}%"></i>'
+        tip += list(plus[0]) if plus else []
         rows.append(f'<div class="rw"{_tip(tip)}><span class="nm" title="{escape(str(nom))}">{escape(str(nom))}</span>'
                     f'<div class="trk">{"".join(parts_)}{marque}</div><b>{escape(str(txt))}</b></div>')
     corps = f'<div class="s360-jauge">{"".join(rows)}</div>'

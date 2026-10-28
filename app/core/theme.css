@@ -349,6 +349,20 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-stack span[data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
 .s360-share .rw { display: grid; grid-template-columns: minmax(6rem, 12rem) 1fr; gap: .8rem; align-items: center; padding: .5rem 0; font-size: .875rem; }
 .s360-share .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s360-jauge .rw { position: relative; display: grid; grid-template-columns: minmax(7rem, 15rem) 1fr minmax(3rem, auto); gap: .8rem;
+  align-items: center; padding: .28rem .3rem; border-radius: 6px; font-size: .8125rem; }
+.s360-jauge .rw:hover { background: rgba(31, 78, 156, .07); }
+.s360-jauge .rw[data-tip]:hover::after { bottom: 100%; left: 30%; }
+.s360-jauge .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s360-jauge .trk { position: relative; display: flex; height: 1.25rem; border-radius: 5px; background: #EEF2F8; }
+.s360-jauge .trk span { display: grid; place-items: center; color: #fff; font-size: .75rem; font-weight: 700; overflow: hidden; }
+.s360-jauge .trk span:first-child { border-radius: 5px 0 0 5px; }
+.s360-jauge .trk span:last-of-type { border-radius: 0 5px 5px 0; }
+.s360-jauge .trk span:only-of-type { border-radius: 5px; }
+.s360-jauge .rp { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--text); }
+.s360-jauge b { font-weight: 800; white-space: nowrap; }
+.s360-jauge-scroll { overflow-y: auto; padding-right: .3rem; }
+.s360-legend i.tr { width: 3px; height: .9rem; border-radius: 2px; vertical-align: -3px; }
 .s360-heat { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: .8125rem; table-layout: fixed; }
 .s360-heat th { color: var(--muted); font-weight: 600; text-align: center; padding: .2rem; white-space: nowrap; }
 .s360-heat th:first-child { width: 12rem; }

@@ -96,6 +96,9 @@ def asreq():
 
 # PN → [12M, 18M, 24M, 2021…2025, PU, B/O, dernière conso]
 # Mousses de sièges (Planning PE) : stock, fournisseur et prix fictifs
+# CCN fictifs des mousses (État du stock, Commandes, textile_all_parts, Besoin Prod)
+MOUSSES_CCN = {"FM-1001": 7101, "FM-1002": 7102, "FM-1003": 7103, "FM-1004": 7104, "FM-1005": 7105, "FM-1006": 7106,
+               "FM-2001": 7201, "FM-2002": 7202, "FM-2003": 7203, "FM-2009": 7209}
 MOUSSES_STOCK = [  # PN, désignation, stock, code fournisseur, fournisseur
     ("FM-1001", "FOAM BOTTOM J", 40, "F030", "Fournisseur Sierra"), ("FM-1002", "FOAM BACKREST J", 10, "F030", "Fournisseur Sierra"),
     ("FM-1003", "FOAM BOTT W", 0, "F031", "Fournisseur Tango"), ("FM-1004", "FOAM BOTTOM Y", 300, "F031", "Fournisseur Tango"),
@@ -180,7 +183,7 @@ def stock():
             ["FX-2001", "Housse dormante", 6, 0, 245, "AG05", "F020", "Fournisseur Papa", 30, 1],
             ["FX-2002", "Rideau inactif", 0, 0, 245, "AG05", "F021", "Fournisseur Quebec", 31, 1],
         ]
-    lignes += [[pn, desc, stock, 0, 245, "AG06", code, four, 60, 1] for pn, desc, stock, code, four in MOUSSES_STOCK]
+    lignes += [[pn, desc, stock, 0, 245, "AG06", code, four, MOUSSES_CCN[pn], 1] for pn, desc, stock, code, four in MOUSSES_STOCK]
     for ligne in lignes:  # consommation et valorisation (fictives), pour l'onglet Textile
         ligne += CONSO.get(ligne[0], [4, 6, 9, 10, 8, 7, 6, 5, 25.0, 0, datetime(2026, 9, 1)])
         ligne.append("TL1" if str(ligne[0]).endswith(("1", "3", "5")) else "TL0")  # tracking level (fictif)
@@ -211,7 +214,7 @@ def commandes():
             ["FX-1014", "CMD-0014", "AC14", 245, "F015", "Fournisseur Mike", d(2026, 11, 1), d(2026, 11, 20), "En cours", 2, 1, 23],
             ["FX-1015", "CMD-0151", "AC15", 245, "F016", "Fournisseur November", d(2026, 12, 1), d(2026, 12, 20), "En cours", 1, 1, 24],
             ["FX-1015", "CMD-0152", "AC15", 245, "F016", "Fournisseur November", d(2026, 11, 1), d(2026, 11, 25), "En cours", 1, 1, 24],
-            ["FM-1004", "CMD-0040", "AC20", 245, "F031", "Fournisseur Tango", d(2026, 12, 1), d(2027, 1, 15), "En cours", 150, 1, 60],
+            ["FM-1004", "CMD-0040", "AC20", 245, "F031", "Fournisseur Tango", d(2026, 12, 1), d(2027, 1, 15), "En cours", 150, 1, MOUSSES_CCN["FM-1004"]],
             # Sans nom de fournisseur : retrouvé grâce au code F003 (Fournisseur Charlie)
             ["FX-1003", "CMD-0031", "AC03", 246, "F003", None, d(2026, 6, 1), d(2049, 1, 1), "En cours", 1, 1, 13],
         ],
@@ -281,9 +284,42 @@ def textile_all_parts():
     for flotte, versions in FLOTTES_PE.items():
         for version, avions in versions.items():
             for immat in avions:
-                lignes += [["MOUSSE", flotte, version, immat, cl, 25, pn, desc, q] for cl, pn, desc, q in MOUSSES_PIECES[flotte]]
+                lignes += [["MOUSSE", flotte, version, immat, cl, MOUSSES_CCN[pn], pn, desc, q]
+                           for cl, pn, desc, q in MOUSSES_PIECES[flotte]]
     pd.DataFrame(lignes, columns=["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description",
                                   "qty_per_ac"]).to_csv(ICI / "textile_all_parts.csv", index=False)
+
+
+def besoin_prod():
+    """Besoin Prod mousses (feuille « QUOTE en euro », en-tête en 4e ligne) : objectif de l'année par type d'avion,
+    classe et CCN. FM-1004 (Y) est commun aux deux types ; FM-2009 n'a ni stock ni prix (à coter)."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    _feuille(wb, "RECAP", ["", "QUOTE PE FOAM (fictif)"], [["", "Révision fictive"]])
+    entete = ["A/C", "Flotte", "MC/LC", "NB_AC", "NB_AC PE RESTANT", "Seat Supplier", "Foam Manufacturer", "Area", "CCN",
+              "P/N OEM\nSeat Supplier", "P/N ALT\nFoam Manufacturer", "P.U OEM break price+discount", "P.U ALT qty 1",
+              "P.U forecast PE", "Description", "Qty per A/C", "A commander", "Couverture", "Commandé", "mri", "PSD"]
+    def ligne(typ, flotte, nb, restant, area, pn, desc, q, pu=None):
+        return [typ, flotte, "LC", nb, restant, "Fournisseur Sierra", "idem", area, MOUSSES_CCN[pn], pn, "idem", pu, None, None,
+                desc, q, nb * q, 0, 0, None, None]
+    lignes = [
+        ligne("A350 34J", "A350", 6, 5, "J", "FM-1001", "FOAM BOTTOM", 34),
+        ligne("A350 34J", "A350", 6, 5, "J", "FM-1002", "FOAM BACKREST", 34),
+        ligne("A350 34J", "A350", 6, 6, "W", "FM-1003", "FOAM BOTTOM", 24),
+        ligne("A350 34J", "A350", 6, None, "Y", "FM-1004", "FOAM BOTTOM", 266),
+        ligne("B777 14J", "777", 4, 3, "J", "FM-2001", "FOAM BOTTOM", 14),
+        ligne("B777 14J", "777", 4, 4, "W", "FM-2003", "FOAM BOTTOM", 28),
+        ligne("B777 14J", "777", 4, 4, "Y", "FM-1004", "FOAM BOTTOM", 300),
+        ligne("B777 14J", "777", 4, 4, "Y", "FM-2009", "FOAM BOTTOM", 12),
+    ]
+    ws = wb.create_sheet("QUOTE en euro")
+    ws.append(["Besoin prod — fichier fictif"])
+    ws.append([])
+    ws.append([])
+    ws.append([e.replace("\\n", "\n") for e in entete])
+    for l in lignes:
+        ws.append(l)
+    wb.save(ICI / "besoin_prod_foam.xlsx")
 
 
 if __name__ == "__main__":
@@ -296,4 +332,5 @@ if __name__ == "__main__":
     planning()
     pe_mousse()
     textile_all_parts()
+    besoin_prod()
     print("Fixtures générées dans", ICI)

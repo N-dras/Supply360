@@ -1,5 +1,6 @@
-"""Sous-onglet « Planning PE » de l'onglet Textile cabine : avancement de la politique d'entretien des mousses
-de sièges et forecast des commandes (12 / 24 / 36 mois), par PN et par fournisseur.
+"""Sous-onglets « Avancement PE » et « Forecast » de l'onglet PE mousses : avancement de la politique d'entretien
+des mousses de sièges (fichier PE mousses mensuel) et forecast des commandes (12 / 24 / 36 mois), par PN et par
+fournisseur.
 
 Rendu seulement : les calculs sont dans core/pe.py. Fichier préfixé « _ » : ce n'est pas un onglet du registre.
 """
@@ -16,7 +17,7 @@ from core import io as sio
 from core import pe
 from core.style import COLORS
 
-K = "textiles__pe__"
+K = "pe_mousses__"
 ELEMENTS = ["J · Assise", "J · Dossier", "W · Assise", "Y · Assise"]
 COULEURS_ELEMENTS = {"J · Assise": COLORS["navy_2"], "J · Dossier": "#7FA7E0", "W · Assise": "#2A9D8F", "Y · Assise": "#F4A259"}
 CFG = {
@@ -89,12 +90,15 @@ def _filtres(cal: pd.DataFrame) -> tuple[list, list, list]:
     return f or flottes, cl or pe.CLASSES, co or pe.COMPOSANTS
 
 
-def render(res: dict, today: date, avec_pieces: bool) -> None:
+def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement") -> None:
+    """`partie` : « avancement » (KPI, calendrier par avion) ou « forecast » (mousses à commander, fournisseurs)."""
     cal = res["cal"]
     flottes, classes, composants = _filtres(cal)
     c = cal[cal["Flotte"].isin(flottes) & cal["Classe"].isin(classes) & cal["Composant"].isin(composants)]
-    _avancement(c, res["date_ref"], today)
-    _calendrier(c, today)
+    if partie == "avancement":
+        _avancement(c, res["date_ref"], today)
+        _calendrier(c, today)
+        return
     if not avec_pieces or res["ev"].empty:
         ui.callout("Ajoutez <b>textile_all_parts</b> (Pièces par avion) pour le forecast des mousses à commander.", "info", "📦")
         return
@@ -115,7 +119,7 @@ def _avancement(c: pd.DataFrame, date_ref, today):
     avions_retard = c.loc[st_ == "En retard", "Immatriculation"].nunique()
     visites = c.loc[c["Prochaine visite"] <= auj + pd.DateOffset(months=3), "Immatriculation"].nunique()
     conformite = (1 - retard / n) * 100 if n else 100
-    with ui.section("textiles_pe_avancement", "Avancement de la PE mousses",
+    with ui.section("pe_mousses_pe_avancement", "Avancement de la PE mousses",
                     f"Âges au {pd.Timestamp(date_ref):%d/%m/%Y} (fichier PE mousses) · statut au {auj:%d/%m/%Y}",
                     tag=f"{c['Immatriculation'].nunique()} avions"):
         if retard:
@@ -157,7 +161,7 @@ def _avancement(c: pd.DataFrame, date_ref, today):
 
 def _calendrier(c: pd.DataFrame, today):
     auj = pd.Timestamp(today)
-    with ui.section("textiles_pe_calendrier", "Calendrier des remplacements",
+    with ui.section("pe_mousses_pe_calendrier", "Calendrier des remplacements",
                     "Une ligne par avion : nombre d'éléments à remplacer par mois (date prévue = prochaine visite datée, sinon échéance)"):
         debut = auj.to_period("M").start_time
         mois = pd.date_range(debut, periods=24, freq="MS")
@@ -204,7 +208,7 @@ def _horizon() -> int:
 
 def _forecast(ev, synth, long, today) -> int:
     debut = pd.Timestamp(today).to_period("M").start_time
-    with ui.section("textiles_pe_forecast", "Forecast des mousses à commander",
+    with ui.section("pe_mousses_pe_forecast", "Forecast des mousses à commander",
                     "À commander = besoin + stock de sécurité − stock − commandes en cours (déjà passées, toujours déduites), par PN"):
         a, _ = st.columns([1, 2])
         with a:
@@ -265,7 +269,7 @@ def _forecast_fournisseur(ev, synth, long, today, h):
     v = lg.groupby("Fournisseur")["Valeur à livrer (€)"].sum().sort_values(ascending=False)
     if v.empty:
         return
-    with ui.section("textiles_pe_fournisseur", "Forecast par fournisseur",
+    with ui.section("pe_mousses_pe_fournisseur", "Forecast par fournisseur",
                     f"Ce que vous allez commander, par année et par mois, sur {h} mois : à partager avec chaque fournisseur"):
         # Vue d'ensemble : tous les fournisseurs, par année
         qte_an = pe.par_annee(lg, mois, "Fournisseur").reindex(v.index)
@@ -348,7 +352,7 @@ def _export_fournisseur(f, an, par_mois, ev, synth) -> bytes:
 
 
 def _exports_controles(res, c, ev, synth, long, h):
-    with ui.section("textiles_pe_exports", "Exports et contrôles"):
+    with ui.section("pe_mousses_pe_exports", "Exports et contrôles"):
         a, b = st.columns(2)
         with a:
             debut = long["Mois"].min()

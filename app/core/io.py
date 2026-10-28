@@ -47,6 +47,7 @@ FICHIER_REFERENCES = "Références textile"
 # --------------------------------------------------------------------------
 # Mots-clés cherchés dans le nom du fichier (sans accents ni majuscules), par ordre de priorité.
 MOTS_CLES_SOURCES = [
+    ("besoin_prod", ("besoin_prod",)),
     ("pe", ("pe_mousse",)),
     ("besoins", ("logops",)),
     ("asreq", ("asreq", "noreq")),
@@ -69,6 +70,7 @@ def reconnaitre_fichier(nom: str) -> str | None:
 
 # Signatures de contenu : mots-clés de la ligne d'en-tête (mêmes règles que les lecteurs ci-dessous).
 SIGNATURES_SOURCES = [
+    ("besoin_prod", ["ccn", "qty per a/c", "nb_ac"]),
     ("besoins", ["mpn prime", "qty"]),
     ("stock", ["pnr", "qte sur etagere"]),
     ("commandes", ["pn", "code acheteur", "commande"]),

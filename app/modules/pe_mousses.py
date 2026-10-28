@@ -1,0 +1,432 @@
+"""Onglet « PE mousses » : politique d'entretien des mousses de sièges.
+
+- Année en cours (fichier Besoin Prod) : avions faisables par type d'avion et par classe, CCN à commander (PR).
+  Repris du Streamlit « Pilotage Politique d'entretien Mousse » (calculs dans core/pe2026.py).
+- Avancement PE et forecast 12 / 24 / 36 mois (fichier PE mousses mensuel) : rendu par modules/_planning_pe.py,
+  calculs dans core/pe.py (anciennement sous-onglet « Planning PE » du Textile).
+"""
+
+from datetime import date
+
+import pandas as pd
+import streamlit as st
+
+from core import cache, charts
+from core import components as ui
+from core import io as sio
+from core import pe
+from core import pe2026 as p26
+from core import prevision as pv
+from core import textile as tx
+from core.style import COLORS
+from modules import _planning_pe as vue_pe
+
+TAB_ID = "pe_mousses"
+TAB_LABEL = "PE mousses"
+TAB_ICON = "🛠️"
+TAB_DESCRIPTION = "Politique d'entretien des mousses : avions faisables cette année, CCN à commander, avancement et forecast."
+
+K = f"{TAB_ID}__"
+SECTIONS = ["Synthèse", "Avions faisables", "CCN et commandes", "Avancement PE", "Forecast"]
+ICONES = {"Synthèse": "📊", "Avions faisables": "✈️", "CCN et commandes": "📦", "Avancement PE": "📅", "Forecast": "🔮"}
+
+# Dossier Textile : règles de nommage prioritaires (sans accents ni majuscules), puis reconnaissance par le contenu.
+NOMS_DOSSIER = {"stock": r"^resultat", "pieces": r"textile_all_parts", "pe": r"^pe_mousse", "besoin_prod": r"besoin_prod"}
+NOMMAGE = ("Dossier Textile : « Besoin_Prod… » = Besoin Prod mousses (objectif de l'année), « PE_MOUSSE… » = PE mousses "
+           "(mensuel), « Résultat… » = État du stock, « textile_all_parts » = Pièces par avion. À défaut, reconnaissance "
+           "par le contenu. Commandes (SAP) : dossier COMMANDE.")
+COLONNES_ATTENDUES = {
+    "besoin_prod": [("Feuille « QUOTE en euro »", "en-tête détecté automatiquement", False),
+                    ("A/C, Flotte, Area, CCN, Qty per A/C, NB_AC", "type d'avion, classe, quantité par avion", True),
+                    ("NB_AC PE RESTANT", "avions restants (fichier) ; recalculé si PE mousses + textile_all_parts", False),
+                    ("P/N OEM Seat Supplier, Seat Supplier, Description, P.U forecast PE", "", False)],
+    "stock": [("PNR, QTE SUR ÉTAGÈRE", "", True), ("CCN", "clé du croisement avec le Besoin Prod", True),
+              ("QTE EN CDE, Dernier PU (achat) Euros", "", False)],
+    "commandes": [("PN, Commande", "", True), ("CCN", "sinon retrouvé par le PN", False),
+                  ("Quantité restant à livrer, Date de livraison promise, Fournisseur", "", False)],
+    "pe": [("Feuille « … BOTTOM FOAM … »", "assises : âge par classe J / W / Y", True),
+           ("Feuille « … BACKREST FOAM … »", "dossiers J", True),
+           ("FLEET, AIRCRAFT, AGE (month), PAST / NEXT EXECUTION", "fichier mensuel tel quel", True),
+           ("Date dans le nom", "ex. PE_MOUSSE_29092026 : date des âges", False)],
+    "pieces": [("equipment, registration, area, ccn, pn, description, qty_per_ac", "lignes MOUSSE", True)],
+}
+RESTANT_LIBELLES = {p26.RESTANT_AUTO: "Calculé avec le fichier PE mousses (sinon fichier Besoin Prod)",
+                    p26.RESTANT_FICHIER: "Colonne NB_AC PE RESTANT du Besoin Prod (règle d'origine)"}
+STATUT_CCN = {"Suffisant": COLORS["ok"], "À approvisionner": COLORS["ko"], "À coter": COLORS["warn"]}
+FOND_COMMANDES = "#A9C1EA"
+CFG = {
+    "Besoin": st.column_config.NumberColumn("Besoin", format="%d", help="Qté par avion × avions restants"),
+    "Stock": st.column_config.NumberColumn("Stock", format="%d"),
+    "En commande": st.column_config.NumberColumn("En commande", format="%d", help="Reste à livrer des commandes (SAP)"),
+    "Couverture": st.column_config.NumberColumn("Couverture", format="%d", help="Stock + en commande"),
+    "Écart": st.column_config.NumberColumn("Écart", format="%d", help="Besoin − couverture"),
+    "À demander (PR)": st.column_config.NumberColumn("À demander (PR)", format="%d"),
+    "Couverture (%)": st.column_config.ProgressColumn("Couverture (%)", format="%.0f %%", min_value=0, max_value=100),
+    "PU (€)": st.column_config.NumberColumn("PU (€)", format="%.0f €"),
+    "Valeur stock (€)": st.column_config.NumberColumn("Valeur stock (€)", format="%.0f €"),
+    "Valeur à commander (€)": st.column_config.NumberColumn("Valeur à commander (€)", format="%.0f €"),
+    "Prochaine livraison": st.column_config.DateColumn("Prochaine livraison", format="DD/MM/YYYY"),
+    "Taux (%)": st.column_config.ProgressColumn("Taux (%)", format="%.0f %%", min_value=0, max_value=100,
+                                                help="Complets maintenant ÷ objectif"),
+}
+
+
+# --------------------------------------------------------------------------
+# Calculs mis en cache (clé = contenu des fichiers + paramètres)
+# --------------------------------------------------------------------------
+@st.cache_resource(show_spinner="Lecture du Besoin Prod…", max_entries=2)
+def _besoin_prod(data: bytes, nom: str):
+    return p26.lire_besoin_prod(data, nom)
+
+
+@st.cache_resource(show_spinner="Lecture des pièces par avion…", max_entries=2)
+def _pieces(data: bytes, nom: str):
+    return pv.preparer_pieces(pv.lire_pieces(data, nom), pv.Params())[0]
+
+
+@st.cache_resource(show_spinner="Lecture du fichier PE mousses…", max_entries=2)
+def _pe_mousses(data: bytes, nom: str):
+    return pe.lire_pe_mousses(data, nom)
+
+
+@st.cache_resource(show_spinner="Calcul de la PE de l'année…", max_entries=4)
+def _annee(besoin: tuple, stock: bytes, cmd: bytes | None, fichier_pe: tuple | None, pieces: tuple | None,
+           params: pe.ParamsPE, mode: str, today: date) -> dict:
+    bp = _besoin_prod(*besoin)[0]
+    parts = _pieces(*pieces) if pieces else None
+    rattachement = p26.rattacher_avions(bp, parts)
+    date_ref, faits = today, None
+    if fichier_pe:
+        lignes, dref = _pe_mousses(*fichier_pe)
+        date_ref = dref or today
+        faits = p26.remplaces_depuis(pe.calendrier(lignes, date_ref, today, params), p26.date_debut_annee(date_ref))
+    b = p26.avions_restants(bp, rattachement, faits if faits is not None else pd.DataFrame(), mode)
+    m = p26.analyse_ccn(b, cache.etat_stock(stock)[0], cache.commandes(cmd)[0] if cmd else None)
+    blocs, detail = p26.avions_faisables(b, m)
+    return {"b": b, "m": m, "blocs": blocs, "detail": detail, "rattachement": rattachement, "annee": date_ref.year,
+            "avec_cmd": cmd is not None, "calcul_possible": bool(fichier_pe) and len(rattachement) > 0}
+
+
+@st.cache_resource(show_spinner="Calcul du planning PE…", max_entries=4)
+def _planning_pe(stock: bytes | None, cmd: bytes | None, fichier_pe: tuple, pieces: tuple | None, params: pe.ParamsPE,
+                 today: date):
+    """Planning PE des mousses + forecast (voir core/pe.py)."""
+    lignes, date_ref = _pe_mousses(*fichier_pe)
+    parts = _pieces(*pieces) if pieces else pd.DataFrame(columns=pv.RAW_COLS)
+    cmd_l = cache.commandes(cmd)[0] if cmd else None
+    cat = pe.catalogue_mousses(parts) if len(parts) else None
+    if stock and cat is not None and len(cat):
+        pbi, o = tx.construire_tables(cache.etat_stock(stock)[0], cmd_l, cat, today, True)
+    else:
+        pbi, o = pd.DataFrame(columns=["PNR", "QTE SUR ÉTAGÈRE"]), None
+    return pe.planning_pe(lignes, date_ref or today, parts, pe.articles(pbi), o, today, params)
+
+
+# --------------------------------------------------------------------------
+# Import et paramètres
+# --------------------------------------------------------------------------
+def _bloc_import():
+    with ui.section(f"{TAB_ID}_import", "Import et paramètres", "Les fichiers sont lus sur votre poste : rien n'est envoyé"):
+        a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
+        with a:
+            ui.boutons_dossiers("Textile", K + "dossier__upload")
+        today = b.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date", persist_state="page",
+                             help="Statuts PE, retards et début du forecast.")
+        reglages = c.popover("⚙️ Paramètres", width="stretch")
+        puces, bilan = st.container(), st.container()
+        with ui.zone_repliable(K + "manuel", "📎 Import manuel (Parcourir) et colonnes attendues"):
+            zone_dossier = st.container()
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                f_besoin = ui.fichier(f"{p26.FICHIER_BESOIN} (annuel)", K + "besoin", ["xlsx", "xlsm"], COLONNES_ATTENDUES["besoin_prod"])
+                f_pieces = ui.fichier(f"{pv.FICHIER_PIECES} (textile_all_parts)", K + "pieces", ["csv", "xlsx", "xlsm"],
+                                      COLONNES_ATTENDUES["pieces"])
+            with c2:
+                f_stock = ui.fichier(sio.FICHIER_STOCK, K + "stock", ["xlsx", "xlsm"], COLONNES_ATTENDUES["stock"])
+                f_pe = ui.fichier(f"{pe.FICHIER_PE} (PE_MOUSSE, mensuel)", K + "pe", ["xlsx", "xlsm"], COLONNES_ATTENDUES["pe"])
+            with c3:
+                f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
+        with bilan:
+            ui.import_dossier(K + "dossier", {"besoin_prod": K + "besoin", "stock": K + "stock", "pieces": K + "pieces", "pe": K + "pe"},
+                              label="Tout le dossier Textile (Ctrl+A pour tout sélectionner)", aide=NOMMAGE, noms=NOMS_DOSSIER,
+                              zone=zone_dossier, autres=("references",))
+        with puces:
+            ui.etat_fichiers([(p26.FICHIER_BESOIN, K + "besoin", True), (sio.FICHIER_STOCK, K + "stock", True),
+                              (sio.FICHIER_COMMANDES, "commun__commandes", False), (pe.FICHIER_PE, K + "pe", False),
+                              (pv.FICHIER_PIECES, K + "pieces", False)])
+        with reglages:
+            t_an, t_pe = st.tabs(["✈️ Année (Besoin Prod)", "📅 Planning PE"])
+            with t_an:
+                mode = st.radio("Avions restant à traiter", list(RESTANT_LIBELLES), format_func=RESTANT_LIBELLES.get,
+                                key=K + "restant", persist_state="page",
+                                help="Calcul : NB_AC − avions du type dont la mousse (classe, assise ou dossier) a été remplacée "
+                                     "depuis le 1er janvier d'après le fichier PE mousses. Le type de chaque avion est "
+                                     "retrouvé par ses CCN de mousses (textile_all_parts).")
+            with t_pe:
+                params_pe = vue_pe.parametres()
+    return f_besoin, f_stock, f_cmd, f_pe, f_pieces, today, params_pe, mode
+
+
+def render() -> None:
+    ui.hero(TAB_ICON, "PE mousses", TAB_DESCRIPTION)
+    f_besoin, f_stock, f_cmd, f_pe, f_pieces, today, params_pe, mode = _bloc_import()
+    with st.container(key="s360barre"):
+        section = ui.sous_onglets(K + "section", SECTIONS, ICONES)
+    if section in ("Avancement PE", "Forecast"):
+        _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today)
+        return
+    if not (f_besoin and f_stock):
+        with ui.section(f"{TAB_ID}_vide", "PE mousses de l'année"):
+            ui.empty_state("Importez le Besoin Prod et l'État du stock",
+                           "Le fichier PE mousses et textile_all_parts recalculent les avions restants ; les commandes (SAP) "
+                           "complètent la couverture.",
+                           [(p26.FICHIER_BESOIN, bool(f_besoin)), (sio.FICHIER_STOCK, bool(f_stock)),
+                            (sio.FICHIER_COMMANDES, bool(f_cmd)), (pe.FICHIER_PE, bool(f_pe)), (pv.FICHIER_PIECES, bool(f_pieces))],
+                           icon="✈️")
+        return
+    try:
+        res = _annee((f_besoin[1], f_besoin[0]), f_stock[1], f_cmd[1] if f_cmd else None,
+                     (f_pe[1], f_pe[0]) if f_pe else None, (f_pieces[1], f_pieces[0]) if f_pieces else None, params_pe, mode, today)
+    except ValueError as exc:
+        ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "⛔")
+        return
+    if not res["avec_cmd"]:
+        ui.callout("Sans <b>Commandes (SAP)</b>, « en commande » = QTE EN CDE de l'État du stock.", "warn", "⚠️")
+    if mode == p26.RESTANT_AUTO and not res["calcul_possible"]:
+        ui.callout("Avions restants lus dans le Besoin Prod (colonne NB_AC PE RESTANT) : ajoutez le fichier <b>PE mousses</b> "
+                   "et <b>textile_all_parts</b> pour les recalculer.", "info", "ℹ️")
+    {"Synthèse": _synthese, "Avions faisables": _faisables, "CCN et commandes": _ccn}[section](res, today)
+
+
+def _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today):
+    if not f_pe:
+        with ui.section(f"{TAB_ID}_pe_vide", "Planning PE des mousses"):
+            ui.empty_state(f"Importez le fichier {pe.FICHIER_PE}", "Le fichier mensuel PE_MOUSSE (feuilles BOTTOM FOAM et "
+                           "BACKREST FOAM), tel que vous le recevez. textile_all_parts et l'État du stock ajoutent le forecast "
+                           "des mousses à commander.",
+                           [(pe.FICHIER_PE, False), (pv.FICHIER_PIECES, bool(f_pieces)), (sio.FICHIER_STOCK, bool(f_stock))],
+                           icon="📅")
+        return
+    try:
+        res = _planning_pe(f_stock[1] if f_stock else None, f_cmd[1] if f_cmd else None, (f_pe[1], f_pe[0]),
+                           (f_pieces[1], f_pieces[0]) if f_pieces else None, params_pe, today)
+    except ValueError as exc:
+        ui.callout(f"<b>{pe.FICHIER_PE} illisible.</b> {exc}", "ko", "⛔")
+        return
+    if pe.date_extraction(f_pe[0]) is None:
+        ui.callout("Date des âges introuvable dans le nom du fichier (ex. PE_MOUSSE_29092026) : la date de référence est utilisée.",
+                   "warn", "⚠️")
+    if section == "Forecast" and not f_stock:
+        ui.callout("Ajoutez l'<b>État du stock</b> pour déduire le stock des mousses à commander.", "warn", "⚠️")
+    vue_pe.render(res, today, bool(f_pieces), "avancement" if section == "Avancement PE" else "forecast")
+
+
+# --------------------------------------------------------------------------
+# Synthèse
+# --------------------------------------------------------------------------
+def _kpis_avions(blocs: pd.DataFrame, annee: int) -> list[str]:
+    obj, now = int(blocs["Objectif"].sum()), int(blocs["Complets maintenant"].sum())
+    rec, appro = int(blocs["Complets à réception"].sum()), int(blocs["À approvisionner"].sum())
+    taux = now / obj * 100 if obj else 0
+    return [
+        ui.kpi_card(f"Objectif {annee}", charts.entier(obj), "avions restants, comptés par classe", "navy"),
+        ui.kpi_card("Complets maintenant", charts.entier(now), f"{taux:.0f} % de l'objectif · tous les CCN en stock", "ok"),
+        ui.kpi_card("Complets à réception", charts.entier(rec), "une fois les commandes en cours livrées", "info"),
+        ui.kpi_card("À approvisionner", charts.entier(appro), "CCN manquants à commander", "ko"),
+    ]
+
+
+def _jauges_blocs(blocs: pd.DataFrame, titre: str) -> str:
+    lignes = [(p26.nom_bloc(r["Type avion"], r["Classe"]),
+               [(n, r[n], p26.AVANCEMENT_COULEURS[n]) for n in p26.AVANCEMENT], None,
+               f"{int(r['Complets maintenant'])} / {int(r['Objectif'])}")
+              for _, r in blocs.sort_values(["Type avion", "Classe"]).iterrows() if r["Objectif"] > 0]
+    leg = [(n, c, "barre") for n, c in p26.AVANCEMENT_COULEURS.items()]
+    return charts.jauges(lignes, titre, leg, fmt=charts.entier, hauteur_max="30rem") if lignes else charts.vide("Aucun avion à traiter")
+
+
+def _synthese(res: dict, today: date):
+    m, blocs, annee = res["m"], res["blocs"], res["annee"]
+    a_pr = m[m["Écart"] > 0]
+    with ui.section(f"{TAB_ID}_synthese", f"Synthèse de la PE mousses {annee}",
+                    "Avions faisables avec le stock (CCN communs répartis entre types d'avion) et CCN à approvisionner",
+                    tag=f"{m['CCN'].nunique()} CCN"):
+        if len(a_pr):
+            ui.callout(f"<b>{len(a_pr)} PR à émettre</b> pour {charts.entier(a_pr['À demander (PR)'].sum())} mousses "
+                       f"({charts.euros(a_pr['Valeur à commander (€)'].sum())}) : "
+                       f"{(a_pr['Action'] == p26.ACTIONS[0]).sum()} CCN sans aucune commande, "
+                       f"{(a_pr['Action'] == p26.ACTIONS[1]).sum()} avec des commandes insuffisantes.", "ko", "🔴")
+        ui.kpi_grid(_kpis_avions(blocs, annee))
+        ui.kpi_grid([
+            ui.kpi_card("Valeur du stock", charts.euros(m["Valeur stock (€)"].sum()), "mousses sur étagère", "ok"),
+            ui.kpi_card("Valeur en commande", charts.euros(m["Valeur en commande (€)"].sum()), "déjà commandé, à recevoir", "info"),
+            ui.kpi_card("À commander", charts.euros(m["Valeur à commander (€)"].sum()), "PR, hors CCN à coter", "ko"),
+            ui.kpi_card(f"Valeur du besoin {annee}", charts.euros(m["Valeur du besoin (€)"].sum()), "avions restants", "navy"),
+            ui.kpi_card("CCN à coter", charts.entier(m["À coter"].sum()), "sans prix : coût sous-estimé", "warn"),
+        ])
+        a, b = st.columns([1, 1.5], gap="large")
+        with a:
+            n = m["Action"].value_counts()
+            ui.graphe(charts.barres_h([(act, n.get(act, 0), charts.entier(n.get(act, 0)), p26.ACTION_COULEURS[act])
+                                       for act in p26.ACTIONS], titre="CCN par action"))
+        with b:
+            ui.graphe(_jauges_blocs(blocs, "Avions par type et par classe, sur l'objectif"))
+        st.markdown("**Actions à lancer** · PR à émettre, du plus urgent au moins urgent")
+        act = m[m["Priorité"] <= 2]
+        if act.empty:
+            ui.callout("Aucune PR à émettre : stock et commandes couvrent le besoin de l'année.", "ok", "✅")
+        else:
+            ui.tableau(_tableau_ccn(act), column_config=CFG, height="content" if len(act) <= 10 else 400)
+        _exports(res)
+
+
+def _tableau_ccn(m: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame({
+        "Action": m["Action"], "CCN": m["CCN"], "PN": m["PN"], "Désignation": m["Désignation"], "Types avion": m["Types avion"],
+        "Classes": m["Classes"], "Fournisseur": m["Fournisseur"], "Besoin": m["Besoin"], "Stock": m["Stock"],
+        "En commande": m["En commande"], "Couverture": m["Couverture"], "Écart": m["Écart"],
+        "À demander (PR)": m["À demander (PR)"], "Couverture (%)": m["Taux de couverture (%)"].clip(upper=100),
+        "PU (€)": m["PU (€)"], "Valeur à commander (€)": m["Valeur à commander (€)"], "À coter": m["À coter"].map({True: "oui", False: ""}),
+        "Commandes": m["Commandes"], "Prochaine livraison": m["Prochaine livraison"],
+    })
+
+
+def _exports(res: dict):
+    b, m, blocs, d, rat = res["b"], res["m"], res["blocs"], res["detail"], res["rattachement"]
+    a, c = st.columns(2)
+    with a:
+        feuilles = {
+            "Actions à lancer": _tableau_ccn(m[m["Priorité"] <= 2]),
+            "CCN (récap)": _tableau_ccn(m),
+            "Avions faisables": blocs,
+            "Détail CCN par type": d,
+            "Avions restants": _table_restants(b),
+            "Rattachement avions": rat,
+        }
+        ui.telecharger(sio.exporter_excel(feuilles), sio.nom_export(TAB_ID), K + "export", label="⬇️ PE mousses complète (Excel)")
+    with c, st.popover("🔎 Contrôles des données", width="stretch"):
+        absents = m[~m["Dans l'État du stock"]]
+        st.markdown(f"- **{len(absents)}** CCN du Besoin Prod absents de l'État du stock (stock compté à 0)"
+                    + (f" : {', '.join(absents['CCN'].head(20))}" if len(absents) else ""))
+        st.markdown(f"- **{int(m['À coter'].sum())}** CCN sans prix (ni Dernier PU de l'État du stock, ni prix du devis) : à coter.")
+        partages = m[m["Nb types"] > 1]
+        st.markdown(f"- **{len(partages)}** CCN communs à plusieurs types d'avion : leur stock est réparti entre les types.")
+        if len(rat):
+            amb = int(rat["Ambigu"].sum())
+            st.markdown(f"- **{len(rat)}** avions rattachés à un type d'avion par leurs CCN de mousses"
+                        + (f", dont **{amb}** ex æquo entre deux types (premier retenu)." if amb else "."))
+            ui.tableau(rat.drop(columns=["cle"]), height=220)
+
+
+def _table_restants(b: pd.DataFrame) -> pd.DataFrame:
+    t = b.groupby(["Type avion", "Classe", "Composant"], dropna=False).agg(**{
+        "Flotte": ("Flotte", "first"), "NB_AC": ("NB_AC", "max"), "Restant (fichier)": ("Restant fichier", "max"),
+        "Avions rattachés": ("Avions rattachés", "max"), "Remplacés cette année": ("Remplacés cette année", "max"),
+        "Restant calculé": ("Restant calculé", "max"), "Avions restants (retenu)": ("Avions restants", "max"),
+        "Source": ("Source restant", "first")}).reset_index()
+    return t[["Type avion", "Flotte", "Classe", "Composant", "NB_AC", "Restant (fichier)", "Avions rattachés",
+              "Remplacés cette année", "Restant calculé", "Avions restants (retenu)", "Source"]]
+
+
+# --------------------------------------------------------------------------
+# Avions faisables
+# --------------------------------------------------------------------------
+def _faisables(res: dict, today: date):
+    blocs, d, b, annee = res["blocs"], res["detail"], res["b"], res["annee"]
+    with ui.section(f"{TAB_ID}_faisables", f"Avions faisables {annee}",
+                    "Un avion d'une classe est complet quand tous ses CCN sont disponibles ; le stock d'un CCN commun est "
+                    "réparti entre les types d'avion"):
+        ui.kpi_grid(_kpis_avions(blocs, annee))
+        ui.graphe(_jauges_blocs(blocs, "Avancement par type d'avion et par classe (avions)"))
+        t = blocs.assign(Bloc=[p26.nom_bloc(x, y) for x, y in zip(blocs["Type avion"], blocs["Classe"])])
+        cols = ["Type avion", "Flotte", "Classe", "Objectif", "Complets maintenant", "Complets à réception", "À approvisionner",
+                "Taux (%)", "Nb CCN", "CCN couverts", "CCN limitant", "PN à coter"]
+        ui.tableau(t[cols], column_config=CFG, height="content" if len(t) <= 12 else 420)
+        with st.popover("ℹ️ Règles de calcul et avions restants", width="content"):
+            st.markdown(
+                "- **Objectif** = avions restant à traiter (voir tableau ci-dessous et ⚙️ Paramètres).\n"
+                "- **Complets maintenant** : avions équipables avec le stock ; un CCN commun à plusieurs types est réparti, "
+                "l'avion suivant allant toujours au type le moins avancé.\n"
+                "- **Complets à réception** : en plus, une fois les commandes en cours livrées (stock + en commande).\n"
+                "- **À approvisionner** : le reste de l'objectif, impossible sans nouvelle commande.\n"
+                "- Le stock est partagé entre classes et types : ces chiffres montrent ce que permet le stock, pas une affectation.")
+            ui.tableau(_table_restants(b), width=1100, height=360)
+    _detail_type(d, blocs)
+
+
+@st.fragment
+def _detail_type(d: pd.DataFrame, blocs: pd.DataFrame):
+    types = sorted(blocs["Type avion"].unique())
+    if not types:
+        return
+    with ui.section(f"{TAB_ID}_detail_type", "Détail par type d'avion",
+                    "Avions couvrables par chaque CCN : stock (couleur) et avec les commandes en cours (fond bleu), "
+                    "trait = objectif de la classe"):
+        a, b = st.columns([1.2, 2], vertical_alignment="center")
+        typ = a.selectbox("Type d'avion", types, key=K + "type", persist_state="page", label_visibility="collapsed")
+        x = d[d["Type avion"] == typ].sort_values(["Classe", "Avions (stock)"])
+        bt = blocs[blocs["Type avion"] == typ]
+        with b:
+            st.html('<div class="s360-note">' + " · ".join(
+                f"<b>{r['Classe']}</b> : {int(r['Complets maintenant'])} / {int(r['Objectif'])} complets maintenant"
+                + (f" (limitant : {r['CCN limitant']})" if r["Complets maintenant"] < r["Objectif"] else "")
+                for _, r in bt.iterrows()) + "</div>")
+        lignes = []
+        for _, r in x.iterrows():
+            statut = "À coter" if r["À coter"] else "Suffisant" if r["Avions (stock)"] >= r["Objectif"] else "À approvisionner"
+            plus = max(r["Avions (stock + commandes)"] - r["Avions (stock)"], 0)
+            partage = f" · commun à {r['Types partageant le CCN']} types" if r["Types partageant le CCN"] > 1 else ""
+            lignes.append((f"{r['Classe']} · {r['CCN']} · {r['PN']}{partage}",
+                           [("Avions (stock)", r["Avions (stock)"], STATUT_CCN[statut]), ("+ avec commandes", plus, FOND_COMMANDES)],
+                           r["Objectif"], f"{int(r['Avions (stock)'])} / {int(r['Objectif'])}"))
+        leg = [(n, c, "barre") for n, c in STATUT_CCN.items()] + [("+ avec commandes", FOND_COMMANDES, "barre"),
+                                                                 ("Objectif de la classe", COLORS["text"], "trait")]
+        ui.graphe(charts.jauges(lignes, f"{typ} : avions couvrables par CCN", leg, repere_nom="Objectif", fmt=charts.entier,
+                                hauteur_max="34rem"))
+        t = x[["Classe", "CCN", "PN", "Désignation", "Qté par avion", "Objectif", "Besoin", "Stock", "Couverture",
+               "Avions (stock)", "Avions (stock + commandes)", "Manque (unités)", "PU (€)", "Types partageant le CCN"]]
+        ui.tableau(t, column_config=CFG, height="content" if len(t) <= 10 else 380)
+
+
+# --------------------------------------------------------------------------
+# CCN et commandes
+# --------------------------------------------------------------------------
+def _ccn(res: dict, today: date):
+    m, annee = res["m"], res["annee"]
+    with ui.section(f"{TAB_ID}_ccn", "CCN et commandes",
+                    f"Besoin {annee} face au stock et aux commandes en cours, par CCN : quantités à demander (PR)"):
+        ui.kpi_grid([
+            ui.kpi_card("CCN suivis", charts.entier(len(m)), "dans le Besoin Prod", "navy"),
+            ui.kpi_card("Stock", charts.entier(m["Stock"].sum()), "mousses sur étagère", "ok"),
+            ui.kpi_card("CCN à approvisionner", charts.entier((m["Écart"] > 0).sum()), "= PR à émettre", "warn"),
+            ui.kpi_card("Quantité à demander", charts.entier(m["À demander (PR)"].sum()), "toutes PR confondues", "ko"),
+            ui.kpi_card("CCN couverts", charts.entier((m["Écart"] <= 0).sum()), "stock + commandes suffisent", "ok"),
+        ])
+        acoter = m[m["À coter"]]
+        if len(acoter):
+            ui.callout(f"<b>{len(acoter)} CCN à faire coter</b> (aucun prix) : coût à commander sous-estimé.", "warn", "🟡")
+        _liste_ccn(m)
+
+
+@st.fragment
+def _liste_ccn(m: pd.DataFrame):
+    a, b, c = st.columns([1.2, 2, 1], vertical_alignment="center")
+    q = a.text_input("Recherche", placeholder="🔎 CCN, PN, fournisseur", key=K + "q", label_visibility="collapsed")
+    actions = b.multiselect("Action", p26.ACTIONS, key=K + "actions", placeholder="Toutes les actions", label_visibility="collapsed")
+    coter = c.toggle("À coter seulement", key=K + "coter")
+    x = m
+    if q:
+        cle = q.strip().upper()
+        x = x[x["CCN"].str.upper().str.contains(cle, regex=False) | x["PN"].str.upper().str.contains(cle, regex=False)
+              | x["Fournisseur"].fillna("").str.upper().str.contains(cle, regex=False)]
+    if actions:
+        x = x[x["Action"].isin(actions)]
+    if coter:
+        x = x[x["À coter"]]
+    v = x.sort_values("Taux de couverture (%)")
+    lignes = [(f"{r['CCN']} · {r['PN']}", [("Stock", r["Stock"], COLORS["ok"]), ("En commande", r["En commande"], COLORS["navy_2"])],
+               r["Besoin"], charts.pourcent(r["Taux de couverture (%)"]) if pd.notna(r["Taux de couverture (%)"]) else "—")
+              for _, r in v.iterrows()]
+    leg = [("Stock", COLORS["ok"], "barre"), ("En commande", COLORS["navy_2"], "barre"), ("Besoin de l'année", COLORS["text"], "trait")]
+    ui.graphe(charts.jauges(lignes, f"Couverture du besoin par CCN ({len(v)})", leg, repere_nom="Besoin", hauteur_max="32rem"))
+    ui.tableau(_tableau_ccn(x), column_config=CFG, height="content" if len(x) <= 10 else 440)

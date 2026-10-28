@@ -14,10 +14,8 @@ from core import cache, charts
 from core import components as ui
 from core import io as sio
 from core import prevision as pv
-from core import pe
 from core import textile as tx
 from core.style import COLORS
-from modules import _planning_pe as vue_pe
 
 TAB_ID = "textiles"
 TAB_LABEL = "Textile cabine"
@@ -25,8 +23,8 @@ TAB_ICON = "🧵"
 TAB_DESCRIPTION = "Stock, consommation, commandes et prévision de commandes des ceintures, housses, mousses et rideaux."
 
 K = f"{TAB_ID}__"
-SECTIONS = ["Synthèse", "Commandes", "Fournisseurs", "Consommation", "Planning PE", "Prévision"]
-ICONES = {"Synthèse": "📊", "Prévision": "🧮", "Commandes": "📦", "Fournisseurs": "🏭", "Consommation": "📈", "Planning PE": "📅"}
+SECTIONS = ["Synthèse", "Commandes", "Fournisseurs", "Consommation", "Prévision"]
+ICONES = {"Synthèse": "📊", "Prévision": "🧮", "Commandes": "📦", "Fournisseurs": "🏭", "Consommation": "📈"}
 TOUTES = "Toutes"
 
 COLONNES_ATTENDUES = {
@@ -42,10 +40,6 @@ COLONNES_ATTENDUES = {
                    ("description, ccn", "", False)],
     "pieces": [("equipment, aircraft_type, group, registration", "", True), ("area, ccn, pn, description, qty_per_ac", "", True),
                ("CSV ou Excel", "ex. textile_all_parts", False)],
-    "pe": [("Feuille « … BOTTOM FOAM … »", "assises : âge par classe J / W / Y", True),
-           ("Feuille « … BACKREST FOAM … »", "dossiers J", True),
-           ("FLEET, AIRCRAFT, AGE (month), PAST / NEXT EXECUTION", "fichier mensuel tel quel", True),
-           ("Date dans le nom", "ex. PE_MOUSSE_29092026 : date des âges", False)],
 }
 
 COL_RELANCES = {"Statut commande": "Statut", "Fournisseur": "Fournisseur", "Commande": "Commande", "PNR": "PN",
@@ -122,19 +116,6 @@ def _filtrer(s_all, o_all, cat):
     return s, o
 
 
-@st.cache_resource(show_spinner="Calcul du planning PE…", max_entries=4)
-def _planning_pe(stock: bytes, cmd: bytes | None, fichier_pe: tuple, pieces: tuple | None, params: pe.ParamsPE, today: date):
-    """Planning PE des mousses + forecast. Clé = fichiers (octets) + paramètres + date."""
-    lignes, date_ref = pe.lire_pe_mousses(*fichier_pe)
-    parts = _pieces(*pieces, pv.Params())[0] if pieces else pd.DataFrame(columns=pv.RAW_COLS)
-    cmd_l = cache.commandes(cmd)[0] if cmd else None
-    mousses_cat = pe.catalogue_mousses(parts) if len(parts) else None
-    mousses_cat = mousses_cat if mousses_cat is not None and len(mousses_cat) else None
-    pbi, o = tx.construire_tables(cache.etat_stock(stock)[0], cmd_l, mousses_cat, today, True) if mousses_cat is not None \
-        else (pd.DataFrame(columns=["PNR", "QTE SUR ÉTAGÈRE"]), None)
-    return pe.planning_pe(lignes, date_ref or today, parts, pe.articles(pbi), o, today, params)
-
-
 @st.cache_resource(show_spinner=False, max_entries=4)
 def _export(cle_tables: tuple, cat: str, cle_prev: tuple | None) -> bytes:
     s, o = _filtrer(*_tables(*cle_tables), cat)
@@ -164,7 +145,8 @@ def _export(cle_tables: tuple, cat: str, cle_prev: tuple | None) -> bytes:
 def _parametres(parts) -> tuple[pv.Params, tuple]:
     """Paramètres du sous-onglet Prévision (buffer, délais, composants, politique d'entretien)."""
     d = pv.Params()
-    st.caption("Utilisés par le sous-onglet **Prévision** (stock minimum d'avance). Le Planning PE a ses propres paramètres.")
+    st.caption("Utilisés par le sous-onglet **Prévision** (stock minimum d'avance). Le Planning PE des mousses est dans "
+               "l'onglet **PE mousses**.")
     if True:
         a, b = st.columns(2)
         ratio = a.slider("Avions d'avance (% du groupe)", 2, 40, int(d.buffer_ratio * 100), key=K + "ratio", persist_state="page",
@@ -203,7 +185,7 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
 SHAREPOINT_TEXTILE = ("https://afkl.sharepoint.com/:f:/r/teams/MS-LGT1-Analystes/Shared%20Documents/Textile"
                       "?d=w58572b00036a42e395a6b6435ecf4000&csf=1&web=1&e=ExlJGH")
 # Noms des fichiers du dossier Textile (prioritaires sur la reconnaissance par le contenu), sans accents ni majuscules.
-NOMS_DOSSIER = {"stock": r"^resultat", "references": r"textile_master_export", "pieces": r"textile_all_parts", "pe": r"^pe_mousse"}
+NOMS_DOSSIER = {"stock": r"^resultat", "references": r"textile_master_export", "pieces": r"textile_all_parts"}
 NOMMAGE = ("Dossier Textile : « Résultat… » = État du stock, « textile_master_export » = Références textile, "
            "« textile_all_parts » = Pièces par avion. À défaut, les fichiers sont reconnus par leur contenu ; s'il y en a "
            "plusieurs du même type, le plus récent (date dans le nom) est retenu. Commandes (SAP) : dossier COMMANDE.")
@@ -227,19 +209,17 @@ def _bloc_import():
                                       COLONNES_ATTENDUES["pieces"])
             with c2:
                 f_cmd = ui.import_commandes(COLONNES_ATTENDUES["commandes"])
-                f_pe = ui.fichier(f"{pe.FICHIER_PE} (PE_MOUSSE, mensuel)", K + "pe", ["xlsx", "xlsm"], COLONNES_ATTENDUES["pe"])
             with c3:
                 f_ref = ui.fichier(sio.FICHIER_REFERENCES, K + "references", ["xlsx", "xlsm"], COLONNES_ATTENDUES["references"])
             ui.lien_sharepoint(SHAREPOINT_TEXTILE, "Textile")
         with bilan:
-            ui.import_dossier(K + "dossier", {"stock": K + "stock", "references": K + "references", "pieces": K + "pieces",
-                                              "pe": K + "pe"},
+            ui.import_dossier(K + "dossier", {"stock": K + "stock", "references": K + "references", "pieces": K + "pieces"},
                               label="Tout le dossier Textile (Ctrl+A pour tout sélectionner)", aide=NOMMAGE, noms=NOMS_DOSSIER,
+                              autres=("pe", "besoin_prod"),
                               zone=zone_dossier)
         with puces:
             ui.etat_fichiers([(sio.FICHIER_STOCK, K + "stock", True), (sio.FICHIER_COMMANDES, "commun__commandes", False),
-                              (sio.FICHIER_REFERENCES, K + "references", False), (pv.FICHIER_PIECES, K + "pieces", False),
-                              (pe.FICHIER_PE, K + "pe", False)])
+                              (sio.FICHIER_REFERENCES, K + "references", False), (pv.FICHIER_PIECES, K + "pieces", False)])
         parts = None
         if f_pieces:
             try:
@@ -248,20 +228,18 @@ def _bloc_import():
                 ui.callout(f"<b>{pv.FICHIER_PIECES} illisible.</b> {exc}", "ko", "⛔")
                 f_pieces = None
         with reglages:
-            t_pe, t_prev, t_gen = st.tabs(["📅 Planning PE", "🧮 Prévision", "Général"])
-            with t_pe:
-                params_pe = vue_pe.parametres()
+            t_prev, t_gen = st.tabs(["🧮 Prévision", "Général"])
             with t_prev:
                 params, regles = _parametres(parts)
             with t_gen:
                 seul = st.toggle("Uniquement les PN du catalogue textile", value=True, key=K + "seul", persist_state="page",
                                  help="Limite l'analyse aux PN du fichier Références textile.")
-    return f_stock, f_cmd, f_ref, f_pieces, f_pe, today, seul, params, regles, params_pe
+    return f_stock, f_cmd, f_ref, f_pieces, today, seul, params, regles
 
 
 def render() -> None:
     ui.hero(TAB_ICON, "Textile cabine", TAB_DESCRIPTION)
-    f_stock, f_cmd, f_ref, f_pieces, f_pe, today, seul, params, regles, params_pe = _bloc_import()
+    f_stock, f_cmd, f_ref, f_pieces, today, seul, params, regles = _bloc_import()
     if not f_stock:
         with ui.section(f"{TAB_ID}_vide", "Analyse"):
             ui.empty_state("Importez l'État du stock", "Les autres fichiers enrichissent ensuite l'analyse.",
@@ -296,29 +274,8 @@ def render() -> None:
 
     if section == "Prévision":
         _section_prevision(prev, cat, o)
-    elif section == "Planning PE":
-        _section_pe(f_stock, f_cmd, f_pieces, f_pe, params_pe, today)
     else:
         {"Synthèse": _synthese, "Commandes": _commandes, "Fournisseurs": _fournisseurs, "Consommation": _consommation}[section](s, o, today, cat)
-
-
-def _section_pe(f_stock, f_cmd, f_pieces, f_pe, params_pe, today):
-    if not f_pe:
-        with ui.section(f"{TAB_ID}_pe_vide", "Planning PE des mousses"):
-            ui.empty_state(f"Importez le fichier {pe.FICHIER_PE}", "Le fichier mensuel PE_MOUSSE (feuilles BOTTOM FOAM et BACKREST FOAM), "
-                           "tel que vous le recevez. textile_all_parts ajoute le forecast des mousses à commander.",
-                           [(pe.FICHIER_PE, False), (pv.FICHIER_PIECES, bool(f_pieces))], icon="📅")
-        return
-    try:
-        res = _planning_pe(f_stock[1], f_cmd[1] if f_cmd else None, (f_pe[1], f_pe[0]),
-                           (f_pieces[1], f_pieces[0]) if f_pieces else None, params_pe, today)
-    except ValueError as exc:
-        ui.callout(f"<b>{pe.FICHIER_PE} illisible.</b> {exc}", "ko", "⛔")
-        return
-    if pe.date_extraction(f_pe[0]) is None:
-        ui.callout("Date des âges introuvable dans le nom du fichier (ex. PE_MOUSSE_29092026) : la date de référence est utilisée.",
-                   "warn", "⚠️")
-    vue_pe.render(res, today, bool(f_pieces))
 
 
 # --------------------------------------------------------------------------

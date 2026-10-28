@@ -180,7 +180,7 @@ def vider_emplacement(cle: str, garder_donnees: bool = False) -> None:
 
 LIBELLES_SOURCES = {"besoins": sio.FICHIER_BESOINS, "asreq": sio.FICHIER_ASREQ, "stock": sio.FICHIER_STOCK,
                     "commandes": sio.FICHIER_COMMANDES, "references": sio.FICHIER_REFERENCES, "pieces": "Pièces par avion",
-                    "pe": "PE mousses"}
+                    "pe": "PE mousses", "besoin_prod": "Besoin Prod mousses"}
 
 
 @st.cache_resource(show_spinner=False, max_entries=256)
@@ -258,7 +258,7 @@ def lien_sharepoint(url: str, dossier: str) -> None:
 
 
 def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_choix=None, label: str = "", aide: str = "",
-                   noms: dict[str, str] | None = None, resume: bool = True, zone=None) -> None:
+                   noms: dict[str, str] | None = None, resume: bool = True, zone=None, autres: tuple = ()) -> None:
     """Import de tout un dossier : chaque fichier est reconnu par son contenu (à défaut son nom) et rangé
     dans l'emplacement `fichier` correspondant (`cibles` = {source: clé du fichier}).
 
@@ -268,6 +268,7 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     `on_choix(dossier_chantier, {source: [chemins]})` est appelé après chaque répartition.
     `noms` = {source: motif} : règles de nommage prioritaires (voir dossiers.appliquer_noms).
     Un fichier Commandes (SAP) trouvé ici est ignoré si `commandes` n'est pas une cible : seul le dossier COMMANDE fait foi.
+    `autres` : sources lues par un autre onglet (même dossier) : ni utilisées ni signalées comme ignorées.
     `zone` : conteneur où placer la zone d'import (ex. l'expander « Import manuel ») ; le choix du chantier et le
     bilan restent à l'emplacement courant.
     """
@@ -349,7 +350,7 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
         notes.append(f"Commandes (SAP) du dossier non utilisé ({escape(dossiers.nom_court(par_source['commandes'][0]))}) : "
                      "le fichier du dossier <b>COMMANDE</b> fait foi")
     hors = [dossiers.nom_court(c) for c in inconnus] + [dossiers.nom_court(c) for s, l in par_source.items()
-                                                       if s not in cibles and s != "commandes" for c in l]
+                                                       if s not in cibles and s != "commandes" and s not in autres for c in l]
     if hors:
         notes.append("Ignoré(s) : " + ", ".join(escape(n) for n in hors))
     if notes:

@@ -4,11 +4,12 @@ Ajouter un onglet = créer `app/modules/<tab_id>.py` (contrat : TAB_ID, TAB_LABE
 TAB_DESCRIPTION, render()) puis l'ajouter à MODULES.
 """
 
-from modules import alertes, fournisseurs, stock_chantier, textiles
+from modules import alertes, fournisseurs, pe_mousses, stock_chantier, textiles
 
 MODULES = [
     stock_chantier,
     textiles,
+    pe_mousses,
     fournisseurs,   # en cours de développement
     alertes,        # en cours de développement
 ]

@@ -28,6 +28,7 @@ SharePoint (canal Teams MS-LGT1-Analystes, bibliothèque Documents)
 ├── Textile/           « Résultat… » (État du stock), « textile_master_export » (Références textile),
 │                      « textile_all_parts » (Pièces par avion)
 │                      « PE_MOUSSE_JJMMAAAA » (âge des mousses, fichier mensuel tel quel)
+│                      « Besoin_Prod… » (objectif PE mousses de l'année : avions et CCN par type d'avion)
 └── R2/                un dossier par chantier : <IMMAT> - <JJMMAA>
     ├── F-XKAA - 151126/   Besoins LOGOPS (ou étude ASREQ), État du stock
     └── F-XKBB - 030227/
@@ -89,7 +90,6 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 | Commandes (SAP) | `PN`, `Commande` | `Fournisseur`, `Code fournisseur`, `Date d'émission de la commande`, `Date de livraison demandée / promise`, `Quantité restant à livrer` |
 | Références textile — feuille « PN Catalog » | `pn`, `equipment` | `description`, `ccn` |
 | Pièces par avion (textile_all_parts) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
-| PE mousses (PE_MOUSSE_JJMMAAAA, mensuel) | feuilles « … BOTTOM FOAM … » et « … BACKREST FOAM … » : FLEET, AIRCRAFT, AGE (month) par classe, PAST / NEXT EXECUTION | |
 
 Seul l'État du stock est indispensable ; les autres fichiers complètent l'analyse. La Prévision
 demande en plus le fichier Pièces par avion.
@@ -117,10 +117,54 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
   le code fournisseur.
 
 Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « ⚙️ Paramètres de la prévision ».
-Le planning des PE n'est pas pris en compte pour l'instant.
+Le planning des PE mousses est dans l'onglet **PE mousses**.
 
-**Planning PE (mousses de sièges)** — sous-onglet « Planning PE », à partir du fichier mensuel PE_MOUSSE déposé tel
-quel dans le dossier Textile (date des âges lue dans son nom) et de textile_all_parts :
+### 🛠️ PE mousses
+
+Politique d'entretien des mousses de sièges : ce que l'on peut faire cette année avec le stock, ce qu'il faut commander,
+l'avancement avion par avion et le forecast des années suivantes. Tous les fichiers sont lus dans le dossier **Textile**
+(📂 Ouvrir Textile) ; les commandes dans le dossier COMMANDE.
+
+| Fichier | Colonnes obligatoires | Colonnes facultatives |
+|---|---|---|
+| Besoin Prod mousses (« Besoin_Prod… », annuel) — feuille « QUOTE en euro » | `A/C` (type d'avion), `Area` (classe), `CCN`, `Qty per A/C`, `NB_AC` | `Flotte`, `NB_AC PE RESTANT`, `P/N OEM Seat Supplier`, `Seat Supplier`, `Description`, `P.U forecast PE` |
+| État du stock | `PNR`, `QTE SUR ÉTAGÈRE`, `CCN` | `QTE EN CDE`, `Dernier PU (achat) Euros` |
+| Commandes (SAP) | `PN`, `Commande` | `CCN` (sinon retrouvé par le PN), `Quantité restant à livrer`, `Date de livraison promise` |
+| PE mousses (PE_MOUSSE_JJMMAAAA, mensuel) | feuilles « … BOTTOM FOAM … » et « … BACKREST FOAM … » : FLEET, AIRCRAFT, AGE (month) par classe, PAST / NEXT EXECUTION | |
+| Pièces par avion (textile_all_parts) | `equipment`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
+
+**Sous-onglets** :
+
+- **Synthèse** : objectif de l'année, avions complets maintenant / à réception / à approvisionner, valeurs (stock,
+  en commande, à commander, besoin), CCN à coter, CCN par action, avancement par type × classe, **actions à lancer**
+  (PR à émettre), export Excel complet et contrôles des données.
+- **Avions faisables** : par type d'avion × classe, avions complets avec le stock, à réception des commandes, à
+  approvisionner, CCN limitant ; détail d'un type d'avion : avions couvrables par chaque CCN (stock, + commandes,
+  trait = objectif de la classe).
+- **CCN et commandes** : couverture du besoin par CCN (stock + en commande face au besoin), recherche, filtre par action,
+  CCN à coter.
+- **Avancement PE** et **Forecast** : voir ci-dessous (ex-sous-onglet « Planning PE » du Textile).
+
+Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mousse ») :
+
+- **avions restants** (objectif) : par défaut **recalculés** = NB_AC − avions du type dont la mousse (même classe,
+  assise ou dossier) a été remplacée depuis le 1er janvier d'après le fichier PE mousses. Le type de chaque avion
+  (A350 AFR01, B777-300 14J…) est retrouvé par ses CCN de mousses dans textile_all_parts (type qui en partage le plus).
+  Sans ces fichiers, ou pour une classe non reconnue : colonne `NB_AC PE RESTANT`, à défaut `NB_AC`. Choix dans
+  « ⚙️ Paramètres » › Année ; comparaison fichier / calcul dans « ℹ️ Règles de calcul et avions restants » ;
+- NB_AC compté une fois par type d'avion × classe (pas une fois par ligne) ;
+- besoin d'un CCN = qté par avion × avions restants, additionné sur les types d'avion ;
+- stock d'un CCN = QTE SUR ÉTAGÈRE de l'État du stock (maximum des lignes du CCN) ; en commande = reste à livrer des
+  commandes SAP du CCN (sans fichier Commandes : QTE EN CDE) ;
+- à demander (PR) = besoin − stock − en commande (si positif). Action : PR à émettre (aucune commande), PR
+  complémentaire (commandes insuffisantes), à réceptionner (couvert avec les commandes), couvert par le stock ;
+- prix = Dernier PU de l'État du stock, à défaut le prix du devis ; sans prix : CCN « à coter » ;
+- **avions faisables** : un avion d'une classe est complet si tous ses CCN sont disponibles. Le stock d'un CCN commun
+  à plusieurs types d'avion est **réparti** (l'avion suivant va au type le moins avancé) : le total ne compte jamais
+  deux fois le même stock. Les colonnes MRI, PSD et capa du Besoin Prod ne sont pas utilisées.
+
+**Avancement PE et Forecast** — à partir du fichier mensuel PE_MOUSSE déposé tel quel dans le dossier Textile (date des
+âges lue dans son nom) et de textile_all_parts :
 
 - **Avancement** : conformité PE, éléments en retard, dans le délai toléré, à faire sous 3 mois, visites à venir ;
   avancement par flotte × élément (J assise, J dossier, W assise, Y assise) ; remplacements à faire par mois.

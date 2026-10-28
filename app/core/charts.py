@@ -84,10 +84,10 @@ def _titre(t):
 
 
 def legende(items) -> str:
-    """items : [(libellé, couleur, 'barre' | 'ligne' | 'repere')]."""
+    """items : [(libellé, couleur, 'barre' | 'ligne' | 'repere' | 'trait')]."""
     if not items:
         return ""
-    cls = {"ligne": "ln", "repere": "rp"}
+    cls = {"ligne": "ln", "repere": "rp", "trait": "tr"}
     spans = "".join(f'<span><i class="{cls.get(k, "")}" style="background:{c}"></i>{escape(str(n))}</span>' for n, c, k in items)
     return f'<div class="s360-legend">{spans}</div>'
 
@@ -337,6 +337,43 @@ def parts(tableau, couleurs: dict, titre="", afficher="nombre", **_) -> str:
                     f'<div class="s360-stack">{"".join(segs)}</div></div>')
     leg = legende([(c, couleurs.get(c, COLORS["gris"]), "barre") for c in tableau.columns])
     return f'<div class="s360-chart">{_titre(titre)}<div class="s360-share">{"".join(rows)}</div>{leg}</div>'
+
+
+# --------------------------------------------------------------------------
+# Jauges horizontales : segments empilés + repère (objectif), même échelle pour toutes les lignes
+# --------------------------------------------------------------------------
+def jauges(lignes, titre="", legende_items=None, repere_nom="Objectif", fmt=court, hauteur_max: str | None = None) -> str:
+    """lignes : [(libellé, [(nom, valeur, couleur)], repère ou None, texte à droite)].
+
+    Les segments sont empilés de gauche à droite ; le repère est un trait vertical (ex. objectif d'avions).
+    `hauteur_max` : zone défilante (beaucoup de lignes).
+    """
+    lignes = list(lignes)
+    if not lignes:
+        return vide()
+    vmax = max(max(sum(max(float(v), 0) for _, v, _ in segs), float(r) if not _nan(r) else 0) for _, segs, r, _ in lignes) or 1
+    rows = []
+    for nom, segs, rep, txt in lignes:
+        parts_ = []
+        tip = [nom]
+        for n, v, c in segs:
+            v = max(float(v), 0)
+            tip.append(f"{n} : {fmt(v)}")
+            if v <= 0:
+                continue
+            w = v / vmax * 100
+            parts_.append(f'<span style="width:{w:.2f}%;background:{c}">{fmt(v) if w >= 6 else ""}</span>')
+        marque = ""
+        if not _nan(rep):
+            tip.append(f"{repere_nom} : {fmt(rep)}")
+            marque = f'<i class="rp" style="left:{float(rep) / vmax * 100:.2f}%"></i>'
+        rows.append(f'<div class="rw"{_tip(tip)}><span class="nm" title="{escape(str(nom))}">{escape(str(nom))}</span>'
+                    f'<div class="trk">{"".join(parts_)}{marque}</div><b>{escape(str(txt))}</b></div>')
+    corps = f'<div class="s360-jauge">{"".join(rows)}</div>'
+    if hauteur_max:
+        corps = f'<div class="s360-jauge-scroll" style="max-height:{hauteur_max}">{corps}</div>'
+    items = list(legende_items or [])
+    return f'<div class="s360-chart">{_titre(titre)}{corps}{legende(items)}</div>'
 
 
 # --------------------------------------------------------------------------

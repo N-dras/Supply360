@@ -380,10 +380,11 @@ def jauges(lignes, titre="", legende_items=None, repere_nom="Objectif", fmt=cour
 # --------------------------------------------------------------------------
 # Carte de chaleur
 # --------------------------------------------------------------------------
-def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes", hauteur_max: str | None = None) -> str:
+def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes", hauteur_max: str | None = None, details=None) -> str:
     """Carte de chaleur HTML : lignes × colonnes, intensité proportionnelle à la valeur.
 
     `hauteur_max` (ex. "30rem") : zone défilante dont la ligne d'en-tête (colonnes) reste figée en haut.
+    `details` : tableau de mêmes lignes / colonnes, texte ajouté à l'infobulle de chaque case (ex. éléments concernés).
     """
     if tableau is None or tableau.empty:
         return vide()
@@ -397,8 +398,10 @@ def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes", hauteur_
             v = float(v)
             a = 0 if v <= 0 else .15 + .85 * v / vmax
             fg = "#fff" if a > .55 else COLORS["text"]
+            plus = details.at[idx, col] if details is not None and idx in details.index and col in details.columns else ""
             cells.append(f'<td style="background:rgba({r},{g},{b},{a:.2f});color:{fg}"'
-                         f'{_tip([idx, f"{col} : {entier(v)} {libelle}"])}>{court(v) if v else ""}</td>')
+                         f'{_tip([idx, f"{col} : {entier(v)} {libelle}", plus if isinstance(plus, str) else ""])}>'
+                         f'{court(v) if v else ""}</td>')
         lignes.append(f'<tr><th class="f" title="{escape(str(idx))}">{escape(str(idx))}</th>{"".join(cells)}</tr>')
     table = f'<table class="s360-heat"><thead><tr><th></th>{tete}</tr></thead><tbody>{"".join(lignes)}</tbody></table>'
     if hauteur_max:

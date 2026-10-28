@@ -111,71 +111,92 @@ def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement"
     _exports_controles(res, c, ev, synth, long, horizon)
 
 
+ELEMENT = "1 élément = la mousse d'une classe et d'une partie (assise ou dossier) d'un avion"
+
+
+def _nom_element(classe, composant) -> pd.Series:
+    """« Assise J », « Dossier J »… (libellé lisible d'un élément)."""
+    return composant.astype(str) + " " + classe.astype(str)
+
+
 def _avancement(c: pd.DataFrame, date_ref, today):
     auj = pd.Timestamp(today)
     n = len(c)
     st_ = c["Statut"].astype(str)
     retard, tolere, trois = (st_ == "En retard").sum(), (st_ == "Délai toléré").sum(), (st_ == "À faire < 3 mois").sum()
+    nb_avions = c["Immatriculation"].nunique()
     avions_retard = c.loc[st_ == "En retard", "Immatriculation"].nunique()
     visites = c.loc[c["Prochaine visite"] <= auj + pd.DateOffset(months=3), "Immatriculation"].nunique()
     conformite = (1 - retard / n) * 100 if n else 100
     with ui.section("pe_mousses_pe_avancement", "Avancement de la PE mousses",
                     f"Âges au {pd.Timestamp(date_ref):%d/%m/%Y} (fichier PE mousses) · statut au {auj:%d/%m/%Y}",
-                    tag=f"{c['Immatriculation'].nunique()} avions"):
+                    tag=f"{nb_avions} avions suivis"):
+        exemple = c.groupby("Immatriculation").size()
+        st.html(f'<div class="s360-note"><b>Comment lire</b> : {ELEMENT}, soumise à la PE (dossiers W et Y : jamais remplacés). '
+                f'{nb_avions} avions du fichier PE mousses × leurs éléments = <b>{n} éléments suivis</b>'
+                + (f" (ex. {exemple.index[0]} : {int(exemple.iloc[0])} éléments)" if len(exemple) else "") + ".</div>")
         if retard:
-            ui.callout(f"<b>{retard} remplacements en retard</b> sur {avions_retard} avions : à rattraper en priorité "
+            ui.callout(f"<b>{retard} éléments en retard</b>, répartis sur <b>{avions_retard} avions</b> : à rattraper en priorité "
                        f"(prévus dès ce mois-ci dans le forecast).", "ko", "🔴")
         ui.kpi_grid([
-            ui.kpi_card("Conformité PE", f"{conformite:.0f} %", f"{n - retard} éléments sur {n} dans les temps",
+            ui.kpi_card("Conformité PE", f"{conformite:.0f} %", f"{n - retard} éléments sur {n} ne sont pas en retard",
                         "ok" if conformite >= 90 else "warn" if conformite >= 70 else "ko"),
-            ui.kpi_card("En retard", charts.entier(retard), f"{avions_retard} avions", "ko"),
-            ui.kpi_card("Délai toléré", charts.entier(tolere), "échéance dépassée, encore dans la tolérance", "warn"),
-            ui.kpi_card("À faire < 3 mois", charts.entier(trois), "", "warn"),
-            ui.kpi_card("Visites dans les 3 mois", charts.entier(visites), "avions avec une visite datée", "info"),
+            ui.kpi_card("Éléments en retard", charts.entier(retard), "échéance + délai toléré dépassés", "ko"),
+            ui.kpi_card("Avions avec un retard", charts.entier(avions_retard), f"sur {nb_avions} avions suivis", "ko"),
+            ui.kpi_card("Éléments en délai toléré", charts.entier(tolere), "échéance dépassée, encore dans la tolérance", "warn"),
+            ui.kpi_card("Éléments à faire < 3 mois", charts.entier(trois), "échéance dans les 3 prochains mois", "warn"),
+            ui.kpi_card("Avions en visite < 3 mois", charts.entier(visites), "visite datée dans le fichier", "info"),
         ])
         a, b = st.columns(2, gap="large")
         with a:
-            t = c.assign(L=c["Flotte"].astype(str) + " · " + _element(c["Classe"], c["Composant"]))
+            t = c.assign(L=c["Flotte"].astype(str) + " · " + _nom_element(c["Classe"], c["Composant"]))
             t = t.groupby(["L", "Statut"], observed=False).size().unstack(fill_value=0)
             t = t.reindex(columns=[s for s in pe.STATUTS if s in t.columns])
             t = t[t.sum(axis=1) > 0]
-            ui.graphe(charts.parts(t, pe.STATUT_COULEURS, "Avancement par flotte et élément (nombre d'avions)"))
+            ui.graphe(charts.parts(t, pe.STATUT_COULEURS, "Statut par flotte et élément (nombre d'avions)"))
         with b:
             debut = auj.to_period("M").start_time
             mois = pd.date_range(debut, periods=12, freq="MS")
             d = c.assign(E=_element(c["Classe"], c["Composant"]))
             d["Case"] = d["Date prévue"].dt.to_period("M").dt.start_time
             retard_b = d["Origine date prévue"] == "Mois en cours (retard)"
-            cats = ["Retard"] + [_mois_label(m) for m in mois]
+            cats = ["À rattraper"] + [_mois_label(m) for m in mois]
             series = {}
             for e in ELEMENTS:
                 x = d[d["E"] == e]
                 if x.empty:
                     continue
                 cnt = x[~retard_b.loc[x.index]].groupby("Case").size()
-                series[e] = [int(retard_b.loc[x.index].sum())] + [int(cnt.get(m, 0)) for m in mois]
-            ui.graphe(charts.barres(cats, series, COULEURS_ELEMENTS, empile=True, hauteur=260,
-                                    titre="Remplacements à faire : retard puis 12 prochains mois (avions)")
+                classe, comp = e.split(" · ")
+                series[f"{comp} {classe}"] = [int(retard_b.loc[x.index].sum())] + [int(cnt.get(m, 0)) for m in mois]
+            couleurs = {f"{e.split(' · ')[1]} {e.split(' · ')[0]}": c_ for e, c_ in COULEURS_ELEMENTS.items()}
+            ui.graphe(charts.barres(cats, series, couleurs, empile=True, hauteur=260,
+                                    titre="Éléments à remplacer : à rattraper (échéance dépassée), puis les 12 prochains mois")
                       if series else charts.vide("Aucun remplacement prévu"))
 
 
 def _calendrier(c: pd.DataFrame, today):
     auj = pd.Timestamp(today)
     with ui.section("pe_mousses_pe_calendrier", "Calendrier des remplacements",
-                    "Une ligne par avion : nombre d'éléments à remplacer par mois (date prévue = prochaine visite datée, sinon échéance)"):
+                    "Une ligne par avion, une colonne par mois : nombre d'éléments à remplacer (ex. 2 = assise J + assise Y). "
+                    "Survolez une case pour voir lesquels. « À rattraper » = échéance déjà dépassée (en retard ou en délai "
+                    "toléré) ; sinon mois de la prochaine visite datée, à défaut de l'échéance PE"):
         debut = auj.to_period("M").start_time
         mois = pd.date_range(debut, periods=24, freq="MS")
         d = c.copy()
         d["Col"] = d["Date prévue"].dt.to_period("M").dt.start_time.map(_mois_label)
-        d.loc[d["Origine date prévue"] == "Mois en cours (retard)", "Col"] = "Retard"
+        d.loc[d["Origine date prévue"] == "Mois en cours (retard)", "Col"] = "À rattraper"
         d["Ligne"] = d["Immatriculation"] + " · " + d["Flotte"].astype(str)
-        cols = ["Retard"] + [_mois_label(m) for m in mois]
-        t = d[d["Col"].isin(cols)].groupby(["Ligne", "Col"]).size().unstack(fill_value=0).reindex(columns=cols, fill_value=0)
+        d["Élément"] = _nom_element(d["Classe"], d["Composant"])
+        cols = ["À rattraper"] + [_mois_label(m) for m in mois]
+        x = d[d["Col"].isin(cols)]
+        t = x.groupby(["Ligne", "Col"]).size().unstack(fill_value=0).reindex(columns=cols, fill_value=0)
         if t.empty:
             ui.graphe(charts.vide("Aucun remplacement sur les 24 prochains mois"))
         else:
-            ordre = d[d["Col"].isin(cols)].groupby("Ligne")["Date prévue"].min().sort_values().index
-            ui.graphe(charts.chaleur(t.reindex(ordre), libelle="élément(s)", hauteur_max="34rem"))
+            ordre = x.groupby("Ligne")["Date prévue"].min().sort_values().index
+            quoi = x.groupby(["Ligne", "Col"])["Élément"].agg(lambda s: ", ".join(sorted(s))).unstack()
+            ui.graphe(charts.chaleur(t.reindex(ordre), libelle="élément(s)", hauteur_max="34rem", details=quoi))
         _detail_avions(c)
 
 

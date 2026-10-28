@@ -69,6 +69,26 @@
 #s360-progres.indet i { width: 35%; animation: s360-glisse 1.2s ease-in-out infinite; }
 #s360-progres.ok { border-left-color: var(--ok); }
 #s360-progres.ok i { background: var(--ok); }
+.s360-agrandir { position: absolute; top: -.2rem; right: 0; z-index: 5; width: 1.9rem; height: 1.9rem; border-radius: 8px;
+  border: 1px solid #CFD8E5; background: #fff; color: var(--navy); font-size: 1rem; line-height: 1; cursor: pointer; opacity: .45;
+  transition: opacity .15s; }
+.s360-png { position: absolute; top: -.2rem; right: 2.3rem; z-index: 5; width: 1.9rem; height: 1.9rem; border-radius: 8px;
+  border: 1px solid #CFD8E5; background: #fff; color: var(--navy); font-size: 1rem; line-height: 1; cursor: pointer; opacity: .45;
+  transition: opacity .15s; }
+.s360-chart:hover > .s360-agrandir, .s360-agrandir:focus-visible, .s360-chart:hover > .s360-png, .s360-png:focus-visible { opacity: 1; }
+.s360-agrandir:hover, .s360-png:hover { background: #E8F0FD; }
+#s360-grand .png { font: inherit; font-weight: 700; font-size: .875rem;
+  padding: .35rem .9rem; border-radius: 99px; border: 1px solid #CFD8E5; background: #fff; color: var(--navy); cursor: pointer; }
+#s360-grand .png:hover { background: #E8F0FD; }
+#s360-grand { position: fixed; inset: 0; z-index: 1000003; display: grid; place-items: center; background: rgba(11, 26, 51, .55);
+  font-family: var(--font); }
+#s360-grand .cadre { position: relative; max-width: 96vw; max-height: 96vh; overflow: auto; padding: 0 1.5rem 1.2rem;
+  border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); outline: none; }
+/* Barre d'outils toujours visible, même quand un grand graphe défile */
+#s360-grand .outils { position: sticky; top: 0; z-index: 30; display: flex; justify-content: space-between; align-items: center;
+  margin: 0 -1.5rem .4rem; padding: .5rem 1rem; background: #fff; border-bottom: 1px solid #E3E9F1; }
+#s360-grand .fermer { border: 0; background: none; font-size: 1.2rem; color: var(--muted); cursor: pointer; }
+#s360-grand .s360-chart { margin: 0; }
 #s360-loading.lent .lent { display: block; }
 #s360-loading .avancement { display: none; width: 18rem; height: 8px; border-radius: 8px; overflow: hidden; background: #E3E9F1; }
 #s360-loading .avancement i { display: block; height: 100%; width: 3%; border-radius: 8px; transition: width .4s ease;
@@ -630,6 +650,115 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
       window.s360EnRelance = false;
     }
   };
+})();
+</script>
+<script>
+// Agrandir un graphe : bouton « ⛶ » sur chaque graphe (core/charts.py). Le graphe est recopié dans une fenêtre plein
+// écran, sans ses zones défilantes, et mis à l'échelle (zoom) pour tenir en entier dans l'écran : pas de barre de
+// défilement, textes et barres agrandis. Infobulles au survol conservées. Échap ou clic hors du graphe pour fermer.
+(function () {
+  const fermer = () => document.getElementById("s360-grand")?.remove();
+  // Enregistrer en PNG : copie du graphe en entier (sans zone défilante), styles calculés recopiés sur chaque élément,
+  // police Manrope intégrée, puis dessin dans une image (SVG foreignObject → canvas) au double de la résolution.
+  // Feuille de style des graphes : règles « s360 » du thème, variables de couleur (sans les images), police Manrope.
+  const styleGraphes = () => {
+    const regles = [], vars = [];
+    for (const f of document.styleSheets) {
+      let r; try { r = f.cssRules; } catch (_) { continue; }
+      for (const x of r) {
+        if (x instanceof CSSFontFaceRule && /manrope/i.test(x.cssText)) regles.push(x.cssText);
+        else if (x instanceof CSSStyleRule && /s360/.test(x.selectorText) && !/s360-(header|hero|loading|grand|bloque|progres)/.test(x.selectorText))
+          regles.push(x.cssText);
+        else if (x instanceof CSSStyleRule && x.selectorText === ":root")
+          for (let i = 0; i < x.style.length; i++) {
+            const n = x.style[i], v = x.style.getPropertyValue(n);
+            if (n.startsWith("--") && !/url\(/.test(v)) vars.push(`${n}:${v}`);
+          }
+      }
+    }
+    return `:root{${vars.join(";")}} ${regles.join("\n")}`;
+  };
+  const enPng = async (graphe) => {
+    const largeur = Math.ceil(graphe.getBoundingClientRect().width);
+    const racine = parseFloat(getComputedStyle(document.documentElement).fontSize) || 13;
+    const hote = document.createElement("div");
+    hote.style.cssText = `position:fixed;left:-20000px;top:0;width:${largeur}px;background:#fff;padding:16px;box-sizing:content-box`;
+    const copie = graphe.cloneNode(true);
+    copie.querySelectorAll(".s360-agrandir, .s360-png").forEach((b) => b.remove());
+    copie.querySelectorAll("[data-tip]").forEach((x) => x.removeAttribute("data-tip"));
+    copie.querySelectorAll("h1 a, h2 a, h3 a, h4 a, h5 a, h6 a, [data-testid='stHeaderActionElements']").forEach((x) => x.remove());  // icône de lien des titres
+    copie.querySelectorAll(".s360-jauge-scroll, .s360-heat-scroll").forEach((z) => { z.style.maxHeight = "none"; z.style.overflow = "visible"; });
+    hote.append(copie);
+    // Mesure dans l'app (mêmes règles, police comprise) ; contenu plus large que le cadre : l'image prend toute sa largeur.
+    (document.querySelector(".stApp") || document.body).append(hote);
+    const large = Math.max(...[copie, ...copie.querySelectorAll("table, .s360-plot, .s360-jauge")].map((x) => x.scrollWidth));
+    if (large > largeur) hote.style.width = large + "px";
+    const l = Math.ceil(hote.getBoundingClientRect().width), h = Math.ceil(hote.getBoundingClientRect().height);
+    const police = getComputedStyle(copie).fontFamily;
+    hote.remove();
+    hote.style.cssText = `width:${l - 32}px;padding:16px;background:#fff;font-family:${police.replace(/"/g, "'")};color:#1A1F36`;
+    const html = new XMLSerializer().serializeToString(hote);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${l}" height="${h}" style="font-size:${racine}px">` +
+      `<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" class="stApp">` +
+      `<style>${styleGraphes()}</style>${html}</div></foreignObject></svg>`;
+    const img = new Image();
+    await new Promise((ok, ko) => { img.onload = ok; img.onerror = ko; img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); });
+    // Résolution double, réduite pour les très grands graphes (limite de taille d'image des navigateurs).
+    const echelle = Math.max(0.5, Math.min(2, 15000 / h, 15000 / l, Math.sqrt(120e6 / (l * h))));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(l * echelle); canvas.height = Math.round(h * echelle);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(echelle, echelle); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, l, h); ctx.drawImage(img, 0, 0);
+    const titre = (graphe.querySelector("h5")?.textContent || "graphe").normalize("NFD").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60);
+    const lien = document.createElement("a");
+    lien.download = `Supply360_${titre}.png`;
+    lien.href = canvas.toDataURL("image/png");
+    lien.click();
+  };
+  const ouvrir = (graphe) => {
+    fermer();
+    const largeur = graphe.getBoundingClientRect().width;
+    const fond = document.createElement("div");
+    fond.id = "s360-grand";
+    fond.innerHTML = "<div class='cadre'><div class='outils'><button type='button' class='png'>⬇️ Enregistrer en PNG</button>" +
+      "<button type='button' class='fermer' aria-label='Fermer'>✕</button></div><div class='contenu'></div></div>";
+    const contenu = fond.querySelector(".contenu");
+    const copie = graphe.cloneNode(true);
+    copie.querySelectorAll(".s360-agrandir, .s360-png").forEach((b) => b.remove());
+    copie.querySelectorAll(".s360-jauge-scroll, .s360-heat-scroll").forEach((z) => { z.style.maxHeight = "none"; z.style.overflow = "visible"; });
+    contenu.style.width = largeur + "px";
+    fond.querySelector(".png").onclick = () => enPng(graphe).catch((err) => window.s360Moteur.noter("PNG impossible : " + err));
+    contenu.append(copie);
+    fond.addEventListener("click", (e) => { if (e.target === fond || e.target.closest(".fermer")) fermer(); });
+    document.body.append(fond);
+    // Échelle : le graphe entier dans la fenêtre (marges comprises), agrandi jusqu'à 2,4 fois.
+    const cadre = fond.querySelector(".cadre"), r = contenu.getBoundingClientRect();
+    const dispoL = window.innerWidth * 0.94 - 48, dispoH = window.innerHeight * 0.92 - 90;
+    // Grand graphe (beaucoup de lignes) : s'il faudrait le réduire sous 70 % pour qu'il tienne en hauteur, on le garde
+    // lisible à la largeur de l'écran et la fenêtre défile verticalement.
+    const tout = Math.min(2.4, dispoL / r.width, dispoH / r.height);
+    const zoom = tout >= 0.7 ? tout : Math.min(1.6, dispoL / r.width);
+    contenu.style.zoom = zoom;
+    cadre.focus();
+  };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") fermer(); });
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".s360-agrandir");
+    if (b) { e.preventDefault(); ouvrir(b.closest(".s360-chart")); }
+    const p = e.target.closest(".s360-png");
+    if (p) { e.preventDefault(); enPng(p.closest(".s360-chart")).catch((err) => window.s360Moteur.noter("PNG impossible : " + err)); }
+  });
+  setInterval(() => {
+    document.querySelectorAll(".stApp .s360-chart:not([data-s360-grand])").forEach((g) => {
+      g.setAttribute("data-s360-grand", "1");
+      if (g.querySelector(".s360-vide")) return;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "s360-agrandir"; b.title = "Agrandir le graphe"; b.textContent = "⛶";
+      const p = document.createElement("button");
+      p.type = "button"; p.className = "s360-png"; p.title = "Enregistrer le graphe en image PNG"; p.textContent = "⤓";
+      g.append(p, b);
+    });
+  }, 700);
 })();
 </script>
 <script type="module">

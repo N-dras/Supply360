@@ -197,6 +197,11 @@ Règles (paramètres dans « ⚙️ Paramètres » › Planning PE ; stock de s�
 
 ### Graphiques
 
+Chaque graphe a deux boutons en haut à droite (visibles au survol) : **⛶ Agrandir** ouvre le graphe en grand, en
+entier, sans barre de défilement (un très grand graphe est affiché à la largeur de l'écran et défile verticalement) ;
+**⤓** (ou **Enregistrer en PNG** dans la vue agrandie) télécharge une image identique au graphe du site (police,
+couleurs, graphe complet même s'il défile à l'écran), à partager par mail ou dans une présentation.
+
 Survol d'une colonne, d'une barre ou d'une case : infobulle avec toutes ses valeurs.
 
 ### Fournisseur manquant (tous les onglets)

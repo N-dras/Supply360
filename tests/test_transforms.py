@@ -371,6 +371,11 @@ def _stock_variante(tmp_path, decalage=0, prefixe=False, textes_ailleurs=False):
             if prefixe and nom.endswith((".xml",)) and nom.startswith("xl/") and "theme" not in nom and "styles" not in nom:
                 contenu = _re.sub(r"<(/?)(?!\?)([A-Za-z]+)([ >/])", r"<\1x:\2\3", contenu)
                 contenu = _re.sub(r'xmlns="([^"]+)"', r'xmlns:x="\1"', contenu, count=1)
+                contenu = "\ufeff" + contenu  # BOM en tête, comme l'export réel
+            if prefixe and nom == "xl/_rels/workbook.xml.rels":  # cibles absolues, identifiants non standard
+                contenu = contenu.replace('Target="worksheets/', 'Target="/xl/worksheets/')
+            if prefixe and nom in ("xl/workbook.xml", "xl/_rels/workbook.xml.rels"):
+                contenu = contenu.replace('"rId1"', '"feuilleexport"')
             if textes_ailleurs:
                 contenu = contenu.replace("sharedStrings.xml", "Textes/Partages.xml")
                 nom = "xl/Textes/Partages.xml" if nom == "xl/sharedStrings.xml" else nom
@@ -392,3 +397,27 @@ def test_etat_du_stock_reconnu_quelle_que_soit_son_ecriture(tmp_path, variante):
 def test_resultat_reconnu_par_son_nom():
     assert sio.reconnaitre_fichier("Résultat - HZUA.xlsx") == "stock"
     assert sio.identifier_fichier(b"pas un classeur", "R2/F-HZUA - 110127/Résultat - HZUA.xlsx") == "stock"
+
+
+def test_feuille_annexe_ne_masque_pas_l_etat_du_stock():
+    # 1re feuille qui ressemble à des Références textile (PN, Équipement), données de stock en 2e feuille
+    wb = Workbook()
+    wb.active.title = "Légende"
+    wb.active.append(["PN", "Équipement", "Commentaire"])
+    ws = wb.create_sheet("Données")
+    ws.append(["PNR", "QTE SUR ÉTAGÈRE", "EQUIPEMENT"])
+    ws.append(["FX-001", 3, "Siège"])
+    tampon = io.BytesIO()
+    wb.save(tampon)
+    assert sio.detecter_source(tampon.getvalue(), "Résultat - HZUA.xlsx") == "stock"
+
+
+def test_dossier_r2_resultat_fait_foi():
+    from core import dossiers
+    from modules import stock_chantier
+
+    sources = {"R2/F-HZUA - 110127/Résultat - HZUA.xlsx": "references", "R2/F-HZUA - 110127/vieux stock.xlsx": "stock",
+               "R2/F-HZUA - 110127/LOGOPS.xlsx": "besoins"}
+    par_source, inconnus = dossiers.repartir(dossiers.appliquer_noms(sources, stock_chantier.NOMS_DOSSIER))
+    assert par_source["stock"] == ["R2/F-HZUA - 110127/Résultat - HZUA.xlsx"] and par_source["besoins"]
+    assert inconnus == ["R2/F-HZUA - 110127/vieux stock.xlsx"]

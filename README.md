@@ -42,8 +42,9 @@ dossiers apparaissent dans l'Explorateur et restent à jour ; rien n'est copié,
 fois, choisissez le dossier ; le navigateur le retient (« dossier mémorisé »). Les fois suivantes, même après
 actualisation : clic sur le bouton → **Autoriser** →
 - **R2** : liste des chantiers (à venir d'abord, avec J-x), recherche par immatriculation ; seuls les fichiers du
-  chantier choisi sont lus. Chaque fichier est reconnu par ses en-têtes (cherchés sur les 30 premières lignes), à
-  défaut par son nom : « Résultat… » ou « …stock… » = État du stock, « LOGOPS » = Besoins chantier ;
+  chantier choisi sont lus. Le fichier « Résultat… » est toujours l'État du stock ; les autres sont reconnus par
+  leurs en-têtes (30 premières lignes), à défaut par leur nom (« LOGOPS » = Besoins chantier). Un fichier écarté est
+  signalé avec la raison (« non reconnu » ou « reconnu comme … ») ;
 - **Textile** : tous les fichiers du dossier ;
 - **COMMANDE** : le fichier le plus récemment modifié, commun à tous les onglets.
 
@@ -230,6 +231,9 @@ Les fichiers de `tests/fixtures/` sont **fictifs** : ils permettent d'essayer l'
 données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet.
 
 ### Imports et page qui ne répond plus
+
+- **Version** : la date de génération de la page s'affiche sur l'écran de chargement (« Version du … »). Si elle
+  est ancienne, rechargez avec **Ctrl+F5** (ou retéléchargez le fichier HTML).
 
 - **📂 Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
 - Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt, avec

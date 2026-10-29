@@ -199,14 +199,17 @@ def _source_par_entetes(noms, lire) -> str | None:
         return "asreq"
     if any("bottom_foam" in normaliser(f) or "backrest_foam" in normaliser(f) for f in noms):
         return "pe"  # fichier PE mousses (feuilles BOTTOM FOAM / BACKREST FOAM)
+    apercus = []
     for feuille in noms[:10]:
         try:
-            raw = lire(feuille)
+            apercus.append(lire(feuille))
         except Exception:
             continue
-        for source, mots in SIGNATURES_SOURCES:
-            if trouver_ligne_entete(raw, mots, max_scan=LIGNES_ENTETE) is not None:
-                return source
+    # Signature par signature sur TOUTES les feuilles : une feuille annexe (paramètres, légende…) qui ressemble à un
+    # autre fichier ne doit pas l'emporter sur la feuille de données de l'État du stock.
+    for source, mots in SIGNATURES_SOURCES:
+        if any(trouver_ligne_entete(raw, mots, max_scan=LIGNES_ENTETE) is not None for raw in apercus):
+            return source
     return None
 
 

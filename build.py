@@ -8,6 +8,7 @@ import json
 import re
 import sys
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Version épinglée : toute montée de version doit être testée avant livraison (CLAUDE.md §4).
@@ -177,6 +178,7 @@ TEMPLATE = """<!doctype html>
 @keyframes s360-vol { from { transform: translateX(0); } to { transform: translateX(260vw); } }
 #s360-loading .lent { display: none; color: var(--muted); font-size: .9375rem; }
 #s360-loading .etape { color: var(--navy); font-size: .9375rem; font-weight: 700; min-height: 1.4em; }
+#s360-loading .version { color: var(--muted, #5B6478); font-size: .75rem; opacity: .8; }
 #s360-loading .erreur { display: none; max-width: 26rem; padding: .6rem .8rem; border-radius: 8px; background: #FDECEC;
   color: var(--ko); font-size: .875rem; text-align: left; white-space: pre-wrap; word-break: break-word; }
 #s360-loading.echec .erreur, #s360-loading.echec .lent { display: block; }
@@ -250,6 +252,7 @@ TEMPLATE = """<!doctype html>
     <div class="barre"></div>
     <div class="texte">Chargement de Supply360… le premier lancement peut prendre jusqu'à une minute.</div>
     <div class="etape" id="s360-etape">Téléchargement du moteur (stlite)…</div>
+    <div class="version">Version du __VERSION__</div>
     <div class="erreur" id="s360-erreur"></div>
     <div class="lent"><span id="s360-lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à
       cdn.jsdelivr.net et pypi.org (proxy).</span><br><br>
@@ -263,8 +266,9 @@ TEMPLATE = """<!doctype html>
 // Surveillance du moteur Python (Pyodide, dans un « worker » du navigateur). On note l'heure des messages envoyés à
 // l'application qui attendent une réponse (clics) et celle des réponses, les erreurs, et on peut diagnostiquer le
 // moteur (`diagnostic`, réponse de Python hors session) : la page ne relance le moteur que sur une panne constatée.
+window.s360Version = "__VERSION__";  // date de génération du fichier : vérifier qu'on a bien la dernière version
 window.s360Moteur = (function () {
-  const journal = [];
+  const journal = ["Supply360, version du " + window.s360Version];
   const noter = (m) => {
     journal.push(new Date().toLocaleTimeString("fr-FR") + "  " + String(m).replace(/\\s+/g, " ").slice(0, 600));
     if (journal.length > 30) journal.shift();
@@ -998,6 +1002,7 @@ def main() -> None:
     fichiers = lire_fichiers()
     reqs = lire_requirements()
     html = (TEMPLATE
+            .replace("__VERSION__", datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"))
             .replace("__PRECHARGEMENT__", js(PRECHARGEMENT))
             .replace("__ONGLETS__", js(onglets(fichiers)))
             .replace("__CDN__", STLITE_CDN)

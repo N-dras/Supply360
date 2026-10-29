@@ -131,8 +131,11 @@ def _export(b_besoin: bytes, etude: str, b_stock: bytes, b_cmd: bytes, gestions:
 # Dossier R2 du canal Teams des analystes : un sous-dossier « <IMMAT> - <JJMMAA> » par chantier.
 SHAREPOINT_R2 = ("https://afkl.sharepoint.com/:f:/r/teams/MS-LGT1-Analystes/Shared%20Documents/R2"
                  "?d=we883c34cf267439f900715f00b63339a&csf=1&web=1&e=sss8GM")
+# Règle de nommage du dossier chantier : le fichier « Résultat… » EST l'État du stock (le nom fait foi, quel que soit
+# son contenu : sans cette règle, un export dont les en-têtes ressemblent à un autre fichier était écarté).
+NOMS_DOSSIER = {"stock": r"^resultat"}
 NOMMAGE = ("Choisissez dans R2 le dossier « <IMMAT> - <JJMMAA> » du chantier (ou R2 entier, puis le chantier dans la liste). "
-           "Les fichiers sont reconnus par leur contenu, quel que soit leur nom ; l'immatriculation et la date de début "
+           "Le fichier « Résultat… » est l'État du stock ; les autres sont reconnus par leur contenu. L'immatriculation et la date de début "
            "viennent du nom du dossier.")
 
 
@@ -187,6 +190,7 @@ def _bloc_import():
             # Pas de cible « commandes » : seul le fichier du dossier COMMANDE fait foi.
             ui.import_dossier(K + "dossier", {"besoins": K + "besoin_classique", "asreq": K + "besoin_asreq", "stock": K + "stock"},
                               dossier=True, on_choix=_choix_chantier, label="Dossier du chantier (ou R2 entier)", aide=NOMMAGE,
+                              noms=NOMS_DOSSIER,
                               zone=zone_dossier)
         with puces:
             besoin = (sio.FICHIER_BESOINS, K + "besoin_classique") if etude == ETUDE_CLASSIQUE else (sio.FICHIER_ASREQ, K + "besoin_asreq")

@@ -352,10 +352,12 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
     if "commandes" in par_source and "commandes" not in cibles:
         notes.append(f"Commandes (SAP) du dossier non utilisé ({escape(dossiers.nom_court(par_source['commandes'][0]))}) : "
                      "le fichier du dossier <b>COMMANDE</b> fait foi")
-    hors = [dossiers.nom_court(c) for c in inconnus] + [dossiers.nom_court(c) for s, l in par_source.items()
-                                                       if s not in cibles and s != "commandes" and s not in autres for c in l]
+    # Raison de chaque fichier écarté : non reconnu, ou reconnu comme une source que cet onglet n'utilise pas
+    hors = [f"{escape(dossiers.nom_court(c))} (non reconnu)" for c in inconnus] + [
+        f"{escape(dossiers.nom_court(c))} (reconnu comme {escape(LIBELLES_SOURCES.get(s, s))})" for s, l in par_source.items()
+        if s not in cibles and s != "commandes" and s not in autres for c in l]
     if hors:
-        notes.append("Ignoré(s) : " + ", ".join(escape(n) for n in hors))
+        notes.append("Ignoré(s) : " + ", ".join(hors))
     if notes:
         st.html('<div class="s360-note">' + " · ".join(notes) + "</div>")
 

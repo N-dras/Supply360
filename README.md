@@ -42,7 +42,8 @@ dossiers apparaissent dans l'Explorateur et restent à jour ; rien n'est copié,
 fois, choisissez le dossier ; le navigateur le retient (« dossier mémorisé »). Les fois suivantes, même après
 actualisation : clic sur le bouton → **Autoriser** →
 - **R2** : liste des chantiers (à venir d'abord, avec J-x), recherche par immatriculation ; seuls les fichiers du
-  chantier choisi sont lus ;
+  chantier choisi sont lus. Chaque fichier est reconnu par ses en-têtes (cherchés sur les 30 premières lignes), à
+  défaut par son nom : « Résultat… » ou « …stock… » = État du stock, « LOGOPS » = Besoins chantier ;
 - **Textile** : tous les fichiers du dossier ;
 - **COMMANDE** : le fichier le plus récemment modifié, commun à tous les onglets.
 

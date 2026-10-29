@@ -344,3 +344,51 @@ def test_apercu_rapide_des_en_tetes(monkeypatch):
             assert sio.choisir_feuille(sio.ouvrir_excel(data, "x"), ["pnr", "qte sur etagere"]) == feuille_rapide, f.name
     lignes = dict(sio.apercu_xlsx((FIX / "commandes_sap.xlsx").read_bytes()))["Toutes les commandes"]
     assert lignes[3][:2] == ["PN", "Commande"]          # en-tête en 4e ligne, après les lignes de titre
+
+
+def _stock_variante(tmp_path, decalage=0, prefixe=False, textes_ailleurs=False):
+    """État du stock fictif écrit « autrement qu'Excel » : lignes de titre au-dessus de l'en-tête, balises préfixées
+    (x:row…), textes partagés rangés sous un autre nom. Ces variantes empêchaient de reconnaître un export réel."""
+    import io as _io
+    import re as _re
+    import zipfile as _zip
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Export"
+    for i in range(decalage):
+        ws.append([f"Titre {i}"])
+    ws.append(["PNR", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", "CCN"])
+    ws.append(["FX-001", "Housse", 4, 2, "7101"])
+    tampon = _io.BytesIO()
+    wb.save(tampon)
+    entree, sortie = _zip.ZipFile(_io.BytesIO(tampon.getvalue())), _io.BytesIO()
+    with _zip.ZipFile(sortie, "w", _zip.ZIP_DEFLATED) as z:
+        for info in entree.infolist():
+            nom, contenu = info.filename, entree.read(info).decode("utf-8")
+            if prefixe and nom.endswith((".xml",)) and nom.startswith("xl/") and "theme" not in nom and "styles" not in nom:
+                contenu = _re.sub(r"<(/?)(?!\?)([A-Za-z]+)([ >/])", r"<\1x:\2\3", contenu)
+                contenu = _re.sub(r'xmlns="([^"]+)"', r'xmlns:x="\1"', contenu, count=1)
+            if textes_ailleurs:
+                contenu = contenu.replace("sharedStrings.xml", "Textes/Partages.xml")
+                nom = "xl/Textes/Partages.xml" if nom == "xl/sharedStrings.xml" else nom
+            z.writestr(nom, contenu)
+    f = tmp_path / "Résultat - HZUA.xlsx"
+    f.write_bytes(sortie.getvalue())
+    return f.read_bytes()
+
+
+@pytest.mark.parametrize("variante", [dict(decalage=20), dict(prefixe=True), dict(textes_ailleurs=True),
+                                      dict(decalage=18, prefixe=True, textes_ailleurs=True)])
+def test_etat_du_stock_reconnu_quelle_que_soit_son_ecriture(tmp_path, variante):
+    data = _stock_variante(tmp_path, **variante)
+    assert sio.detecter_source(data, "export.xlsx") == "stock"
+    stock = sio.lire_etat_stock(data)[0]
+    assert list(stock["PN"]) == ["FX-001"]
+
+
+def test_resultat_reconnu_par_son_nom():
+    assert sio.reconnaitre_fichier("Résultat - HZUA.xlsx") == "stock"
+    assert sio.identifier_fichier(b"pas un classeur", "R2/F-HZUA - 110127/Résultat - HZUA.xlsx") == "stock"

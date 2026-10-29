@@ -7,6 +7,7 @@ Lecture avec calamine (moteur Rust inclus dans Pyodide, ~10× plus rapide qu'ope
 export avec core/xlsx.py (bibliothèque standard).
 """
 
+import codecs
 import html
 import io
 import re
@@ -56,7 +57,7 @@ MOTS_CLES_SOURCES = [
     ("pieces", ("piece",)),
     ("references", ("reference", "catalog")),
     ("commandes", ("commande", "sap")),
-    ("stock", ("stock",)),
+    ("stock", ("stock", "resultat")),  # export « Résultat - <IMMAT>.xlsx » de l'État du stock
 ]
 CHANTIER_DANS_NOM = re.compile(r"(?<![A-Z0-9])([A-Z]{1,2}-?[A-Z0-9]{3,5})\s*-\s*(\d{2})(\d{2})(\d{2})(?!\d)")
 
@@ -84,96 +85,116 @@ SIGNATURES_SOURCES = [
 # --------------------------------------------------------------------------
 # Aperçu rapide d'un classeur .xlsx / .xlsm (en-têtes seulement)
 # --------------------------------------------------------------------------
+_NS = r"(?:[\w.-]+:)?"  # préfixe d'espace de noms éventuel (« x:row » : fichiers produits par certains logiciels)
+
+
 def _texte_xml(fragment: str) -> str:
-    return html.unescape("".join(re.findall(r"<t[^>]*>(.*?)</t>", fragment, re.S)))
+    fragment = re.sub(rf"<{_NS}rPh\b.*?</{_NS}rPh>", "", fragment, flags=re.S)  # annotations phonétiques
+    return html.unescape("".join(re.findall(rf"<{_NS}t\b[^>]*?(?:/>|>(.*?)</{_NS}t>)", fragment, re.S)))
 
 
-def apercu_xlsx(data: bytes, max_lignes: int = 15, max_feuilles: int = 10, octets: int = 400_000):
+def apercu_xlsx(data: bytes, max_lignes: int = 30, max_feuilles: int = 10, octets: int = 400_000):
     """[(feuille, lignes)] : les premières lignes de chaque feuille, en ne lisant que le début du fichier XML.
 
     Le moteur Excel charge une feuille ENTIÈRE même pour en lire 15 lignes : sous Pyodide, reconnaître un gros État
     du stock prenait plusieurs secondes et beaucoup de mémoire, pendant lesquelles la page semblait figée. Ici, on
     décompresse seulement le début de chaque feuille (et des textes partagés). None si le fichier n'est pas un .xlsx.
+    Tolère les variantes d'écriture des exports (balises préfixées « x: », chemins et casse des fichiers internes
+    différents, lignes vides abrégées) ; si rien n'est reconnu, l'appelant repasse par la lecture classique.
     """
     try:
         z = zipfile.ZipFile(io.BytesIO(data))
-        classeur = z.read("xl/workbook.xml").decode("utf-8", "ignore")
-        liens = z.read("xl/_rels/workbook.xml.rels").decode("utf-8", "ignore")
     except Exception:
         return None
-    cibles = {}
-    for rel in re.findall(r"<Relationship\b[^>]*>", liens):
-        i, t = re.search(r'\bId="([^"]+)"', rel), re.search(r'\bTarget="([^"]+)"', rel)
-        if i and t:
-            cibles[i.group(1)] = t.group(1).lstrip("/") if t.group(1).startswith("/") else "xl/" + t.group(1)
+    noms_zip = {n.lower(): n for n in z.namelist()}
+
+    def lire(chemin, taille=-1):
+        nom = noms_zip.get(chemin.lstrip("/").lower())
+        if nom is None:
+            raise KeyError(chemin)
+        with z.open(nom) as f:
+            return f.read(taille).decode("utf-8", "ignore")
+
+    def relations(chemin):
+        """{Id: (Type, cible)} du fichier de relations `chemin` (cibles relatives au dossier de la partie)."""
+        dossier = "" if chemin.startswith("_rels/") else chemin.rsplit("/_rels/", 1)[0]
+        out = {}
+        for rel in re.findall(rf"<{_NS}Relationship\b[^>]*>", lire(chemin)):
+            i, t, ty = (re.search(rf'\b{a}="([^"]*)"', rel) for a in ("Id", "Target", "Type"))
+            if i and t:
+                cible = t.group(1)
+                cible = cible.lstrip("/") if cible.startswith("/") else (f"{dossier}/{cible}" if dossier else cible)
+                parties = []
+                for x in cible.split("/"):  # « xl/../x » → « x »
+                    if x == "..":
+                        parties = parties[:-1]
+                    elif x not in ("", "."):
+                        parties.append(x)
+                out[i.group(1)] = (ty.group(1) if ty else "", "/".join(parties))
+        return out
+
+    try:
+        racine = relations("_rels/.rels")
+        chemin_classeur = next((c for ty, c in racine.values() if ty.endswith("/officeDocument")), "xl/workbook.xml")
+    except Exception:
+        chemin_classeur = "xl/workbook.xml"
+    dossier = chemin_classeur.rsplit("/", 1)[0] if "/" in chemin_classeur else ""
+    try:
+        classeur = lire(chemin_classeur)
+        cibles = relations(f"{dossier}/_rels/{chemin_classeur.rsplit('/', 1)[-1]}.rels" if dossier
+                           else f"_rels/{chemin_classeur}.rels")
+    except Exception:
+        return None
     feuilles = []
-    for balise in re.findall(r"<sheet\b[^>]*>", classeur):
-        n, r = re.search(r'\bname="([^"]*)"', balise), re.search(r'\br:id="([^"]+)"', balise)
+    for balise in re.findall(rf"<{_NS}sheet\b[^>]*>", classeur):
+        n, r = re.search(r'\bname="([^"]*)"', balise), re.search(r'\b[\w.-]*:?id="([^"]+)"', balise)
         if n and r and r.group(1) in cibles:
-            feuilles.append((html.unescape(n.group(1)), cibles[r.group(1)]))
+            feuilles.append((html.unescape(n.group(1)), cibles[r.group(1)][1]))
     lignes_par_feuille, besoins = [], set()
     for nom, chemin in feuilles[:max_feuilles]:
         try:
-            with z.open(chemin) as f:
-                xml = f.read(octets).decode("utf-8", "ignore")
+            xml = lire(chemin, octets)
         except KeyError:
             continue
         lignes = []
-        for attrs_ligne, ligne in re.findall(r"<row\b([^>]*)>(.*?)</row>", xml, re.S):
+        for attrs_ligne, ligne in re.findall(rf"<{_NS}row\b([^>]*?)(?:/>|>(.*?)</{_NS}row>)", xml, re.S):
             num = re.search(r'\br="(\d+)"', attrs_ligne)
             rang = int(num.group(1)) - 1 if num else len(lignes)  # rang réel (lignes vides absentes du XML)
             if rang >= max_lignes:
                 break
             lignes += [[] for _ in range(rang - len(lignes))]
             cellules = []
-            for attrs, corps in re.findall(r"<c\b([^>]*?)(?:/>|>(.*?)</c>)", ligne, re.S):
-                v = re.search(r"<v>(.*?)</v>", corps or "", re.S)
-                if 't="s"' in attrs and v:
+            for attrs, corps in re.findall(rf"<{_NS}c\b([^>]*?)(?:/>|>(.*?)</{_NS}c>)", ligne or "", re.S):
+                v = re.search(rf"<{_NS}v>(.*?)</{_NS}v>", corps or "", re.S)
+                if re.search(r'\bt="s"', attrs) and v:
                     besoins.add(int(v.group(1)))
                     cellules.append(("s", int(v.group(1))))
-                elif 't="inlineStr"' in attrs:
+                elif re.search(r'\bt="inlineStr"', attrs):
                     cellules.append(("t", _texte_xml(corps or "")))
                 else:
                     cellules.append(("t", html.unescape(v.group(1)) if v else ""))
             lignes.append(cellules)
         lignes_par_feuille.append((nom, lignes))
     partages = []
-    if besoins and "xl/sharedStrings.xml" in z.namelist():
-        with z.open("xl/sharedStrings.xml") as f:  # lecture progressive jusqu'au dernier texte utile
-            reste = ""
+    chemin_textes = next((c for ty, c in cibles.values() if ty.endswith("/sharedStrings")), f"{dossier}/sharedStrings.xml")
+    if besoins and chemin_textes.lower() in noms_zip:
+        with z.open(noms_zip[chemin_textes.lower()]) as f:  # lecture progressive jusqu'au dernier texte utile
+            reste, decodeur = "", codecs.getincrementaldecoder("utf-8")("ignore")  # accents coupés entre deux blocs
+            motif = re.compile(rf"<{_NS}si\b[^>]*?(?:/>|>(.*?)</{_NS}si>)", re.S)
             while len(partages) <= max(besoins):
                 bloc = f.read(262_144)
                 if not bloc:
                     break
-                reste += bloc.decode("utf-8", "ignore")
-                fin = reste.rfind("</si>")
-                if fin < 0:
-                    continue
-                partages += [_texte_xml(si) for si in re.findall(r"<si>(.*?)</si>", reste[:fin + 5], re.S)]
-                reste = reste[fin + 5:]
+                reste += decodeur.decode(bloc)
+                complets = list(motif.finditer(reste))  # textes entiers seulement : la fin du bloc attend le suivant
+                if complets:
+                    partages += [_texte_xml(m.group(1) or "") for m in complets]
+                    reste = reste[complets[-1].end():]
     return [(nom, [[(partages[v] if v < len(partages) else "") if k == "s" else v for k, v in l] for l in lignes])
             for nom, lignes in lignes_par_feuille]
 
 
-def detecter_source(data: bytes, nom: str) -> str | None:
-    """Source d'un fichier d'après son CONTENU (en-têtes des 15 premières lignes de chaque feuille).
-
-    Indépendant du nom du fichier, qui peut changer. None si rien ne correspond ou fichier illisible.
-    """
-    if nom.lower().endswith(".csv"):
-        tete = normaliser(data[:4000].decode("utf-8-sig", errors="ignore").split("\n", 1)[0])
-        return "pieces" if "qty_per_ac" in tete and "registration" in tete else None
-    apercu = apercu_xlsx(data)
-    if apercu is None:  # pas un .xlsx (ex. .xls) : lecture classique
-        try:
-            xl = ouvrir_excel(data, nom)
-        except FichierIllisible:
-            return None
-        noms = list(xl.sheet_names)
-        lire = lambda f: xl.parse(f, header=None, nrows=15)  # noqa: E731
-    else:
-        noms, contenus = [n for n, _ in apercu], dict(apercu)
-        lire = lambda f: pd.DataFrame(contenus[f])  # noqa: E731
+def _source_par_entetes(noms, lire) -> str | None:
     if "Ordered" in noms:  # étude ASREQ/NOREQ (classeur .xlsm, feuille « Ordered »)
         return "asreq"
     if any("bottom_foam" in normaliser(f) or "backrest_foam" in normaliser(f) for f in noms):
@@ -184,9 +205,31 @@ def detecter_source(data: bytes, nom: str) -> str | None:
         except Exception:
             continue
         for source, mots in SIGNATURES_SOURCES:
-            if trouver_ligne_entete(raw, mots) is not None:
+            if trouver_ligne_entete(raw, mots, max_scan=LIGNES_ENTETE) is not None:
                 return source
     return None
+
+
+def detecter_source(data: bytes, nom: str) -> str | None:
+    """Source d'un fichier d'après son CONTENU (en-têtes des 30 premières lignes de chaque feuille).
+
+    Indépendant du nom du fichier, qui peut changer. None si rien ne correspond ou fichier illisible.
+    Aperçu rapide d'abord (apercu_xlsx) ; s'il ne reconnaît rien (export écrit autrement), lecture classique.
+    """
+    if nom.lower().endswith(".csv"):
+        tete = normaliser(data[:4000].decode("utf-8-sig", errors="ignore").split("\n", 1)[0])
+        return "pieces" if "qty_per_ac" in tete and "registration" in tete else None
+    apercu = apercu_xlsx(data)
+    if apercu:
+        contenus = dict(apercu)
+        source = _source_par_entetes([n for n, _ in apercu], lambda f: pd.DataFrame(contenus[f]))
+        if source:
+            return source
+    try:
+        xl = ouvrir_excel(data, nom)
+    except FichierIllisible:
+        return None
+    return _source_par_entetes(list(xl.sheet_names), lambda f: xl.parse(f, header=None, nrows=LIGNES_ENTETE))
 
 
 def identifier_fichier(data: bytes, nom: str) -> str | None:
@@ -241,7 +284,10 @@ def trouver_colonne(df: pd.DataFrame, *alias: str, exact: bool = False):
     return None
 
 
-def trouver_ligne_entete(raw: pd.DataFrame, mots_cles, max_scan: int = 15):
+LIGNES_ENTETE = 30  # l'en-tête est cherché dans les 30 premières lignes (titres, filtres ou lignes vides au-dessus)
+
+
+def trouver_ligne_entete(raw: pd.DataFrame, mots_cles, max_scan: int = LIGNES_ENTETE):
     """Indice de la ligne d'en-tête (feuille lue sans header) contenant tous les mots-clés."""
     cles = [normaliser(m) for m in mots_cles]
     for i in range(min(max_scan, len(raw))):
@@ -285,15 +331,19 @@ def choisir_feuille(xl: pd.ExcelFile, mots_cles, feuille_preferee: str | None = 
         cible = normaliser(feuille_preferee)
         feuilles.sort(key=lambda s: 0 if cible in normaliser(s) else 1)
     apercu = apercu_xlsx(xl.s360_octets) if getattr(xl, "s360_octets", None) is not None else None
-    apercu = dict(apercu) if apercu else None
-    for s in feuilles:
-        try:  # aperçu rapide (début du XML) plutôt que le chargement de toute la feuille
-            raw = pd.DataFrame(apercu[s]) if apercu is not None and s in apercu else xl.parse(s, header=None, nrows=15)
-        except Exception:
-            continue
-        h = trouver_ligne_entete(raw, mots_cles)
-        if h is not None:
-            return s, h
+    apercu = dict(apercu) if apercu else {}
+    # aperçu rapide (début du XML) plutôt que le chargement de toute la feuille ; à défaut, lecture classique
+    for rapide in ([True, False] if apercu else [False]):
+        for s in feuilles:
+            if rapide and s not in apercu:
+                continue
+            try:
+                raw = pd.DataFrame(apercu[s]) if rapide else xl.parse(s, header=None, nrows=LIGNES_ENTETE)
+            except Exception:
+                continue
+            h = trouver_ligne_entete(raw, mots_cles)
+            if h is not None:
+                return s, h
     return xl.sheet_names[0], 0
 
 

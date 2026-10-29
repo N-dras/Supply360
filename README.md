@@ -17,6 +17,11 @@ fichier HTML** : `dist/supply360.html`.
 
 Pendant un calcul, la barre sous le header s'anime et la pastille « Calcul en cours… » s'affiche.
 
+**Design** : chaque onglet a sa couleur (en-tête de page, onglet actif). En haut de chaque onglet, l'encadré de droite
+rappelle le contexte (chantier et date de début, date des données…). Les tableaux d'actions affichent le statut en
+badge coloré et se filtrent d'un clic sur les pastilles au-dessus ; le bouton **Exporter (Excel)** de chaque bloc
+produit un fichier avec les mêmes colonnes, dans le même ordre, et les mêmes couleurs de statut.
+
 ## Organisation des dossiers et import
 
 Version en ligne : **https://n-dras.github.io/Supply360/** (republiée automatiquement à chaque mise à
@@ -38,7 +43,7 @@ SharePoint (canal Teams MS-LGT1-Analystes, bibliothèque Documents)
 sur SharePoint → « Ajouter un raccourci à Mon OneDrive » (idéalement la bibliothèque Documents entière). Les
 dossiers apparaissent dans l'Explorateur et restent à jour ; rien n'est copié, chacun le fait avec son compte.
 
-**Ensuite (Edge ou Chrome)** : boutons **📂 Ouvrir R2**, **📂 Ouvrir Textile**, **📂 Ouvrir COMMANDE**. La première
+**Ensuite (Edge ou Chrome)** : boutons **Ouvrir R2**, **Ouvrir Textile**, **Ouvrir COMMANDE**. La première
 fois, choisissez le dossier ; le navigateur le retient (« dossier mémorisé »). Les fois suivantes, même après
 actualisation : clic sur le bouton → **Autoriser** →
 - **R2** : liste des chantiers (à venir d'abord, avec J-x), recherche par immatriculation ; seuls les fichiers du
@@ -68,7 +73,7 @@ rien n'est envoyé.
 
 Pièces à **commander** et fournisseurs à **relancer** avant le début d'un chantier.
 
-**Paramètres** : type d'étude (Classique ou ASREQ/NOREQ), date de début du chantier, codes Gestion du
+**Paramètres** (bouton « Paramètres » du bloc d'import) : type d'étude (Classique ou ASREQ/NOREQ), date de début du chantier, codes Gestion du
 périmètre (par défaut 245, 246, 247, 400, 401, 230).
 
 | Fichier | Colonnes obligatoires | Colonnes facultatives |
@@ -106,10 +111,18 @@ Seul l'État du stock est indispensable ; les autres fichiers complètent l'anal
 demande en plus le fichier Pièces par avion.
 
 **Sous-onglets** : Synthèse (relances fournisseurs, valeur et activité du stock par catégorie),
-Commandes (statuts, livraisons, profondeur des retards, toutes les lignes avec la qté sur étagère),
+**Stock** (état des stocks de tout le textile, voir ci-dessous), Commandes (statuts, livraisons, profondeur des retards, toutes les lignes avec la qté sur étagère),
 Fournisseurs (Pareto, retards, délais promis, BFE, vue par fournisseur avec la qté sur étagère),
 Consommation (par année, 12/18/24 mois, top PN, par PN), Prévision (commandes à passer, par fournisseur). Un filtre par catégorie s'applique à toutes
 les vues. Export `Supply360_textiles_AAAAMMJJ.xlsx` (avec les feuilles de prévision si elle est calculée).
+
+**Stock** : pour chaque PN, la **couverture** = stock sur étagère ÷ consommation mensuelle (12 derniers mois).
+Statuts : **Rupture** (consommé sur 12 mois, stock à 0), **Critique** (moins de 1 mois de stock, seuil réglable dans
+le sous-onglet), **Bas** (moins de 3 mois), **Correct** (jusqu'à 24 mois), **Surstock** (au-delà), **Sans conso**
+(aucune consommation sur 12 mois). On y trouve : les tuiles (ruptures, critiques, couverture médiane, valeur sans
+conso et en surstock), le **TOP 10 des PN consommés à stock nul ou presque** (avec stock et quantités déjà en
+commande), le niveau de stock par catégorie, la valeur du stock par niveau de couverture et le tableau de tous les PN
+(filtres par statut, recherche). Feuille « État des stocks » dans l'export.
 
 **Règles** : retard = date promise − date demandée au-delà de 10 jours de tolérance ; date promise 2001,
 2030 ou plus (ou vide) = sans date promise ; 2049 = en attente de BFE. PN **dormant** = du stock mais
@@ -127,14 +140,14 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
   Fournisseur d'un PN : celui de ses commandes, à défaut le dernier fournisseur de l'État du stock, puis
   le code fournisseur.
 
-Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « ⚙️ Paramètres de la prévision ».
+Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « Paramètres » › Prévision.
 Le planning des PE mousses est dans l'onglet **PE mousses**.
 
 ### 🛠️ PE mousses
 
 Politique d'entretien des mousses de sièges : ce que l'on peut faire cette année avec le stock, ce qu'il faut commander,
 l'avancement avion par avion et le forecast des années suivantes. Tous les fichiers sont lus dans le dossier **Textile**
-(📂 Ouvrir Textile) ; les commandes dans le dossier COMMANDE.
+(Ouvrir Textile) ; les commandes dans le dossier COMMANDE.
 
 | Fichier | Colonnes obligatoires | Colonnes facultatives |
 |---|---|---|
@@ -163,7 +176,7 @@ l'avancement avion par avion et le forecast des années suivantes. Tous les fich
 Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mousse ») :
 
 - **avions restants** (objectif) : par défaut la colonne **`NB_AC PE RESTANT`** du Besoin Prod, à défaut `NB_AC`.
-  Autre choix dans « ⚙️ Paramètres » › Année : **recalculés** = NB_AC − avions du type dont la mousse (même classe,
+  Autre choix dans « Paramètres » › Année : **recalculés** = NB_AC − avions du type dont la mousse (même classe,
   assise ou dossier) a été remplacée depuis le 1er janvier d'après le fichier PE mousses. Le type de chaque avion
   (A350 AFR01, B777-300 14J…) est retrouvé par ses CCN de mousses dans textile_all_parts (type qui en partage le plus) ;
   sans ces fichiers, ou pour une classe non reconnue : colonne `NB_AC PE RESTANT`. Comparaison fichier / calcul dans
@@ -191,7 +204,7 @@ Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mou
 - **Forecast par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
 - **Filtres** : flotte, classe, élément. **Exports** : planning complet ; **contrôles** des données.
 
-Règles (paramètres dans « ⚙️ Paramètres » › Planning PE ; stock de sécurité réglable de 0 à 50 %) :
+Règles (paramètres dans « Paramètres » › Planning PE ; stock de sécurité réglable de 0 à 50 %) :
 - cycles : J / W / Y assise 36 mois, J dossier 72 mois, dossiers W / Y jamais ;
 - échéance = date des âges − âge + cycle (âge « > 60 » : 60 pris comme minimum, échéance au plus tôt) ;
 - statut : En retard (échéance + délai toléré dépassés, 3 mois par défaut), Délai toléré, À faire < 3 mois,
@@ -244,7 +257,7 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
 - **Version** : la date de génération de la page s'affiche sur l'écran de chargement (« Version du … »). Si elle
   est ancienne, rechargez avec **Ctrl+F5** (ou retéléchargez le fichier HTML).
 
-- **📂 Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
+- **Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
 - Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt, avec
   sa durée au-delà de 10 s. **Un long calcul n'est jamais interrompu** : la page attend qu'il se termine (au-delà de
   3 minutes, un bandeau propose de relancer, à votre choix).

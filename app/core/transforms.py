@@ -20,23 +20,23 @@ FOURNISSEUR_ABSENT = "fournisseur non renseigné"
 ACTION_ORDRE = ["commander", "relancer_urgent", "relancer", "inconnu", "en_cours", "hors_perimetre", "ok"]
 ACTIONS_A_LANCER = ["commander", "relancer_urgent", "relancer", "inconnu"]
 ACTION_LABELS = {
-    "commander": "🔴 À commander",
-    "relancer_urgent": "🔴 Relance urgente (retard vs chantier)",
-    "relancer": "🟠 À relancer",
-    "inconnu": "❓ PN introuvable",
-    "en_cours": "🔵 En cours de livraison",
-    "hors_perimetre": "⚠️ Hors périmètre gestion",
-    "ok": "🟢 Stock suffisant",
+    "commander": "À commander",
+    "relancer_urgent": "Relance urgente",
+    "relancer": "À relancer",
+    "inconnu": "PN introuvable",
+    "en_cours": "En cours de livraison",
+    "hors_perimetre": "Hors périmètre",
+    "ok": "Stock suffisant",
 }
-# Tons de la charte (core/style.py) associés à chaque action.
-ACTION_TONES = {
-    "commander": "ko", "relancer_urgent": "accent", "relancer": "warn", "inconnu": "muted",
-    "en_cours": "navy_2", "hors_perimetre": "border", "ok": "ok",
+# Couleur de chaque statut (palette de core/style.py) : badges de l'interface, graphes, cellule Statut de l'export
+ACTION_COULEURS = {
+    "commander": "#A61B1B", "relancer_urgent": "#E8590C", "relancer": "#DBA100", "inconnu": "#9AA5B1",
+    "en_cours": "#2B6CB0", "hors_perimetre": "#B5BDCB", "ok": "#1E8E5A",
 }
-# Fonds pastel de l'export Excel (repris du script d'origine).
+# Fonds teintés de l'export Excel (mêmes teintes que les badges de l'interface)
 ACTION_FILL_HEX = {
-    "commander": "F8D7DA", "relancer_urgent": "F5B7B1", "relancer": "FCE4D6",
-    "en_cours": "D6E4F0", "ok": "D9F2E6", "hors_perimetre": "FDF0D5", "inconnu": "E2E3E5",
+    "commander": "FBECEC", "relancer_urgent": "FDF0E7", "relancer": "FDF6DD",
+    "en_cours": "E9F1FA", "ok": "E6F4EC", "hors_perimetre": "F3F5F8", "inconnu": "EEF1F5",
 }
 
 

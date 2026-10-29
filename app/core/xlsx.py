@@ -106,7 +106,9 @@ def _valeur(v):
     return ("s", s) if s else None
 
 
-def _feuille(df: pd.DataFrame, styles: _Styles, fonds) -> tuple[str, str | None]:
+def _feuille(df: pd.DataFrame, styles: _Styles, fonds, fonds_cellules: dict | None = None) -> tuple[str, str | None]:
+    """`fonds` : couleur par ligne ; `fonds_cellules` : {indice de colonne: couleur par ligne} (ex. cellule Statut)."""
+    fonds_cellules = fonds_cellules or {}
     ncols, nrows = len(df.columns), len(df)
     largeurs = [len(str(c)) for c in df.columns]
     lignes = []
@@ -114,10 +116,11 @@ def _feuille(df: pd.DataFrame, styles: _Styles, fonds) -> tuple[str, str | None]
                      for j, c in enumerate(df.columns))
     lignes.append(f'<row r="1">{entete}</row>')
     for i, rec in enumerate(df.itertuples(index=False, name=None), start=2):
-        fond = fonds[i - 2] if fonds is not None else None
+        fond_ligne = fonds[i - 2] if fonds is not None else None
         cells = []
         for j, v in enumerate(rec):
             ref = f"{_col(j + 1)}{i}"
+            fond = fonds_cellules[j][i - 2] if j in fonds_cellules and fonds_cellules[j][i - 2] else fond_ligne
             val = _valeur(v)
             if val is None:
                 if fond:
@@ -157,13 +160,16 @@ def _feuille(df: pd.DataFrame, styles: _Styles, fonds) -> tuple[str, str | None]
     return xml, ref_filtre
 
 
-def classeur(feuilles: dict, couleurs_lignes: dict | None = None) -> bytes:
-    """{nom_feuille: DataFrame} → octets d'un fichier .xlsx. `couleurs_lignes` : {nom: [hexa|None]}."""
+def classeur(feuilles: dict, couleurs_lignes: dict | None = None, couleurs_cellules: dict | None = None) -> bytes:
+    """{nom_feuille: DataFrame} → octets d'un fichier .xlsx. `couleurs_lignes` : {nom: [hexa|None]} ;
+    `couleurs_cellules` : {nom: {colonne: [hexa|None]}} (fond d'une seule colonne, ex. le statut)."""
     styles = _Styles()
     noms, xml_feuilles, filtres = [], [], []
     for nom, df in feuilles.items():
         nom31 = "".join(ch for ch in str(nom) if ch not in '[]:*?/\\')[:31] or "Feuille"
-        xml, ref = _feuille(df.reset_index(drop=True), styles, (couleurs_lignes or {}).get(nom))
+        df = df.reset_index(drop=True)
+        cellules = {list(df.columns).index(c): list(v) for c, v in ((couleurs_cellules or {}).get(nom) or {}).items() if c in df.columns}
+        xml, ref = _feuille(df, styles, (couleurs_lignes or {}).get(nom), cellules)
         noms.append(nom31)
         xml_feuilles.append(xml)
         filtres.append(ref)

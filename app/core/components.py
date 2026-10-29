@@ -8,28 +8,53 @@ from contextlib import contextmanager, nullcontext
 from datetime import date
 from html import escape
 
+import numpy as np
+import pandas as pd
 import streamlit as st
 
 from core import dossiers
 from core import io as sio
+from core.icones import ICONES, ic
+from core.style import ONGLETS, teinte
 
+# Tons : (couleur du trait / de l'icône, couleur du chiffre, fond teinté) — palette de core/style.py
 TONES = {
-    "navy": "var(--navy)", "info": "var(--navy-2)", "accent": "var(--accent)", "ok": "var(--ok)",
-    "warn": "var(--warn)", "ko": "var(--ko)", "muted": "var(--muted)", "violet": "#6D28D9",
+    "navy": ("#1F4E9C", "#002157", "#EAF0FA"), "info": ("#2B6CB0", "#2B6CB0", "#E9F1FA"),
+    "accent": ("#E4002B", "#C1002A", "#FDE8EC"), "ok": ("#1E8E5A", "#17784B", "#E6F4EC"),
+    "warn": ("#DBA100", "#A36F00", "#FDF6DD"), "orange": ("#E8590C", "#C2410C", "#FDF0E7"),
+    "ko": ("#A61B1B", "#A61B1B", "#FBECEC"), "muted": ("#8A94A6", "#5B6478", "#EEF1F5"),
+    "violet": ("#7B61C9", "#6247B3", "#F1EDFB"), "teal": ("#2A9D8F", "#1F7A6F", "#E5F4F2"),
 }
+ICONE_TON = {"navy": "layers", "info": "info", "accent": "flag", "ok": "check-circle", "warn": "clock", "orange": "send",
+             "ko": "alert", "muted": "help", "violet": "pause", "teal": "package"}
+# Emojis encore passés par les modules → icônes vectorielles
+EMOJIS = {"📌": "flag", "🚨": "flag", "💤": "moon", "✅": "check-circle", "⚠️": "alert", "ℹ️": "info", "⛔": "x", "🔴": "alert",
+          "📦": "package", "🏭": "factory", "🐢": "clock", "🧮": "grid", "📥": "inbox", "✈️": "plane", "📅": "calendar",
+          "🛠️": "wrench", "🧵": "scissors", "🪑": "armchair", "🔔": "bell", "📈": "trend", "📊": "grid"}
 CHANTIER_STATUTS = {"Terminé": "muted", "En cours": "info", "À venir": "ok"}
 JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
 
-def _tone(tone: str) -> str:
+def _tone(tone: str) -> tuple[str, str, str]:
     return TONES.get(tone, TONES["navy"])
+
+
+def _vars(tone: str) -> str:
+    c, t, f = _tone(tone)
+    return f"--c:{c};--t:{t};--f:{f}"
+
+
+def _icone(icone: str) -> str:
+    """SVG d'une icône (nom du jeu core/icones, ou emoji connu) ; à défaut, le texte tel quel."""
+    nom = EMOJIS.get(icone, icone)
+    return ic(nom) if nom in ICONES else f"<span>{escape(icone)}</span>"
 
 
 # --------------------------------------------------------------------------
 # Structure de page
 # --------------------------------------------------------------------------
 def header() -> None:
-    """Header fixe : logo AFI (fond clair : le logo est transparent), Supply360, date du jour.
+    """Header fixe : logo AFI (fond clair : le logo est transparent), Supply360, état du moteur, date du jour.
 
     La navigation entre onglets (main.py) est positionnée dans ce header par le CSS.
     """
@@ -38,25 +63,50 @@ def header() -> None:
         '<div class="s360-header"><div class="s360-logo" role="img" '
         'aria-label="Air France Industries KLM Engineering &amp; Maintenance"></div><span class="s360-sep"></span>'
         '<div class="s360-brand">Supply<span>360</span></div>'
-        f'<div class="s360-today">{JOURS[j.weekday()]} {j:%d/%m/%Y}</div></div>'
-        '<div class="s360-busy">⏳ Calcul en cours…</div>'
+        f'<div class="s360-today"><span class="s360-moteur"><i></i>Prêt</span>{ic("calendar")}{JOURS[j.weekday()]} {j:%d/%m/%Y}</div></div>'
+        '<div class="s360-busy">Calcul en cours…</div>'
     )
 
 
-def hero(icone: str, titre: str, sous_titre: str = "") -> None:
-    """Titre d'onglet : carte translucide posée sur le fond."""
-    sub = f"<p>{escape(sous_titre)}</p>" if sous_titre else ""
-    st.html(f'<div class="s360-hero"><div class="ico">{icone}</div><div><h1>{escape(titre)}</h1>{sub}</div></div>')
+def contexte(*blocs: tuple[str, str, str]) -> str:
+    """Encadré de contexte de l'en-tête de page : (libellé, valeur, badge facultatif) par bloc."""
+    html = ""
+    for lbl, val, extra in blocs:
+        html += (f'<div class="bloc"><span class="lbl">{escape(lbl)}</span><span class="val">{escape(val)}</span>'
+                 f'{extra}</div>')
+    return f'<div class="s360-contexte">{html}</div>'
+
+
+def hero(icone: str, titre: str, sous_titre: str = "", surtitre: str = "", contexte_html: str = "") -> None:
+    """En-tête de page : bandeau léger à la couleur de l'onglet, icône, titre, et à droite un encadré de contexte
+    (chantier, date des données…). Couleur et icône : core/style.ONGLETS (onglet actif)."""
+    couleur, nom_icone = ONGLETS.get(st.session_state.get("active_tab", ""), ("#1F4E9C", ""))
+    sub = f'<p class="sous">{escape(sous_titre)}</p>' if sous_titre else ""
+    sur = f'<p class="surtitre">{escape(surtitre)}</p>' if surtitre else ""
+    st.markdown(f'<div class="s360-hero" style="--onglet:{couleur}"><div class="gauche"><div class="ico">{_icone(nom_icone or icone)}</div>'
+                f'<div>{sur}<h1>{escape(titre)}</h1>{sub}</div></div>{contexte_html}</div>', unsafe_allow_html=True)
+
+
+def _tete(title: str, subtitle: str, tag: str) -> str:
+    sub = f"<p>{escape(subtitle)}</p>" if subtitle else ""
+    tg = f'<span class="tag">{escape(tag)}</span>' if tag else ""
+    return f'<div class="s360-section-head"><div><h3>{escape(title)}{tg}</h3>{sub}</div></div>'
 
 
 @contextmanager
-def section(key: str, title: str, subtitle: str = "", tag: str = ""):
-    """Bloc carte translucide à en-tête dégradé. `key` doit être unique (préfixé par le TAB_ID)."""
-    box = st.container(key=f"s360sec_{key}")
+def section(key: str, title: str, subtitle: str = "", tag: str = "", export=None, carte: bool = True):
+    """Bloc : titre, sous-titre et compteur (`tag`) ; carte blanche, ou bloc sans fond (`carte=False`, ex. tuiles).
+    `export` = (fonction, nom de fichier, clé) : bouton « Exporter (Excel) » à droite du titre. `key` unique (TAB_ID)."""
+    box = st.container(key=f"{'s360sec' if carte else 's360bloc'}_{key}")
     with box:
-        sub = f"<p>{escape(subtitle)}</p>" if subtitle else ""
-        tg = f'<span class="tag">{escape(tag)}</span>' if tag else ""
-        st.html(f'<div class="s360-section-head"><div><h3>{escape(title)}</h3>{sub}</div>{tg}</div>')
+        if export:
+            with st.container(key=f"s360tete_{key}"):
+                a, b = st.columns([5, 1.3], vertical_alignment="bottom")
+                a.html(_tete(title, subtitle, tag))
+                with b:
+                    telecharger(*export)
+        elif title or subtitle:
+            st.html(_tete(title, subtitle, tag))
         yield box
 
 
@@ -68,27 +118,52 @@ def footer() -> None:
 def en_developpement(icone: str, titre: str, points: list[str]) -> None:
     """Page d'un onglet prévu mais pas encore développé."""
     items = "".join(f"<li>{escape(p)}</li>" for p in points)
-    st.html(f'<div class="s360-wip"><div class="plane"></div><div class="ico">{icone}</div><h2>{escape(titre)}</h2>'
-            f'<span class="s360-badge" style="--tone:var(--warn)">En cours de développement</span>'
-            f"<p>Cette fonctionnalité arrive dans une prochaine version de Supply360.</p><ul>{items}</ul></div>")
+    st.markdown(f'<div class="s360-wip"><div class="plane"></div><div class="ico">{_icone(icone)}</div><h2>{escape(titre)}</h2>'
+                f'{badge("En cours de développement", "warn")}'
+                f"<p>Cette fonctionnalité arrive dans une prochaine version de Supply360.</p><ul>{items}</ul></div>",
+                unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------
 # Indicateurs
 # --------------------------------------------------------------------------
-def kpi_card(label: str, value, sub: str = "", tone: str = "navy") -> str:
-    """HTML d'une tuile KPI (à passer à `kpi_grid`)."""
+def kpi_card(label: str, value, sub: str = "", tone: str = "navy", icone: str | None = None, note: str = "") -> str:
+    """HTML d'une tuile KPI (à passer à `kpi_grid`) : icône teintée, libellé, chiffre coloré, précision."""
     sub_html = f'<div class="sub">{escape(str(sub))}</div>' if sub else ""
-    return (f'<div class="s360-kpi" style="--tone:{_tone(tone)}"><div class="val">{escape(str(value))}</div>'
-            f'<div class="lbl">{escape(str(label))}</div>{sub_html}</div>')
+    note_html = f'<span class="note">{escape(note)}</span>' if note else ""
+    return (f'<div class="s360-kpi" style="{_vars(tone)}"><div class="t"><span class="pastille">{_icone(icone or ICONE_TON.get(tone, "layers"))}'
+            f'</span><span>{escape(str(label))}</span>{note_html}</div><div class="val">{escape(str(value))}</div>{sub_html}</div>')
+
+
+def kpi_repartition(label: str, total, unite: str, segments: list[tuple[str, float, str]], note: str = "",
+                    icone: str = "layers", tone: str = "navy") -> str:
+    """Grande tuile (2 colonnes) : total, barre de répartition (segments (libellé, valeur, couleur)) et légende chiffrée."""
+    somme = sum(v for _, v, _ in segments) or 1
+    barre = "".join(f'<span style="flex:{v};background:{c}" data-tip="{escape(lib)} : {_nombre(v)} ({v / somme:.0%})"></span>'
+                    for lib, v, c in segments if v)
+    leg = "".join(f'<li><i style="background:{c}"></i>{escape(lib)} <b>{_nombre(v)}</b></li>' for lib, v, c in segments)
+    note_html = f'<span class="note">{escape(note)}</span>' if note else ""
+    return (f'<div class="s360-kpi large" style="{_vars(tone)}"><div class="t"><span class="pastille">{_icone(icone)}</span>'
+            f'<span>{escape(label)}</span>{note_html}</div><div class="val">{escape(str(total))} <small>{escape(unite)}</small></div>'
+            f'<div class="s360-repart" role="img" aria-label="Répartition">{barre}</div><ul class="s360-leg">{leg}</ul></div>')
 
 
 def kpi_grid(cards: list[str]) -> None:
-    st.html(f'<div class="s360-kpis">{"".join(cards)}</div>')
+    st.markdown(f'<div class="s360-kpis">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
-def badge(text: str, tone: str = "navy") -> str:
-    return f'<span class="s360-badge" style="--tone:{_tone(tone)}">{escape(text)}</span>'
+def valeurs(items: list[tuple[str, str, str]]) -> None:
+    """Bandeau de chiffres côte à côte : (libellé, valeur, précision)."""
+    st.html('<div class="s360-valeurs">' + "".join(f"<div><span>{escape(a)}</span><b>{escape(b)}</b><small>{escape(c)}</small></div>"
+                                                   for a, b, c in items) + "</div>")
+
+
+def badge(text: str, tone: str = "navy", couleur: str | None = None) -> str:
+    """Badge de statut : pastille de couleur + libellé (la couleur n'est jamais seule)."""
+    c, _, f = _tone(tone)
+    if couleur:
+        c, f = couleur, "#" + teinte(couleur)
+    return f'<span class="s360-badge" style="--c:{c};--f:{f}"><i></i>{escape(text)}</span>'
 
 
 def chantier_badge(statut: str, jours_avant_debut: int | None = None) -> str:
@@ -101,15 +176,16 @@ def chantier_badge(statut: str, jours_avant_debut: int | None = None) -> str:
 
 def callout(message_html: str, tone: str = "navy", icon: str = "ℹ️") -> None:
     """Bandeau court (action à mener, alerte). `message_html` est du HTML de confiance."""
-    st.html(f'<div class="s360-callout" style="--tone:{_tone(tone)}"><span>{icon}</span><div>{message_html}</div></div>')
+    st.markdown(f'<div class="s360-callout" style="{_vars(tone)}">{_icone(icon)}<div>{message_html}</div></div>',
+                unsafe_allow_html=True)
 
 
-def empty_state(title: str, message: str, etapes: list[tuple[str, bool]] | None = None, icon: str = "📥") -> None:
+def empty_state(title: str, message: str, etapes: list[tuple[str, bool]] | None = None, icon: str = "inbox") -> None:
     """État vide : explique quoi faire tant que les fichiers ne sont pas importés."""
-    steps = "".join(f'<span class="s360-step{" ok" if ok else ""}">{"✓" if ok else "○"} {escape(lbl)}</span>'
+    steps = "".join(f'<span class="s360-step{" ok" if ok else ""}">{ic("check") if ok else ic("plus")} {escape(lbl)}</span>'
                     for lbl, ok in etapes or [])
-    st.html(f'<div class="s360-empty"><div class="ico">{icon}</div><h4>{escape(title)}</h4><p>{escape(message)}</p>'
-            f'<div class="s360-steps">{steps}</div></div>')
+    st.markdown(f'<div class="s360-empty"><div class="ico">{_icone(icon)}</div><h4>{escape(title)}</h4><p>{escape(message)}</p>'
+                f'<div class="s360-steps">{steps}</div></div>', unsafe_allow_html=True)
 
 
 def tableau(df, **kwargs) -> None:
@@ -121,9 +197,113 @@ def tableau(df, **kwargs) -> None:
     st.dataframe(df, hide_index=True, **kwargs)
 
 
-def graphe(html: str) -> None:
-    """Affiche un graphe de core/charts.py. st.markdown (et non st.html, qui supprime le SVG)."""
-    st.markdown(html, unsafe_allow_html=True)
+def graphe(html: str, sous: str = "") -> None:
+    """Graphe de core/charts.py dans sa carte (titre, sous-titre, boutons Agrandir / PNG ajoutés par build.py).
+    st.markdown (et non st.html, qui supprime le SVG)."""
+    if sous:
+        html = html.replace("</h5>", f'</h5><p class="g-sous">{escape(sous)}</p>', 1)
+    st.markdown(f'<div class="s360-graphe">{html}</div>', unsafe_allow_html=True)
+
+
+# --------------------------------------------------------------------------
+# Tableaux HTML (badges de statut, colonnes fixes, filtres dans la page)
+# --------------------------------------------------------------------------
+def _nombre(v) -> str:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return escape(str(v))
+    if f != f:  # NaN
+        return "—"
+    return f"{f:,.0f}".replace(",", " ") if abs(f) >= 1000 or f.is_integer() else f"{f:,.1f}".replace(",", " ").replace(".", ",")
+
+
+def _cellule(v, col: str, fort: set, euros: set) -> str:
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return '<span class="vide">—</span>'
+    if isinstance(v, (pd.Timestamp, date)):
+        return f"{pd.Timestamp(v):%d/%m/%Y}"
+    if isinstance(v, (bool, np.bool_)):
+        return "Oui" if v else "Non"
+    if isinstance(v, (int, float, np.integer, np.floating)):
+        if col in euros:
+            return escape(_euros(v))
+        if float(v) == 0:
+            return '<span class="zero">0</span>'
+        txt = _nombre(v)
+        return f'<span class="fort">{txt}</span>' if col in fort and float(v) > 0 else txt
+    txt = str(v)
+    return escape(txt) if txt.strip() else '<span class="vide">—</span>'
+
+
+def _euros(v) -> str:
+    f = float(v)
+    return f"{f / 1e6:.1f} M€".replace(".", ",") if abs(f) >= 1e6 else (f"{f / 1e3:.0f} k€" if abs(f) >= 1e4 else f"{f:,.0f} €".replace(",", " "))
+
+
+def tableau_html(df: pd.DataFrame, statut: str | None = None, couleurs: dict | None = None, num=(), fort=(), euros=(),
+                 longs=(), pn=(), groupes=None, fixes: int = 0, marque: tuple[str, str] | None = None, filtres: bool = False,
+                 cle: str = "", hauteur: str = "34rem", max_lignes: int = 400, colonne_config=None) -> None:
+    """Tableau HTML lisible : statut en badge coloré (`statut`, `couleurs` = {valeur: couleur}), nombres alignés, zéros
+    atténués, `fort` = quantités à traiter (rouge si > 0), `longs` = textes sur plusieurs lignes, `pn` = colonnes en
+    gras, `fixes` = colonnes figées à gauche, `groupes` = [(titre, nb colonnes)] au-dessus des en-têtes, `marque` =
+    (colonne booléenne, libellé) : étiquette rouge sous le statut. `filtres` : pastilles par statut au-dessus,
+    filtrage dans la page (sans recalcul, JavaScript de build.py). Au-delà de `max_lignes`, st.dataframe."""
+    if len(df) > max_lignes:
+        tableau(df.drop(columns=[c for c in [marque[0] if marque else None] if c and c in df.columns]),
+                column_config=colonne_config, height=440)
+        return
+    couleurs = couleurs or {}
+    num, fort, euros, longs, pn = set(num) | set(fort) | set(euros), set(fort), set(euros), set(longs), set(pn)
+    cols = [c for c in df.columns if not (marque and c == marque[0])]
+    gauche, fixe_css = 0.0, []
+    for i in range(fixes):  # largeur des colonnes figées : d'après le texte le plus long (badge du statut compris)
+        textes = df[cols[i]].astype(str).str.len()
+        w = min(22.0, max(6.0, 0.62 * max(int(textes.max() if len(textes) else 0), len(str(cols[i]))) + (3.2 if cols[i] == statut else 1.8)))
+        fixe_css.append((f"left:{gauche}rem;min-width:{w}rem;max-width:{w}rem", i == fixes - 1))
+        gauche += w
+    def classe(i, c):
+        k = ["num"] if c in num else []
+        if i < fixes:
+            k += ["fixe"] + (["dernier"] if fixe_css[i][1] else [])
+        return " ".join(k)
+    def style(i):
+        return f' style="{fixe_css[i][0]}"' if i < fixes else ""
+    tete = "".join(f'<th class="{classe(i, c)}{" cle" if c in fort else ""}"{style(i)}>{escape(str(c))}</th>' for i, c in enumerate(cols))
+    grp = ""
+    if groupes:
+        grp = '<tr class="grp">' + "".join(f'<th colspan="{n}">{escape(g)}</th>' for g, n in groupes) + "</tr>"
+    lignes = []
+    for rec in df.itertuples(index=False):
+        r = dict(zip(df.columns, rec))
+        cellules = []
+        for i, c in enumerate(cols):
+            v = r[c]
+            if c == statut:
+                txt = "" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v)
+                h = badge(txt, couleur=couleurs.get(txt, "#9AA5B1")) if txt else '<span class="vide">—</span>'
+                if marque and bool(r.get(marque[0])):
+                    h += f'<br><span class="s360-tag rouge">{ic("flag")}{escape(marque[1])}</span>'
+            elif c in longs:
+                h = f'<span class="long">{_cellule(v, c, fort, euros)}</span>'
+            elif c in pn:
+                h = f'<span class="pn">{_cellule(v, c, fort, euros)}</span>'
+            else:
+                h = _cellule(v, c, fort, euros)
+            cellules.append(f'<td class="{classe(i, c)}"{style(i)}>{h}</td>')
+        attrs = f' data-statut="{escape(str(r.get(statut, "")))}"' if statut else ""
+        if marque and bool(r.get(marque[0])):
+            attrs += ' class="marque"'
+        lignes.append(f"<tr{attrs}>{''.join(cellules)}</tr>")
+    barre = ""
+    if filtres and statut:
+        compte = df[statut].value_counts()
+        compte = compte.reindex([v for v in couleurs if v in compte.index] + [v for v in compte.index if v not in couleurs])
+        barre = (f'<div class="s360-filtres" data-table="s360t_{cle}"><button class="actif" data-f="">Tous <b>{len(df)}</b></button>'
+                 + "".join(f'<button data-f="{escape(str(v))}" style="--c:{couleurs.get(v, "#9AA5B1")}"><i></i>{escape(str(v))} <b>{n}</b></button>'
+                           for v, n in compte.items()) + "</div>")
+    st.markdown(f'{barre}<div class="s360-tableau{" groupes" if groupes else ""}" style="--h:{hauteur}"><table id="s360t_{cle}">'
+                f"<thead>{grp}<tr>{tete}</tr></thead><tbody>{''.join(lignes)}</tbody></table></div>", unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------
@@ -164,7 +344,7 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
         garde = st.session_state[memoire] = (up.name, up.getvalue(), up.file_id)
         st.session_state[vu] = up.file_id
     if garde and not (_fichier_valide(up) and up.file_id == garde[2]):
-        st.html(f'<div class="s360-file">✓ <span>{escape(garde[0])}</span></div>')
+        st.markdown(f'<div class="s360-file">{ic("check")}<span>{escape(garde[0])}</span></div>', unsafe_allow_html=True)
     if colonnes:
         with st.popover("Colonnes attendues", width="stretch"):
             st.markdown("\n".join(f"- `{nom}`{' — **obligatoire**' if obl else ''}" + (f" · {aide}" if aide else "")
@@ -194,7 +374,7 @@ def _source_fichier(data: bytes, nom: str):
 
 def _boutons_dossier(dossier: str, cible: str, mode: str) -> str:
     attrs = f'data-dossier="{escape(dossier)}" data-cible="{escape(cible)}" data-mode="{escape(mode)}"'
-    return (f'<span class="s360-dossier-grp"><button type="button" class="s360-dossier-btn" {attrs}>📂 Ouvrir {escape(dossier)}</button>'
+    return (f'<span class="s360-dossier-grp"><button type="button" class="s360-dossier-btn" {attrs}>{ic("folder")}Ouvrir {escape(dossier)}</button>'
             f'<button type="button" class="s360-dossier-btn autre" {attrs} data-changer="1" '
             f'title="Choisir un autre dossier {escape(dossier)}">Changer</button></span>')
 
@@ -210,7 +390,7 @@ def boutons_dossiers(dossier: str, cible: str, mode: str = "fichiers", commandes
     html = _boutons_dossier(dossier, cible, mode)
     if commandes:
         html += _boutons_dossier("COMMANDE", "commun__dossier_commande__upload", "dernier")
-    st.html(f'<div class="s360-dossiers">{html}</div>')
+    st.markdown(f'<div class="s360-dossiers">{html}</div>', unsafe_allow_html=True)
     if commandes:
         with st.container(key="s360cache_commande"):  # zone de dépôt du bouton COMMANDE, masquée (CSS)
             import_dossier("commun__dossier_commande", {"commandes": "commun__commandes"}, resume=False)
@@ -232,12 +412,13 @@ def etat_fichiers(fichiers: list[tuple[str, str, bool]]) -> None:
     for libelle, cle, obligatoire in fichiers:
         garde = st.session_state.get(f"{cle}__data")
         if garde:
-            puces.append(f'<span class="s360-puce ok" title="{escape(garde[0])}">✓ <b>{escape(libelle)}</b>'
-                         f'<em>{escape(garde[0])}</em></span>')
+            puces.append(f'<span class="s360-puce ok" title="{escape(garde[0])}">{ic("check")}<span><b>{escape(libelle)}</b>'
+                         f'<em>{escape(garde[0])}</em></span></span>')
         else:
             ton = "ko" if obligatoire else ""
-            puces.append(f'<span class="s360-puce {ton}">○ <b>{escape(libelle)}</b><em>{"à importer" if obligatoire else "facultatif"}</em></span>')
-    st.html(f'<div class="s360-puces">{"".join(puces)}</div>')
+            puces.append(f'<span class="s360-puce {ton}">{ic("plus")}<span><b>{escape(libelle)}</b>'
+                         f'<em>{"à importer" if obligatoire else "facultatif"}</em></span></span>')
+    st.markdown(f'<div class="s360-puces">{"".join(puces)}</div>', unsafe_allow_html=True)
 
 
 def import_commandes(colonnes) -> tuple[str, bytes] | None:
@@ -247,14 +428,14 @@ def import_commandes(colonnes) -> tuple[str, bytes] | None:
 
 def lien_sharepoint(url: str, dossier: str) -> None:
     """Aide « première utilisation » : synchroniser le dossier Teams avec OneDrive pour le voir dans « Parcourir »."""
-    with st.popover(f"🔗 Première utilisation : synchroniser le dossier {dossier}"):
+    with st.popover(f"Première utilisation : synchroniser le dossier {dossier}"):
         st.markdown(
             f"Le bouton **Parcourir** ouvre l'Explorateur Windows : le dossier Teams **{dossier}** doit y apparaître. "
             "À faire **une seule fois par poste** :\n\n"
             f"1. [Ouvrir le dossier {dossier} sur SharePoint]({url}) (nouvel onglet).\n"
             "2. En haut de la page, cliquer sur **« Ajouter un raccourci à Mon OneDrive »** (ou **« Synchroniser »**).\n"
             f"3. Le dossier apparaît dans l'Explorateur sous **OneDrive – Air France-KLM › {dossier}**, et reste à jour tout seul.\n\n"
-            "Ensuite, dans Supply360 : **📂 Ouvrir** puis **Autoriser** (le dossier est choisi une seule fois, puis retenu "
+            "Ensuite, dans Supply360 : **Ouvrir** puis **Autoriser** (le dossier est choisi une seule fois, puis retenu "
             "par le navigateur ; Edge ou Chrome). Rien à télécharger à la main.\n\n"
             "Astuce : ajoutez en raccourci la bibliothèque **Documents** entière du canal : R2, Textile et COMMANDE "
             "seront tous disponibles d'un coup.")
@@ -316,7 +497,7 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
         _appliquer()
 
     with zone if zone is not None else nullcontext():
-        st.file_uploader(label or "📂 Importer les fichiers du dossier (Ctrl+A pour tout sélectionner)", type=["xlsx", "xlsm", "csv"],
+        st.file_uploader(label or "Importer les fichiers du dossier (Ctrl+A pour tout sélectionner)", type=["xlsx", "xlsm", "csv"],
                          accept_multiple_files="directory" if dossier else True, key=cle_up, on_change=_charger, help=aide or None)
     index = st.session_state.get(cle_idx, {})
     if not index:
@@ -362,7 +543,7 @@ def import_dossier(cle: str, cibles: dict[str, str], dossier: bool = False, on_c
         st.html('<div class="s360-note">' + " · ".join(notes) + "</div>")
 
 
-def telecharger(data, nom: str, cle: str, label: str = "⬇️ Télécharger (Excel)") -> None:
+def telecharger(data, nom: str, cle: str, label: str = "Exporter (Excel)") -> None:
     """Bouton de téléchargement Excel. `on_click="ignore"` : télécharger ne relance pas les calculs.
 
     `data` : octets, ou de préférence une FONCTION sans argument qui les produit. Le fichier n'est alors fabriqué
@@ -382,10 +563,9 @@ def telecharger(data, nom: str, cle: str, label: str = "⬇️ Télécharger (Ex
 
 
 def sous_onglets(cle: str, options: list[str], icones: dict | None = None) -> str:
-    """Barre de sous-onglets (style du prototype : soulignement rouge). Renvoie l'option active."""
-    icones = icones or {}
+    """Barre de sous-onglets (pastilles, l'active en bleu marine). Renvoie l'option active. `icones` : ignoré (libellés seuls)."""
     with st.container(key="s360sub_" + cle):
         choix = st.segmented_control("Section", options, default=options[0], key=cle, required=True,
                                      label_visibility="collapsed", persist_state="page",
-                                     format_func=lambda o: f"{icones.get(o, '')} {o}".strip())
+                                     format_func=str)
     return choix or options[0]

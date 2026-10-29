@@ -228,3 +228,28 @@ def test_xlsx_ouvert_par_libreoffice(tmp_path):
                    check=True, capture_output=True, timeout=120)
     csv = (tmp_path / "test.csv").read_text(encoding="utf-8", errors="replace")
     assert "Indicateur" in csv  # première feuille relue par un vrai tableur
+
+
+# --------------------------------------------------------------------------
+# Sous-onglet Stock : couverture en mois de consommation
+# --------------------------------------------------------------------------
+def test_etat_des_stocks(tables):
+    s, _ = tables
+    e = tx.etat_stocks(s).set_index("PN")
+    # consommé (4 sur 12 mois), stock à 0 → rupture, même avec des commandes en cours
+    assert e.loc["FX-1004", "Statut"] == "Rupture" and e.loc["FX-1004", "Couverture avec commandes (mois)"] == 15
+    # 2 en stock pour 30 consommés par an (2,5 / mois) → 0,8 mois : critique (seuil 1 mois)
+    assert e.loc["FX-1003", "Statut"] == "Critique" and e.loc["FX-1003", "Couverture (mois)"] == 0.8
+    assert e.loc["FX-1002", "Statut"] == "Correct"            # 3 mois
+    assert e.loc["FX-1001", "Statut"] == "Surstock"           # 30 mois > 24
+    assert e.loc["FX-2001", "Statut"] == "Sans conso"         # dormant
+    assert tx.etat_stocks(s, seuil_mois=4).set_index("PN").loc["FX-1002", "Statut"] == "Critique"  # seuil réglable
+    statuts = list(tx.etat_stocks(s)["Statut"])
+    assert statuts == sorted(statuts, key=tx.STOCK_STATUTS.index)  # du plus urgent au moins urgent
+
+
+def test_top_ruptures(tables):
+    s, _ = tables
+    top = tx.top_ruptures(tx.etat_stocks(s), n=3)
+    assert list(top["PN"])[0] == "FX-1003"                      # le plus consommé d'abord
+    assert len(top) == 3 and set(top["Statut"]) <= {"Rupture", "Critique"}

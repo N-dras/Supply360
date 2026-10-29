@@ -14,16 +14,17 @@ from core import transforms as tf
 from core.style import COLORS
 
 CATEGORY_ORDER = ["CEINTURE", "HOUSSE", "MOUSSE", "RIDEAUX"]
-CATEGORY_COLORS = {"CEINTURE": "#2A9D8F", "HOUSSE": COLORS["navy_2"], "MOUSSE": "#F4A259", "RIDEAUX": "#BC4B51",
-                   "Non classé": COLORS["gris"]}
+# Couleurs d'identité des catégories (palette catégorielle de core/style.py), les mêmes dans tous les graphes
+CATEGORY_COLORS = {"CEINTURE": "#2A9D8F", "HOUSSE": "#1F4E9C", "MOUSSE": "#E8833A", "RIDEAUX": "#B83D4B",
+                   "Non classé": COLORS["gris_clair"]}
 ORDER_STATUS_ORDER = ["En retard", "A l'heure", "Sans date promise", "En attente BFE"]
 ORDER_STATUS_COLORS = {"En retard": COLORS["ko"], "A l'heure": COLORS["ok"], "Sans date promise": COLORS["warn"],
                        "En attente BFE": COLORS["violet"]}
 ACTIVITY_ORDER = ["Actif", "Dormant", "Inactif"]
-ACTIVITY_COLORS = {"Actif": COLORS["ok"], "Dormant": "#E67E22", "Inactif": COLORS["gris"]}
+ACTIVITY_COLORS = {"Actif": COLORS["ok"], "Dormant": COLORS["warn"], "Inactif": COLORS["gris_clair"]}
 DELAY_BUCKETS = [("1 à 20 j", 1, 20), ("21 à 50 j", 21, 50), ("51 à 150 j", 51, 150), ("151 à 300 j", 151, 300),
                  ("301 j et +", 301, None)]
-BUCKET_COLORS = ["#F7DC6F", "#F5B041", "#EB984E", "#CB4335", "#7B241C"]
+BUCKET_COLORS = ["#F3C2C2", "#E79494", "#D35E5E", "#B03030", "#7A1414"]  # une teinte, du plus clair au plus foncé
 WINDOW_COLUMNS = ["QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M"]
 LATE_BUFFER_DAYS = 10  # tolérance avant de déclarer une ligne en retard
 
@@ -380,3 +381,44 @@ def relances(o: pd.DataFrame) -> pd.DataFrame:
     d["_r"] = d["Statut commande"].map(rang)
     d["_k"] = np.select([d["_r"] == 0, d["_r"] == 1], [d["Jours de retard"], d["Demande dépassée (j)"]], default=d["Age commande (j)"])
     return d.sort_values(["_r", "_k"], ascending=[True, False], kind="stable").drop(columns=["_r", "_k"])
+
+
+# --------------------------------------------------------------------------
+# État des stocks (sous-onglet Stock) : couverture de chaque PN en mois de consommation
+# --------------------------------------------------------------------------
+STOCK_STATUTS = ["Rupture", "Critique", "Bas", "Correct", "Surstock", "Sans conso"]
+STOCK_STATUT_COULEURS = {"Rupture": COLORS["ko"], "Critique": COLORS["orange"], "Bas": COLORS["warn"], "Correct": COLORS["ok"],
+                         "Surstock": COLORS["bleu"], "Sans conso": COLORS["gris_clair"]}
+BAS_MOIS = 3  # en dessous : stock « bas »
+
+
+def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float = 24) -> pd.DataFrame:
+    """Une ligne par PN : stock, commandes, consommation 12 mois et couverture en mois (stock ÷ conso mensuelle).
+
+    Statut : Rupture = consommé sur 12 mois et stock à 0 ; Critique = moins de `seuil_mois` de stock ; Bas = moins de
+    3 mois ; Correct = jusqu'à `surstock_mois` ; Surstock = au-delà ; Sans conso = aucune consommation sur 12 mois.
+    Trié du plus urgent au moins urgent, puis par consommation.
+    """
+    conso = _num(s, "QTE CONSO 12M")
+    stock, cde = _num(s, "QTE SUR ÉTAGÈRE"), _num(s, "QTE EN CDE")
+    mensuel = conso / 12
+    couverture = (stock / mensuel).where(mensuel > 0)
+    statut = np.select([conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS, couverture <= surstock_mois],
+                       ["Sans conso", "Rupture", "Critique", "Bas", "Correct"], "Surstock")
+    fournisseur = s["Fournisseur principal"] if "Fournisseur principal" in s else pd.Series(np.nan, index=s.index)
+    if "DERNIER FOURNISSEUR" in s:
+        fournisseur = fournisseur.fillna(s["DERNIER FOURNISSEUR"])
+    out = pd.DataFrame({
+        "Statut": statut, "PN": s["PNR"], "Description": s.get("DESCRIPTION"), "Catégorie": categorie(s).str.capitalize(),
+        "Stock": stock, "En commande": cde, "Conso 12 mois": conso, "Conso / mois": mensuel.round(1),
+        "Couverture (mois)": couverture.round(1), "Couverture avec commandes (mois)": ((stock + cde) / mensuel).where(mensuel > 0).round(1),
+        "Valeur stock (€)": _num(s, "Valeur stock (€)"), "Dernière conso": s.get("DATE DERNIERE CONSO"), "Fournisseur": fournisseur,
+    })
+    out["_rang"] = out["Statut"].map({v: i for i, v in enumerate(STOCK_STATUTS)})
+    return out.sort_values(["_rang", "Conso 12 mois"], ascending=[True, False], kind="stable").drop(columns="_rang").reset_index(drop=True)
+
+
+def top_ruptures(etat: pd.DataFrame, n: int = 10) -> pd.DataFrame:
+    """Les `n` PN les plus consommés parmi ceux à stock nul ou presque (Rupture, Critique)."""
+    d = etat[etat["Statut"].isin(["Rupture", "Critique"])]
+    return d.sort_values(["Conso 12 mois", "Stock"], ascending=[False, True], kind="stable").head(n)

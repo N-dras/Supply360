@@ -52,15 +52,15 @@ supply360/
 │   └── config.toml           # thème Streamlit (couleurs de la charte)
 ├── assets/
 │   ├── logo_afi.png          # logo Air France Industries (fourni par l'auteur, ne pas redessiner ; fond transparent)
-│   ├── fond_aeroport.webp    # fond d'écran (prototype v3)
-│   ├── avion_a350.webp       # avion Air France (décor : titres d'onglet, écran de chargement)
+│   ├── avion_a350.webp       # avion Air France (écran de chargement, onglets en développement)
 │   └── fonts/                # Manrope (woff2, licence OFL), embarquée dans le thème
 ├── app/
 │   ├── main.py               # point d'entrée : page_config, style, header, navigation
 │   ├── core/
-│   │   ├── theme.css         # thème (tokens, header, cartes, graphes) ; images via asset(nom)
-│   │   ├── style.py          # couleurs de la charte + injection du thème (dev local uniquement)
-│   │   ├── components.py     # header, section, kpi_card, fichier, tableau, graphe, sous_onglets…
+│   │   ├── theme.css         # thème (tokens, header, en-têtes de page, cartes, tuiles, tableaux, graphes) ; images via asset(nom)
+│   │   ├── icones.py         # icônes vectorielles (SVG, jeu Lucide) : remplacent les emojis de l'interface
+│   │   ├── style.py          # couleurs (statuts, catégories, couleur de chaque onglet) + injection du thème (dev local)
+│   │   ├── components.py     # header, hero, section, kpi_card, tableau_html, fichier, graphe, sous_onglets…
 │   │   ├── charts.py         # graphes HTML / SVG légers (barres, écarts, 100 %, chaleur) : infobulles au survol
 │   │   ├── io.py             # lecture xlsx (calamine), normalisation et validation des colonnes, export Excel
 │   │   ├── xlsx.py           # écriture .xlsx mise en forme, bibliothèque standard
@@ -177,21 +177,45 @@ Rendu attendu : **corporate, épuré, lisible**, cohérent avec le prototype Sup
 | `--navy` | primaire, header, textes forts | `#002157` |
 | `--navy-2` | fin des dégradés | `#1F4E9C` |
 | `--accent` | rouge, très parcimonieux (alerte forte) | `#E4002B` |
-| `--bg` | fond de page | `#F4F6FA` |
+| `--bg` | fond de page (neutre, sans photo) | `#F5F7FA` |
 | `--surface` | fond des blocs | `#FFFFFF` |
 | `--text` / `--muted` | textes | `#1A1F36` / `#5B6478` |
-| `--ok` / `--warn` / `--ko` | statuts | `#1E8E5A` / `#E8A317` / `#C62828` |
+| `--ok` / `--warn` / `--orange` / `--ko` / `--bleu` | statuts : OK, à relancer, urgent, à commander, en cours | `#1E8E5A` / `#DBA100` / `#E8590C` / `#A61B1B` / `#2B6CB0` |
 
-**Composants** (`core/components.py`) :
+Palettes (`core/style.py`, vérifiées : couleurs distinctes, y compris pour les daltoniens) : **statuts** (ci-dessus,
+toujours avec un libellé, jamais la couleur seule), **catégories** dans un ordre fixe (bleu, sarcelle, orange, brique,
+violet, ocre ; Ceinture = sarcelle, Housse = bleu, Mousse = orange, Rideaux = brique, partout), **couleur de chaque
+onglet** (`ONGLETS` : Stock par chantier bleu, Textile sarcelle, PE mousses violet, Fournisseurs orange, Alertes
+brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statut que l'interface (`style.teinte`).
 
-- **Ambiance** du prototype v3 : fond aérien (`fond_aeroport.webp`), cartes blanches translucides.
-- **Header** fixe en haut : logo Air France Industries (sur fond clair : il est transparent) + « Supply**360** » (360 en rouge) + navigation entre onglets (onglet actif surligné) + date du jour. Une barre animée et la pastille « Calcul en cours… » signalent que Python travaille.
-- **Blocs / sections** : carte blanche, coins arrondis (10–12 px), ombre légère, **en-tête en dégradé bleu** (`--navy` → `--navy-2`) avec texte blanc.
-- **Cartes KPI** : valeur en grand, libellé, variation ou statut coloré.
-- **Badges de statut** : chantiers uniquement **Terminé / En cours / À venir**.
-- **Boutons** bien visibles, style identique partout (« Voir tout », « Détail », « Télécharger »).
-- **Tableaux** : `st.dataframe` avec `column_config` (formats €, dates JJ/MM/AAAA, barres de progression), en-têtes figés, actions à lancer en haut.
-- **Graphiques** (`core/charts.py`, style du prototype v3) : couleurs de la charte, **valeurs affichées sur les graphes**, fond transparent, légende en bas, police cohérente. Affichage via `components.graphe` (`st.markdown`, car `st.html` supprime le SVG). **Infobulle au survol** : attribut `data-tip` (une ligne par valeur) affiché en CSS ; une colonne de barres montre toutes ses séries. Graphes hauts (300 px par défaut), deux par ligne au plus. **Agrandir / PNG** (JavaScript de build.py, aucun paquet) : boutons ⛶ et ⤓ ajoutés à chaque `.s360-chart` ; vue plein écran mise à l'échelle (zoom) ; PNG = copie du graphe dans un SVG `foreignObject` avec les règles CSS « s360 » du thème et la police Manrope, dessinée dans un canvas.
+**Composants** (`core/components.py`) — design validé sur maquette (octobre 2026) ; version précédente sur la branche
+`sauvegarde-avant-refonte-design` :
+
+- **Fond neutre** clair, **aucune photo** ; cartes blanches à filet fin, ombre légère, coins 12 px. **Icônes
+  vectorielles** (`core/icones.py`) au lieu d'emojis (les emojis encore passés par les modules sont convertis par
+  `components.EMOJIS`).
+- **Header** fixe : logo AFI + « Supply**360** » + navigation (une icône et une couleur par onglet : règles
+  `nth-of-type` de theme.css, **à compléter quand un onglet est ajouté au registre**) + état du moteur (« Prêt ») et
+  date. Barre animée et pastille « Calcul en cours… » quand Python travaille.
+- **En-tête de page** (`hero`) : bandeau dégradé à la couleur de l'onglet, icône, surtitre, titre, et à droite un
+  encadré de contexte (`contexte(...)` : chantier, début et J-x, date des données…).
+- **Bloc d'import compact** (`section(..., "")`) : boutons « Ouvrir <dossier> », pastilles d'état des fichiers,
+  popover « Paramètres » ; import manuel replié.
+- **Sections** (`section`) : titre bleu marine, sous-titre, compteur, bouton **Exporter (Excel)** à droite
+  (`export=(fonction, nom, clé)`) ; `carte=False` pour un bloc sans fond (tuiles).
+- **Tuiles KPI** (`kpi_card`) : liseré et icône à la couleur du ton, chiffre coloré ; `kpi_repartition` = grande
+  tuile avec barre de répartition et légende chiffrée ; `valeurs` = bandeau de chiffres.
+- **Badges de statut** (`badge`) : pastille de couleur + libellé. Chantiers : **Terminé / En cours / À venir**.
+- **Tableaux d'actions** (`tableau_html`) : statut en badge, quantités à traiter en rouge, zéros atténués, « — » pour
+  les vides, colonnes figées à gauche, groupes de colonnes, filtres en pastilles (filtrage dans la page, JavaScript de
+  build.py, sans recalcul) ; au-delà de 400 lignes, `st.dataframe`. Autres tableaux : `tableau` (`st.dataframe`).
+- **Graphiques** (`core/charts.py`) : chacun dans sa **carte** (`graphe(html, sous)` : titre, une ligne
+  d'explication, légende en bas), deux par ligne au plus, de même hauteur. Couleurs des palettes, **valeurs affichées**,
+  pas de double axe. Affichage par `st.markdown` (car `st.html` supprime le SVG). **Infobulle au survol** : attribut
+  `data-tip` affiché en CSS. **Agrandir / PNG** (JavaScript de build.py) : boutons ⛶ et ⤓ sur chaque `.s360-chart` ;
+  PNG = copie du graphe dans un SVG `foreignObject` avec les règles CSS « s360 » et la police Manrope.
+- **Écran de chargement** (build.py) : fond clair, grande carte (logo, Supply360, barre, étape, version), l'avion
+  traverse l'écran en 32 s.
 - **Peu de texte** : titre + une ligne de description ; les détails (colonnes attendues, règles de calcul, tableaux annexes) vont dans des `st.popover`.
 
 **Typographie et responsive :**

@@ -35,7 +35,7 @@ ui.header()
 st.segmented_control(
     "Onglet",
     options=list(PAR_ID),
-    format_func=lambda tab_id: f"{PAR_ID[tab_id].TAB_ICON} {PAR_ID[tab_id].TAB_LABEL}",
+    format_func=lambda tab_id: PAR_ID[tab_id].TAB_LABEL,  # icône et couleur de chaque onglet : theme.css
     required=True,
     key="s360_nav",
     label_visibility="collapsed",

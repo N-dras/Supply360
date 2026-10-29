@@ -147,37 +147,43 @@ TEMPLATE = """<!doctype html>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
 <link rel="stylesheet" href="__CDN__/stlite.css">
 <style>
-/* Écran de chargement (les variables et images viennent du thème, en fin de page) */
+/* Écran de chargement (les variables et images viennent du thème, en fin de page) : fond clair, sans photo,
+   grande carte, l'avion traverse lentement l'écran. */
 #s360-loading {
   position: fixed; inset: 0; z-index: 1000000; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 1.2rem; padding: 1rem; text-align: center; font-family: var(--font); overflow: hidden;
-  background: linear-gradient(180deg, rgba(11, 26, 51, .55), rgba(11, 26, 51, .8)), var(--img-fond) center / cover;
+  background: radial-gradient(ellipse at 50% 35%, #FFFFFF 0%, #EEF3FA 45%, #DCE6F4 100%);
   transition: opacity .4s ease;
 }
+#s360-loading::before { content: ""; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background: radial-gradient(circle at 15% 25%, rgba(31, 78, 156, .10), transparent 35%),
+              radial-gradient(circle at 85% 75%, rgba(228, 0, 43, .06), transparent 30%); }
 #s360-loading.fini { opacity: 0; pointer-events: none; }
 #s360-loading .carte {
-  display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 1.8rem 2.4rem; border-radius: 16px;
-  background: rgba(255, 255, 255, .96); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); max-width: 30rem;
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 1.2rem;
+  width: min(44rem, calc(100vw - 2rem)); padding: 3rem 3.4rem 2.4rem; border-radius: 22px;
+  background: rgba(255, 255, 255, .92); backdrop-filter: blur(10px); border: 1px solid #E3E8EF;
+  box-shadow: 0 30px 80px rgba(0, 33, 87, .14);
 }
 /* Logo sur fond transparent, texte bleu marine : toujours sur la carte blanche. */
-#s360-loading .s360-logo { width: 16rem; height: 3.8rem; background-position: center; }
-#s360-loading .titre { color: var(--navy); font-size: 1.9rem; font-weight: 800; }
+#s360-loading .s360-logo { width: 21rem; max-width: 80%; height: 4.6rem; background-position: center; }
+#s360-loading .titre { color: var(--navy); font-size: 3.2rem; line-height: 1; font-weight: 800; letter-spacing: -.03em; }
 #s360-loading .titre span { color: var(--accent); }
-#s360-loading .texte { color: var(--muted); font-size: 1rem; }
-#s360-loading .barre { width: 16rem; height: 4px; border-radius: 4px; overflow: hidden; background: #E3E9F1; }
+#s360-loading .texte { color: var(--muted); font-size: 1.05rem; }
+#s360-loading .barre { width: 100%; max-width: 26rem; height: 6px; border-radius: 99px; overflow: hidden; background: #E3E9F1; }
 #s360-loading .barre::after {
-  content: ""; display: block; width: 40%; height: 100%; border-radius: 4px;
-  background: linear-gradient(90deg, var(--navy), var(--accent)); animation: s360-glisse 1.3s ease-in-out infinite;
+  content: ""; display: block; width: 38%; height: 100%; border-radius: 99px;
+  background: linear-gradient(90deg, var(--navy), var(--accent)); animation: s360-glisse 1.6s ease-in-out infinite;
 }
 #s360-loading .avion {
-  position: absolute; left: -45%; bottom: 12%; width: min(42rem, 70vw); aspect-ratio: 4 / 1;
-  background: var(--img-avion) center / contain no-repeat; filter: drop-shadow(0 18px 18px rgba(0, 0, 0, .4));
-  animation: s360-vol 18s linear infinite;  /* vitesse réduite de moitié */
+  position: absolute; left: -48%; top: 9%; width: min(46rem, 72vw); aspect-ratio: 4 / 1;
+  background: var(--img-avion) center / contain no-repeat; filter: drop-shadow(0 22px 20px rgba(0, 33, 87, .18));
+  animation: s360-vol 32s linear infinite;  /* traversée lente (32 s) */
 }
-@keyframes s360-glisse { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+@keyframes s360-glisse { 0% { transform: translateX(-100%); } 100% { transform: translateX(270%); } }
 @keyframes s360-vol { from { transform: translateX(0); } to { transform: translateX(260vw); } }
 #s360-loading .lent { display: none; color: var(--muted); font-size: .9375rem; }
-#s360-loading .etape { color: var(--navy); font-size: .9375rem; font-weight: 700; min-height: 1.4em; }
+#s360-loading .etape { color: var(--navy); font-size: 1.02rem; font-weight: 700; min-height: 1.4em; }
 #s360-loading .version { color: var(--muted, #5B6478); font-size: .75rem; opacity: .8; }
 #s360-loading .erreur { display: none; max-width: 26rem; padding: .6rem .8rem; border-radius: 8px; background: #FDECEC;
   color: var(--ko); font-size: .875rem; text-align: left; white-space: pre-wrap; word-break: break-word; }
@@ -231,14 +237,14 @@ TEMPLATE = """<!doctype html>
 #s360-grand .fermer { border: 0; background: none; font-size: 1.2rem; color: var(--muted); cursor: pointer; }
 #s360-grand .s360-chart { margin: 0; }
 #s360-loading.lent .lent { display: block; }
-#s360-loading .avancement { display: none; width: 18rem; height: 8px; border-radius: 8px; overflow: hidden; background: #E3E9F1; }
+#s360-loading .avancement { display: none; width: 100%; max-width: 26rem; height: 8px; border-radius: 8px; overflow: hidden; background: #E3E9F1; }
 #s360-loading .avancement i { display: block; height: 100%; width: 3%; border-radius: 8px; transition: width .4s ease;
   background: linear-gradient(90deg, var(--navy), var(--navy-2)); }
 #s360-loading.relance .avancement { display: block; }
 #s360-loading.relance .barre, #s360-loading.relance .lent, #s360-loading.relance .erreur { display: none; }
 #s360-loading.relance .texte { max-width: 26rem; text-align: center; color: var(--text); }
 #s360-loading button {
-  font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 99px; padding: .5rem 1.1rem; cursor: pointer;
+  font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 8px; padding: .5rem 1.1rem; cursor: pointer;
   background: var(--navy);
 }
 </style>
@@ -853,6 +859,18 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
     }
   };
 })();
+</script>
+<script>
+// Filtres des tableaux HTML (components.tableau_html) : pastilles par statut au-dessus du tableau. Le filtrage se fait
+// dans la page (lignes masquées), sans recalcul Python ; un nouvel affichage du tableau repart sur « Tous ».
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".s360-filtres button");
+  if (!b) return;
+  const zone = b.closest(".s360-filtres");
+  zone.querySelectorAll("button").forEach((x) => x.classList.toggle("actif", x === b));
+  const table = document.getElementById(zone.dataset.table);
+  if (table) table.querySelectorAll("tbody tr").forEach((l) => { l.hidden = !!b.dataset.f && l.dataset.statut !== b.dataset.f; });
+});
 </script>
 <script>
 // Agrandir un graphe : bouton « ⛶ » sur chaque graphe (core/charts.py). Le graphe est recopié dans une fenêtre plein

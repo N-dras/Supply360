@@ -18,6 +18,7 @@ from core import pe
 from core import pe2026 as p26
 from core import prevision as pv
 from core import textile as tx
+from core import style
 from core.style import COLORS
 from modules import _planning_pe as vue_pe
 
@@ -28,7 +29,6 @@ TAB_DESCRIPTION = "Politique d'entretien des mousses : avions faisables cette an
 
 K = f"{TAB_ID}__"
 SECTIONS = ["Synthèse", "Avions faisables", "CCN et commandes", "Avancement PE", "Forecast"]
-ICONES = {"Synthèse": "📊", "Avions faisables": "✈️", "CCN et commandes": "📦", "Avancement PE": "📅", "Forecast": "🔮"}
 
 # Dossier Textile : règles de nommage prioritaires (sans accents ni majuscules), puis reconnaissance par le contenu.
 NOMS_DOSSIER = {"stock": r"^resultat", "pieces": r"textile_all_parts", "pe": r"^pe_mousse", "besoin_prod": r"besoin_prod"}
@@ -126,15 +126,14 @@ def _planning_pe(stock: bytes | None, cmd: bytes | None, fichier_pe: tuple, piec
 # Import et paramètres
 # --------------------------------------------------------------------------
 def _bloc_import():
-    with ui.section(f"{TAB_ID}_import", "Import et paramètres", "Les fichiers sont lus sur votre poste : rien n'est envoyé"):
-        a, b, c = st.columns([3, 1, 1], vertical_alignment="bottom")
+    with ui.section(f"{TAB_ID}_import", ""):
+        a, b, c = st.columns([2.4, 3.3, 1], vertical_alignment="center")
         with a:
             ui.boutons_dossiers("Textile", K + "dossier__upload")
-        today = b.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date", persist_state="page",
-                             help="Statuts PE, retards et début du forecast.")
-        reglages = c.popover("⚙️ Paramètres", width="stretch")
-        puces, bilan = st.container(), st.container()
-        with ui.zone_repliable(K + "manuel", "📎 Import manuel (Parcourir) et colonnes attendues"):
+        puces = b.container()
+        reglages = c.popover("Paramètres", width="stretch")
+        bilan = st.container()
+        with ui.zone_repliable(K + "manuel", "Import manuel (Parcourir) et colonnes attendues"):
             zone_dossier = st.container()
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -155,7 +154,10 @@ def _bloc_import():
                               (sio.FICHIER_COMMANDES, "commun__commandes", False), (pe.FICHIER_PE, K + "pe", False),
                               (pv.FICHIER_PIECES, K + "pieces", False)])
         with reglages:
-            t_an, t_pe = st.tabs(["✈️ Année (Besoin Prod)", "📅 Planning PE"])
+            t_gen, t_an, t_pe = st.tabs(["Général", "Année (Besoin Prod)", "Planning PE"])
+            with t_gen:
+                today = st.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date",
+                                      persist_state="page", help="Statuts PE, retards et début du forecast.")
             with t_an:
                 mode = st.radio("Avions restant à traiter", list(RESTANT_LIBELLES), format_func=RESTANT_LIBELLES.get,
                                 key=K + "restant", persist_state="page",
@@ -169,17 +171,22 @@ def _bloc_import():
 
 
 def render() -> None:
-    ui.hero(TAB_ICON, "PE mousses", TAB_DESCRIPTION)
+    entete = st.container()
     f_besoin, f_stock, f_cmd, f_pe, f_pieces, today, params_pe, mode = _bloc_import()
+    with entete:
+        date_pe = pe.date_extraction(f_pe[0]) if f_pe else None
+        ui.hero(TAB_ICON, "PE mousses", TAB_DESCRIPTION, "Production · Politique d'entretien", ui.contexte(
+            *([("Fichier PE du", f"{date_pe:%d/%m/%Y}", "")] if date_pe else []),
+            ("Avions restants", "NB_AC PE RESTANT" if mode == p26.RESTANT_FICHIER else "Calculés (PE mousses)", "")))
     with st.container(key="s360barre"):
-        section = ui.sous_onglets(K + "section", SECTIONS, ICONES)
+        section = ui.sous_onglets(K + "section", SECTIONS)
     if section in ("Avancement PE", "Forecast"):
         _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today)
         return
     if not (f_besoin and f_stock):
         with ui.section(f"{TAB_ID}_vide", "PE mousses de l'année"):
             ui.empty_state("Importez le Besoin Prod et l'État du stock",
-                           "Avions restants : colonne NB_AC PE RESTANT (recalcul possible dans ⚙️ Paramètres avec le fichier "
+                           "Avions restants : colonne NB_AC PE RESTANT (recalcul possible dans Paramètres avec le fichier "
                            "PE mousses et textile_all_parts) ; les commandes (SAP) complètent la couverture.",
                            [(p26.FICHIER_BESOIN, bool(f_besoin)), (sio.FICHIER_STOCK, bool(f_stock)),
                             (sio.FICHIER_COMMANDES, bool(f_cmd)), (pe.FICHIER_PE, bool(f_pe)), (pv.FICHIER_PIECES, bool(f_pieces))],
@@ -232,12 +239,13 @@ def _kpis_avions(blocs: pd.DataFrame, annee: int) -> list[str]:
     rec, coter, appro = int(blocs["Complets à réception"].sum()), int(blocs["À coter"].sum()), int(blocs["À approvisionner"].sum())
     taux = now / obj * 100 if obj else 0
     return [
-        ui.kpi_card(f"Objectif {annee} : classes à traiter", charts.entier(obj),
-                    f"soit {charts.entier(p26.avions_distincts(blocs))} avions · un avion compte une fois par classe", "navy"),
-        ui.kpi_card("Classes complètes maintenant", charts.entier(now), f"{taux:.0f} % de l'objectif · tous leurs CCN en stock", "ok"),
-        ui.kpi_card("Classes complètes à réception", charts.entier(rec), "une fois les commandes en cours livrées", "info"),
-        ui.kpi_card("Classes à coter", charts.entier(coter), "il ne manque que des CCN sans prix", "warn"),
-        ui.kpi_card("Classes à approvisionner", charts.entier(appro), "CCN manquants à commander", "ko"),
+        ui.kpi_repartition(f"Objectif {annee} : classes à traiter", charts.entier(obj), "classes d'avion",
+                           [(n, int(blocs[n].sum()), p26.AVANCEMENT_COULEURS[n]) for n in p26.AVANCEMENT],
+                           note=f"soit {charts.entier(p26.avions_distincts(blocs))} avions", icone="target", tone="violet"),
+        ui.kpi_card("Complètes maintenant", charts.entier(now), f"{taux:.0f} % de l'objectif · tous leurs CCN en stock", "ok", "check-circle"),
+        ui.kpi_card("Complètes à réception", charts.entier(rec), "une fois les commandes en cours livrées", "info", "truck"),
+        ui.kpi_card("À coter", charts.entier(coter), "il ne manque que des CCN sans prix", "orange", "tag"),
+        ui.kpi_card("À approvisionner", charts.entier(appro), "CCN manquants à commander", "ko", "cart"),
     ]
 
 
@@ -260,36 +268,44 @@ def _jauges_blocs(blocs: pd.DataFrame, titre: str) -> str:
 def _synthese(res: dict, today: date):
     m, blocs, annee = res["m"], res["blocs"], res["annee"]
     a_pr = m[m["Écart"] > 0]
-    with ui.section(f"{TAB_ID}_synthese", f"Synthèse de la PE mousses {annee}",
-                    "Avions faisables avec le stock (CCN communs répartis entre types d'avion) et CCN à approvisionner",
-                    tag=f"{m['CCN'].nunique()} CCN"):
-        if len(a_pr):
-            ui.callout(f"<b>{len(a_pr)} PR à émettre</b> pour {charts.entier(a_pr['À demander (PR)'].sum())} mousses "
-                       f"({charts.euros(a_pr['Valeur à commander (€)'].sum())}) : "
-                       f"{(a_pr['Action'] == p26.ACTIONS[0]).sum()} CCN sans aucune commande, "
-                       f"{(a_pr['Action'] == p26.ACTIONS[1]).sum()} avec des commandes insuffisantes.", "ko", "🔴")
+    resume = (f"{len(a_pr)} PR à émettre pour {charts.entier(a_pr['À demander (PR)'].sum())} mousses "
+              f"({charts.euros(a_pr['Valeur à commander (€)'].sum())}) : {(a_pr['Action'] == p26.ACTIONS[0]).sum()} CCN sans commande, "
+              f"{(a_pr['Action'] == p26.ACTIONS[1]).sum()} avec des commandes insuffisantes" if len(a_pr)
+              else "Stock et commandes couvrent le besoin de l'année")
+    with ui.section(f"{TAB_ID}_synthese", f"Synthèse de la PE mousses {annee}", resume, export=_export(res), carte=False):
         ui.kpi_grid(_kpis_avions(blocs, annee))
-        ui.kpi_grid([
-            ui.kpi_card("Valeur du stock", charts.euros(m["Valeur stock (€)"].sum()), "mousses sur étagère", "ok"),
-            ui.kpi_card("Valeur en commande", charts.euros(m["Valeur en commande (€)"].sum()), "déjà commandé, à recevoir", "info"),
-            ui.kpi_card("À commander", charts.euros(m["Valeur à commander (€)"].sum()), "PR, hors CCN à coter", "ko"),
-            ui.kpi_card(f"Valeur du besoin {annee}", charts.euros(m["Valeur du besoin (€)"].sum()), "avions restants", "navy"),
-            ui.kpi_card("CCN à coter", charts.entier(m["À coter"].sum()), "sans prix : coût sous-estimé", "warn"),
+        ui.valeurs([
+            ("Valeur du stock", charts.euros(m["Valeur stock (€)"].sum()), "mousses sur étagère"),
+            ("Valeur en commande", charts.euros(m["Valeur en commande (€)"].sum()), "déjà commandé, à recevoir"),
+            ("À commander", charts.euros(m["Valeur à commander (€)"].sum()), "PR, hors CCN à coter"),
+            (f"Valeur du besoin {annee}", charts.euros(m["Valeur du besoin (€)"].sum()), "avions restants"),
+            ("CCN à coter", charts.entier(m["À coter"].sum()), "sans prix : coût sous-estimé"),
         ])
-        a, b = st.columns([1, 1.5], gap="large")
+    with ui.section(f"{TAB_ID}_avions_ccn", "Avions et CCN", f"Ce que permettent le stock et les commandes en cours · {m['CCN'].nunique()} CCN"):
+        a, b = st.columns([1, 1.5], gap="medium")
         with a:
             n = m["Action"].value_counts()
             ui.graphe(charts.barres_h([(act, n.get(act, 0), charts.entier(n.get(act, 0)), p26.ACTION_COULEURS[act])
-                                       for act in p26.ACTIONS], titre="CCN par action"))
+                                       for act in p26.ACTIONS], titre="CCN par action"), "Nombre de CCN selon l'action à mener")
         with b:
-            ui.graphe(_jauges_blocs(blocs, "Avions par type et par classe, sur l'objectif (une ligne = une classe d'un type d'avion)"))
-        st.markdown("**Actions à lancer** · PR à émettre, du plus urgent au moins urgent")
-        act = m[m["Priorité"] <= 2]
+            ui.graphe(_jauges_blocs(blocs, "Avions par type et par classe, sur l'objectif"),
+                      "Une ligne = une classe d'un type d'avion ; survolez une ligne pour le CCN limitant")
+    act = m[m["Priorité"] <= 2]
+    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", "PR à émettre, du plus urgent au moins urgent", tag=str(len(act)),
+                    export=_export(res, "export_actions")):
         if act.empty:
-            ui.callout("Aucune PR à émettre : stock et commandes couvrent le besoin de l'année.", "ok", "✅")
+            ui.callout("Aucune PR à émettre : stock et commandes couvrent le besoin de l'année.", "ok", "check-circle")
         else:
-            ui.tableau(_tableau_ccn(act), column_config=CFG, height="content" if len(act) <= 10 else 400)
-        _exports(res)
+            _ccn_html(act, "actions")
+        _controles(res)
+
+
+def _ccn_html(x: pd.DataFrame, cle: str, hauteur: str = "30rem") -> None:
+    """Tableau des CCN : action en badge (mêmes couleurs que les graphes), quantité à demander en rouge."""
+    ui.tableau_html(_tableau_ccn(x), statut="Action", couleurs=p26.ACTION_COULEURS,
+                    num=["Besoin", "Stock", "En commande", "Couverture", "Écart", "Couverture (%)", "PU (€)"],
+                    fort=["À demander (PR)"], euros=["Valeur à commander (€)"], pn=["CCN"], fixes=2, cle=f"{TAB_ID}_{cle}",
+                    hauteur=hauteur, colonne_config=CFG)
 
 
 def _tableau_ccn(m: pd.DataFrame) -> pd.DataFrame:
@@ -303,10 +319,11 @@ def _tableau_ccn(m: pd.DataFrame) -> pd.DataFrame:
     })
 
 
-def _exports(res: dict):
+def _export(res: dict, cle: str = "export") -> tuple:
+    """Export de l'onglet (fabriqué au clic) : actions, récapitulatif CCN, avions faisables, détail, restants."""
     b, m, blocs, d, rat = res["b"], res["m"], res["blocs"], res["detail"], res["rattachement"]
-    a, c = st.columns(2)
-    with a:
+
+    def fabriquer() -> bytes:
         feuilles = {
             "Actions à lancer": _tableau_ccn(m[m["Priorité"] <= 2]),
             "CCN (récap)": _tableau_ccn(m),
@@ -315,8 +332,16 @@ def _exports(res: dict):
             "Avions restants": _table_restants(b),
             "Rattachement avions": rat,
         }
-        ui.telecharger(lambda: sio.exporter_excel(feuilles), sio.nom_export(TAB_ID), K + "export", label="⬇️ PE mousses complète (Excel)")
-    with c, st.popover("🔎 Contrôles des données", width="stretch"):
+        teintes = lambda t: {"Action": [style.teinte(p26.ACTION_COULEURS.get(v, "")) for v in t["Action"]]}  # noqa: E731
+        return sio.exporter_excel(feuilles, couleurs_cellules={n: teintes(feuilles[n]) for n in ("Actions à lancer", "CCN (récap)")})
+
+    return fabriquer, sio.nom_export(TAB_ID), K + cle
+
+
+def _controles(res: dict):
+    m, rat = res["m"], res["rattachement"]
+    a, _ = st.columns([1, 3])
+    with a, st.popover("Contrôles des données", width="stretch"):
         absents = m[~m["Dans l'État du stock"]]
         st.markdown(f"- **{len(absents)}** CCN du Besoin Prod absents de l'État du stock (stock compté à 0)"
                     + (f" : {', '.join(absents['CCN'].head(20))}" if len(absents) else ""))
@@ -420,22 +445,22 @@ def _ccn(res: dict, today: date):
     with ui.section(f"{TAB_ID}_ccn", "CCN et commandes",
                     f"Besoin {annee} face au stock et aux commandes en cours, par CCN : quantités à demander (PR)"):
         ui.kpi_grid([
-            ui.kpi_card("CCN suivis", charts.entier(len(m)), "dans le Besoin Prod", "navy"),
-            ui.kpi_card("Stock", charts.entier(m["Stock"].sum()), "mousses sur étagère", "ok"),
-            ui.kpi_card("CCN à approvisionner", charts.entier((m["Écart"] > 0).sum()), "= PR à émettre", "warn"),
-            ui.kpi_card("Quantité à demander", charts.entier(m["À demander (PR)"].sum()), "toutes PR confondues", "ko"),
-            ui.kpi_card("CCN couverts", charts.entier((m["Écart"] <= 0).sum()), "stock + commandes suffisent", "ok"),
+            ui.kpi_card("CCN suivis", charts.entier(len(m)), "dans le Besoin Prod", "navy", "layers"),
+            ui.kpi_card("Stock", charts.entier(m["Stock"].sum()), "mousses sur étagère", "ok", "package"),
+            ui.kpi_card("CCN à approvisionner", charts.entier((m["Écart"] > 0).sum()), "= PR à émettre", "orange", "send"),
+            ui.kpi_card("Quantité à demander", charts.entier(m["À demander (PR)"].sum()), "toutes PR confondues", "ko", "cart"),
+            ui.kpi_card("CCN couverts", charts.entier((m["Écart"] <= 0).sum()), "stock + commandes suffisent", "ok", "check-circle"),
         ])
         acoter = m[m["À coter"]]
         if len(acoter):
-            ui.callout(f"<b>{len(acoter)} CCN à faire coter</b> (aucun prix) : coût à commander sous-estimé.", "warn", "🟡")
+            ui.callout(f"<b>{len(acoter)} CCN à faire coter</b> (aucun prix) : coût à commander sous-estimé.", "warn", "tag")
         _liste_ccn(m)
 
 
 @st.fragment
 def _liste_ccn(m: pd.DataFrame):
     a, b, c = st.columns([1.2, 2, 1], vertical_alignment="center")
-    q = a.text_input("Recherche", placeholder="🔎 CCN, PN, fournisseur", key=K + "q", label_visibility="collapsed")
+    q = a.text_input("Recherche", placeholder="CCN, PN, fournisseur", key=K + "q", label_visibility="collapsed")
     actions = b.multiselect("Action", p26.ACTIONS, key=K + "actions", placeholder="Toutes les actions", label_visibility="collapsed")
     coter = c.toggle("À coter seulement", key=K + "coter")
     x = m
@@ -448,7 +473,7 @@ def _liste_ccn(m: pd.DataFrame):
     if coter:
         x = x[x["À coter"]]
     ui.graphe(_graphe_couverture(x))
-    ui.tableau(_tableau_ccn(x), column_config=CFG, height="content" if len(x) <= 10 else 440)
+    _ccn_html(x, "ccn", "34rem")
 
 
 

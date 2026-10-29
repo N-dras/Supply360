@@ -21,11 +21,11 @@ from core import textile as tx
 MAX_LT = 24
 RAW_COLS = ["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description", "qty_per_ac"]
 STATUS_ORDER = ["A commander", "A planifier", "OK", "Dormant / inactif : pas de commande", "Hors groupe avion"]
-STATUS_COLORS = {"A commander": "#C62828", "A planifier": "#E8A317", "OK": "#1E8E5A",
-                 "Dormant / inactif : pas de commande": "#6D28D9", "Hors groupe avion": "#9AA5B1"}
+STATUS_COLORS = {"A commander": "#A61B1B", "A planifier": "#DBA100", "OK": "#1E8E5A",
+                 "Dormant / inactif : pas de commande": "#7B61C9", "Hors groupe avion": "#B5BDCB"}
 GROUP_STATUS_ORDER = ["Sous l'objectif", "Couvert si commandes livrées", "Objectif atteint"]
 # Même code couleur que partout : vert = stock, bleu = à réception des commandes, rouge = à commander.
-GROUP_STATUS_COLORS = {"Sous l'objectif": "#C62828", "Couvert si commandes livrées": "#1F4E9C", "Objectif atteint": "#1E8E5A"}
+GROUP_STATUS_COLORS = {"Sous l'objectif": "#A61B1B", "Couvert si commandes livrées": "#2B6CB0", "Objectif atteint": "#1E8E5A"}
 CLASS_ORDER = ["J", "W", "Y"]
 DEFAULT_PE = {
     "HOUSSE": {("J", "Assise"): 3, ("J", "Dossier"): 6, ("W", "Assise"): 3, ("W", "Dossier"): 0, ("Y", "Assise"): 3, ("Y", "Dossier"): 0},

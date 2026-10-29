@@ -11,24 +11,43 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-# Couleurs de la charte, réutilisées côté Python (graphes Altair, export Excel).
+# Couleurs de la charte, réutilisées côté Python (graphes, export Excel). Statuts et catégories : palette vérifiée
+# (couleurs distinctes, y compris pour les daltoniens) ; toujours accompagnées d'un libellé, jamais seules.
 COLORS = {
     "navy": "#002157",
     "navy_2": "#1F4E9C",
     "accent": "#E4002B",
-    "bg": "#F4F6FA",
+    "bg": "#F5F7FA",
     "surface": "#FFFFFF",
-    "tile": "#F1F5FA",
+    "tile": "#F5F7FA",
     "text": "#1A1F36",
     "muted": "#5B6478",
-    "border": "#DDE3EE",
+    "border": "#E3E8EF",
     "grid": "#E3E9F1",
+    # statuts : rouge = à commander / en retard, orange = urgent, ambre = à relancer, bleu = en cours, vert = OK
+    "ko": "#A61B1B",
+    "orange": "#E8590C",
+    "warn": "#DBA100",
+    "bleu": "#2B6CB0",
     "ok": "#1E8E5A",
-    "warn": "#E8A317",
-    "ko": "#C62828",
-    "violet": "#6D28D9",
+    "violet": "#7B61C9",
     "gris": "#9AA5B1",
+    "gris_clair": "#B5BDCB",
 }
+# Catégories (identité), ordre fixe : bleu, sarcelle, orange, brique, violet, ocre
+CATEGORIES = ["#1F4E9C", "#2A9D8F", "#E8833A", "#B83D4B", "#7B61C9", "#C99A06"]
+# Fonds teintés des badges et des cellules de statut (interface et export Excel)
+TEINTES = {"#A61B1B": "FBECEC", "#E8590C": "FDF0E7", "#DBA100": "FDF6DD", "#2B6CB0": "E9F1FA", "#1E8E5A": "E6F4EC",
+           "#7B61C9": "F1EDFB", "#9AA5B1": "EEF1F5", "#B5BDCB": "F3F5F8", "#1F4E9C": "EAF0FA", "#2A9D8F": "E5F4F2"}
+# Couleur d'accent de chaque onglet (en-tête de page, onglet actif) et icône
+ONGLETS = {"stock_chantier": ("#1F4E9C", "wrench"), "textiles": ("#2A9D8F", "scissors"), "pe_mousses": ("#7B61C9", "armchair"),
+           "fournisseurs": ("#E8833A", "factory"), "alertes": ("#B83D4B", "bell")}
+
+
+def teinte(couleur: str) -> str:
+    """Fond teinté (hexa sans #) associé à une couleur de statut."""
+    return TEINTES.get(couleur, "EEF1F5")
+
 
 # Manrope (police du prototype) est embarquée dans le thème : aucun appel à Google Fonts.
 FONT = "Manrope"

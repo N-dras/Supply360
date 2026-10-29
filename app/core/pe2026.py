@@ -22,7 +22,7 @@ ACTIONS = ["PR à émettre (aucune commande)", "PR complémentaire (commandes in
            "À réceptionner (commandes en cours)", "Couvert par le stock"]
 # Mêmes couleurs dans tous les graphes : vert = couvert par le stock, bleu = couvert à réception des commandes en cours,
 # orange = à coter (pas de prix), rouge = à approvisionner (à commander). Jamais de rouge sur ce que le stock couvre.
-VERT, BLEU, ORANGE, ROUGE = "#1E8E5A", "#1F4E9C", "#E8A317", "#C62828"
+VERT, BLEU, ORANGE, ROUGE = "#1E8E5A", "#2B6CB0", "#E8590C", "#A61B1B"  # palette de core/style.py
 ACTION_COULEURS = dict(zip(ACTIONS, [ROUGE, "#E57373", BLEU, VERT]))
 AVANCEMENT = ["Complets maintenant", "Complets à réception", "À coter", "À approvisionner"]
 AVANCEMENT_COULEURS = dict(zip(AVANCEMENT, [VERT, BLEU, ORANGE, ROUGE]))

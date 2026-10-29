@@ -448,14 +448,15 @@ def nom_export(tab_id: str, jour: date | None = None) -> str:
     return f"Supply360_{tab_id}_{jour:%Y%m%d}.xlsx"
 
 
-def exporter_excel(feuilles: dict, couleurs_lignes: dict | None = None) -> bytes:
+def exporter_excel(feuilles: dict, couleurs_lignes: dict | None = None, couleurs_cellules: dict | None = None) -> bytes:
     """Écrit {nom_feuille: DataFrame} dans un classeur mis en forme.
 
     En-têtes en gras sur fond bleu marine, volets figés, filtres automatiques, largeurs
     ajustées, dates au format JJ/MM/AAAA. `couleurs_lignes` = {nom_feuille: liste de
-    couleurs hexa (ou None) alignée sur les lignes} pour surligner certaines lignes.
+    couleurs hexa (ou None) alignée sur les lignes} pour surligner certaines lignes ; `couleurs_cellules` =
+    {nom_feuille: {colonne: couleurs}} pour colorer une seule colonne (le statut, comme les badges de l'interface).
     """
-    return xlsx.classeur(feuilles, couleurs_lignes)
+    return xlsx.classeur(feuilles, couleurs_lignes, couleurs_cellules)
 
 
 # --------------------------------------------------------------------------

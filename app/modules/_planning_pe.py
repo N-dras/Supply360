@@ -204,9 +204,9 @@ def _calendrier(c: pd.DataFrame, today):
 
 @st.fragment
 def _detail_avions(c: pd.DataFrame):
-    with st.popover(f"📋 Détail par avion et par élément ({len(c)})", width="content"):
+    with st.popover(f"Détail par avion et par élément ({len(c)})", width="content"):
         f1, f2 = st.columns([1, 2])
-        q = f1.text_input("Immatriculation", placeholder="🔎 Immatriculation", key=K + "q", label_visibility="collapsed")
+        q = f1.text_input("Immatriculation", placeholder="Immatriculation", key=K + "q", label_visibility="collapsed")
         statuts = f2.multiselect("Statut", pe.STATUTS, key=K + "statuts", placeholder="Tous les statuts", label_visibility="collapsed")
         d = c
         if q:
@@ -358,7 +358,7 @@ def _forecast_fournisseur(ev, synth, long, today, h):
         par_mois = piv.copy()
         par_mois.columns = [m_.strftime("%m/%Y") for m_ in par_mois.columns]
         ui.telecharger(lambda: _export_fournisseur(f, an, par_mois, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"forecast_{f}"),
-                       K + "export_fournisseur", label="⬇️ Forecast fournisseur (Excel)")
+                       K + "export_fournisseur", label="Exporter le forecast fournisseur (Excel)")
 
 
 def _nom_fichier(base: str) -> str:
@@ -387,8 +387,8 @@ def _exports_controles(res, c, ev, synth, long, h):
                 "Besoins par avion": ev,
             }
             ui.telecharger(lambda: sio.exporter_excel(feuilles), _nom_fichier("planning_PE"), K + "export_tout",
-                           label="⬇️ Planning PE complet (Excel)")
-        with b, st.popover("🔎 Contrôles des données", width="stretch"):
+                           label="Exporter le planning PE complet (Excel)")
+        with b, st.popover("Contrôles des données", width="stretch"):
             nr, sans, absents = res["non_reconnues"], res["sans_pn"], res["pn_absents_stock"]
             age_min = int((~res["cal"]["Âge exact"]).sum())
             st.markdown(f"- **{age_min}** éléments avec un âge minimum seulement (« > 60 », « > 108 » dans le fichier PE) : "

@@ -4,16 +4,16 @@ Repris de legacy/streamlit_GEAV.py. Identifie les pièces à commander et les fo
 à relancer pour sécuriser les équipements avant le début du chantier.
 """
 
+import re
 from datetime import date
 
 import pandas as pd
 import streamlit as st
 
-from core import cache, charts
+from core import cache
 from core import components as ui
 from core import io as sio
 from core import transforms as tf
-from core.style import COLORS
 
 TAB_ID = "stock_chantier"
 TAB_LABEL = "Stock par chantier"
@@ -40,13 +40,14 @@ COLONNES_ATTENDUES = {
                   ("Date de livraison promise / demandée", "", False), ("Class code, CCN", "", False)],
 }
 
-# Ordre demandé par l'auteur ; TRFX et Class code (non cités) gardés en fin de tableau.
+# Ordre demandé par l'auteur ; TRFX et Class code (non cités) gardés en fin de tableau. Même ordre dans l'export.
 COLONNES_TABLEAU = {
     "STATUT": "Statut", "PN": "PN", "CCN": "CCN", "RRS": "RRS", "Qty_a_commander": "À commander", "QTY_GEAV": "Besoin",
     "QTY_STOCK": "Stock", "QTY_CDE": "En cmd", "QTE_SAR": "SAR", "QTE_PR": "PR", "Commande": "N° commande", "PSD": "PSD",
     "FOURNISSEUR": "Fournisseur", "CODE_FOURNISSEUR": "Code fournisseur", "ACTION": "Action", "CODE_AGENT": "Code agent",
     "GESTION": "Gestion", "TL": "TL", "GEAV_DATE": "Date chantier", "TRFX": "TRFX", "CLASS_CODE": "Class code",
 }
+GROUPES = [("Pièce", 4), ("Quantités", 6), ("Commande", 2), ("Fournisseur", 2), ("Suivi", 5), ("Autres", 2)]
 COLUMN_CONFIG = {
     "PSD": st.column_config.DateColumn("PSD", format="DD/MM/YYYY"),
     "Date chantier": st.column_config.DateColumn("Date chantier", format="DD/MM/YYYY"),
@@ -64,8 +65,6 @@ COLUMN_CONFIG = {
     "TL": st.column_config.TextColumn("TL", help="Tracking level (État du stock) : 0 = consommable (TL0), 1 = réparable (TL1)",
                                       width="small"),
 }
-ACTION_COULEURS = {"commander": COLORS["ko"], "relancer_urgent": COLORS["accent"], "relancer": COLORS["warn"],
-                   "inconnu": COLORS["muted"], "en_cours": COLORS["navy_2"], "hors_perimetre": COLORS["gris"], "ok": COLORS["ok"]}
 
 
 # --------------------------------------------------------------------------
@@ -99,10 +98,22 @@ def _analyse(b_besoin: bytes, etude: str, b_stock: bytes, b_cmd: bytes, gestions
     return m, m[m["gestion_in_scope"]].copy()
 
 
+EMOJIS = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF\u2B50\u2B55\uFE0F]\\s*")
+COULEURS_STATUT = {tf.ACTION_LABELS[c]: couleur for c, couleur in tf.ACTION_COULEURS.items()}
+
+
 def tableau(m: pd.DataFrame) -> pd.DataFrame:
-    """Vue d'affichage / d'export : colonnes renommées, statut court."""
-    v = m.assign(STATUT=m["ACTION_CODE"].map(tf.ACTION_LABELS))
+    """Vue d'affichage et d'export (mêmes colonnes, même ordre) : colonnes renommées, statut en clair, action sans emoji."""
+    v = m.assign(STATUT=m["ACTION_CODE"].map(tf.ACTION_LABELS), ACTION=m["ACTION"].astype(str).str.replace(EMOJIS, "", regex=True))
     return v[list(COLONNES_TABLEAU)].rename(columns=COLONNES_TABLEAU)
+
+
+def _afficher(m: pd.DataFrame, cle: str, filtres: bool = False, hauteur: str = "34rem") -> None:
+    """Tableau de références : statut en badge, classe 8/9 signalée, colonnes regroupées (Pièce, Quantités…)."""
+    ui.tableau_html(tableau(m).assign(_risque=m["RISK_CLASS"].to_numpy()), statut="Statut", couleurs=COULEURS_STATUT,
+                    num=["Besoin", "Stock", "En cmd", "SAR", "PR", "Gestion", "Class code"], fort=["À commander"],
+                    longs=["Action"], pn=["PN"], groupes=GROUPES, fixes=2, marque=("_risque", "Classe 8/9"), filtres=filtres,
+                    cle=f"{TAB_ID}_{cle}", hauteur=hauteur, colonne_config=COLUMN_CONFIG)
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
@@ -123,12 +134,12 @@ def _export(b_besoin: bytes, etude: str, b_stock: bytes, b_cmd: bytes, gestions:
     detail = m_scope.sort_values("Qty_a_commander", ascending=False, kind="stable")
     annexe = m.sort_values("Qty_a_commander", ascending=False, kind="stable")
 
-    def fills(d):
-        return d["ACTION_CODE"].map(tf.ACTION_FILL_HEX).tolist()
+    def statut(d):  # cellule Statut à la teinte de son badge, comme dans l'application
+        return {"Statut": d["ACTION_CODE"].map(tf.ACTION_FILL_HEX).tolist()}
 
     return sio.exporter_excel(
         {"Synthèse": synthese, "Actions à lancer": tableau(actions), "Détail": tableau(detail), "Annexe (toutes réf.)": tableau(annexe)},
-        couleurs_lignes={"Actions à lancer": fills(actions), "Détail": fills(detail), "Annexe (toutes réf.)": fills(annexe)},
+        couleurs_cellules={"Actions à lancer": statut(actions), "Détail": statut(detail), "Annexe (toutes réf.)": statut(annexe)},
     )
 
 
@@ -161,24 +172,26 @@ def _choix_chantier(dossier: str, par_source: dict) -> None:
 
 
 def _bloc_import():
-    with ui.section(f"{TAB_ID}_import", "Import et paramètres", "Les fichiers sont lus sur votre poste : rien n'est envoyé"):
-        a, b, c, d = st.columns([2.7, 1, 1.3, 1], vertical_alignment="bottom")
+    """Bloc compact : dossiers mémorisés, état des fichiers, paramètres (popover) ; import manuel replié."""
+    # Valeurs initiales par le Session State (pas de `value=`) : date et étude sont aussi écrites par l'import du dossier
+    # chantier, et Streamlit avertit quand un widget a les deux.
+    st.session_state.setdefault(K + "date", date.today())
+    st.session_state.setdefault(K + "etude", ETUDE_CLASSIQUE)
+    with ui.section(f"{TAB_ID}_import", ""):
+        a, b, c = st.columns([2.25, 3.1, 1.15], vertical_alignment="center")
         with a:
             ui.boutons_dossiers("R2", K + "dossier__upload", mode="chantier")
-        # Valeur initiale par le Session State (pas de `value=`) : la date est aussi écrite par l'import du dossier
-        # chantier, et Streamlit avertit quand un widget a les deux.
-        st.session_state.setdefault(K + "date", date.today())
-        date_chantier = b.date_input("Début du chantier", format="DD/MM/YYYY", key=K + "date",
-                                     persist_state="page", help="Lue dans le nom du dossier « <IMMAT> - <JJMMAA> ».")
-        st.session_state.setdefault(K + "etude", ETUDE_CLASSIQUE)  # aussi écrit par l'import du dossier
-        etude = c.segmented_control("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], key=K + "etude",
-                                    required=True, persist_state="page") or ETUDE_CLASSIQUE
+        puces = b.container()
         n = len(st.session_state.get(K + "gestions", GESTIONS_DEFAUT))
-        with d.popover(f"⚙️ Périmètre · {n} code{'s' if n > 1 else ''}", width="stretch"):
+        with c.popover(f"Paramètres · {n} code{'s' if n > 1 else ''} Gestion", width="stretch"):
+            date_chantier = st.date_input("Début du chantier", format="DD/MM/YYYY", key=K + "date", persist_state="page",
+                                          help="Lue dans le nom du dossier « <IMMAT> - <JJMMAA> ».")
+            etude = st.segmented_control("Type d'étude", [ETUDE_CLASSIQUE, ETUDE_ASREQ], key=K + "etude",
+                                         required=True, persist_state="page") or ETUDE_CLASSIQUE
             gestions = st.multiselect("Codes Gestion du périmètre", GESTIONS_PROPOSEES, default=GESTIONS_DEFAUT, key=K + "gestions",
                                       placeholder="Choisir les codes Gestion", persist_state="page")
-        puces, bilan = st.container(), st.container()
-        with ui.zone_repliable(K + "manuel", "📎 Import manuel (Parcourir) et colonnes attendues"):
+        bilan = st.container()
+        with ui.zone_repliable(K + "manuel", "Import manuel (Parcourir) et colonnes attendues"):
             zone_dossier = st.container()
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -210,18 +223,32 @@ def _statut_chantier(date_chantier) -> str:
     return f"À venir · J-{j}" if j > 0 else ("Début aujourd'hui" if j == 0 else f"Démarré depuis {-j} j")
 
 
+def _contexte() -> str:
+    """Encadré de l'en-tête : immatriculation, début du chantier et statut (J-x), type d'étude."""
+    d = st.session_state.get(K + "date", date.today())
+    j = tf.jours_avant(d, date.today())
+    statut = ui.badge(_statut_chantier(d), "info" if j > 0 else ("ok" if j == 0 else "muted"))
+    blocs = [("Chantier", st.session_state[K + "immat"], "")] if st.session_state.get(K + "immat") else []
+    blocs += [("Début du chantier", f"{d:%d/%m/%Y}", statut), ("Étude", st.session_state.get(K + "etude", ETUDE_CLASSIQUE), "")]
+    return ui.contexte(*blocs)
+
+
 def render() -> None:
-    ui.hero(TAB_ICON, "Stock par chantier — GEAV", TAB_DESCRIPTION)
+    entete = st.container()
     etude, date_chantier, gestions, f_besoin, f_stock, f_cmd = _bloc_import()
+    with entete:  # dessiné au-dessus de l'import, mais après lui : le contexte reflète le dossier qui vient d'être choisi
+        ui.hero(TAB_ICON, "Stock par chantier", "Pièces à commander et fournisseurs à relancer avant le début du chantier (GEAV).",
+                "Supply Chain · Production", _contexte())
 
     nom_besoin = sio.FICHIER_BESOINS if etude == ETUDE_CLASSIQUE else sio.FICHIER_ASREQ
     if not (f_besoin and f_stock and f_cmd):
         with ui.section(f"{TAB_ID}_vide", "Analyse"):
-            ui.empty_state("Importez les trois fichiers", "L'analyse se lance automatiquement. Les fichiers restent sur votre poste.",
+            ui.empty_state("Importez les trois fichiers", "Ouvrez le dossier du chantier dans R2 (et le dossier COMMANDE) : "
+                           "l'analyse se lance automatiquement. Les fichiers restent sur votre poste.",
                            [(nom_besoin, bool(f_besoin)), (sio.FICHIER_STOCK, bool(f_stock)), (sio.FICHIER_COMMANDES, bool(f_cmd))])
         return
     if not gestions:
-        ui.callout("Sélectionnez au moins un <b>code Gestion</b>.", "warn", "⚠️")
+        ui.callout("Sélectionnez au moins un <b>code Gestion</b> (Paramètres).", "warn", "alert")
         return
 
     cle = (f_besoin[1], etude, f_stock[1], f_cmd[1], tuple(sorted(gestions)), date_chantier)
@@ -230,74 +257,69 @@ def render() -> None:
             m, m_scope = _analyse(*cle)
         export = lambda: _export(*cle)  # noqa: E731 — fabriqué au clic seulement
     except ValueError as exc:  # ColonneIntrouvable, FichierIllisible
-        ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "⛔")
+        ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "x")
         return
 
     s = tf.synthese_geav(m_scope)
-    immat = st.session_state.get(K + "immat", "")
-    statut = _statut_chantier(date_chantier)
+    nom = sio.nom_export(TAB_ID)
 
     # ---- Synthèse ----
-    with ui.section(f"{TAB_ID}_synthese", "Synthèse", f"Chantier {immat + ' ' if immat else ''}du {date_chantier:%d/%m/%Y} · étude {etude}", tag=statut):
-        if s["n_commander"] or s["n_relance"]:
-            ui.callout(f"<b>{s['n_commander']} référence(s) à commander</b> ({s['qty_a_commander']} unités) et "
-                       f"<b>{s['n_relance']} relance(s) fournisseur</b> avant le {date_chantier:%d/%m/%Y}.",
-                       "ko" if s["n_commander"] else "warn", "📌")
-        else:
-            ui.callout("Besoin couvert : aucune commande ni relance à lancer.", "ok", "✅")
-        if s["n_risque"]:
-            ui.callout(f"<b>{s['n_risque']} référence(s) classe 8/9</b> à traiter en priorité.", "accent", "🚨")
+    resume = (f"{s['n_commander']} référence(s) à commander ({s['qty_a_commander']} unités) et {s['n_relance']} relance(s) "
+              f"fournisseur avant le {date_chantier:%d/%m/%Y}" if s["n_commander"] or s["n_relance"]
+              else "Besoin couvert : aucune commande ni relance à lancer")
+    with ui.section(f"{TAB_ID}_synthese", "Synthèse", resume, export=(export, nom, K + "export_haut__btn"), carte=False):
+        compte = m_scope["ACTION_CODE"].value_counts()
+        ordre = ["commander", "relancer_urgent", "relancer", "inconnu", "en_cours", "ok"]
+        u = s["n_relance_urgente"]
         ui.kpi_grid([
-            ui.kpi_card("Références du périmètre", s["n_total"], f"{len(m) - s['n_total']} hors périmètre"),
-            ui.kpi_card("À commander", s["n_commander"], f"{s['qty_a_commander']} unités", "ko"),
-            ui.kpi_card("À relancer", s["n_relance"], f"dont {s['n_relance_urgente']} urgente(s)", "warn"),
-            ui.kpi_card("En cours de livraison", s["n_en_cours"], "à temps", "info"),
-            ui.kpi_card("Stock suffisant", s["n_ok"], "", "ok"),
+            ui.kpi_repartition("Périmètre du chantier", s["n_total"], "références",
+                               [(tf.ACTION_LABELS[c], int(compte.get(c, 0)), tf.ACTION_COULEURS[c]) for c in ordre],
+                               note=f"+ {len(m) - s['n_total']} hors périmètre Gestion"),
+            ui.kpi_card("À commander", s["n_commander"], f"{s['qty_a_commander']} unités au total", "ko", "cart"),
+            ui.kpi_card("Relances fournisseur", s["n_relance"], f"dont {u} urgente{'s' if u > 1 else ''} (PSD après le début)",
+                        "orange", "send"),
+            ui.kpi_card("En cours de livraison", s["n_en_cours"], "livrées avant le début", "info", "truck"),
+            ui.kpi_card("Stock suffisant", s["n_ok"], "aucune action", "ok", "package"),
         ])
-        ui.telecharger(export, sio.nom_export(TAB_ID), K + "export_haut__btn")
+        if s["n_risque"]:
+            risque = m_scope[m_scope["RISK_CLASS"]]
+            ui.callout(f"<b>{s['n_risque']} référence(s) classe 8/9 à traiter en priorité</b> : "
+                       f"{', '.join(risque['PN'].astype(str).head(8))}{' …' if len(risque) > 8 else ''} — en tête des actions.",
+                       "ko", "flag")
 
     # ---- Actions à lancer ----
     actions = tf.actions_a_lancer(m_scope)
-    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", tag=str(len(actions))):
+    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", f"Du plus urgent au moins urgent · à faire avant le {date_chantier:%d/%m/%Y}",
+                    tag=str(len(actions)), export=(export, nom, K + "export_actions__btn")):
         if actions.empty:
-            ui.callout("Aucune action à lancer.", "ok", "✅")
+            ui.callout("Aucune action à lancer.", "ok", "check-circle")
         else:
-            ui.tableau(tableau(actions), column_config=COLUMN_CONFIG,
-                         height=min(38 + 35 * len(actions), 420))
+            _afficher(actions, "actions", filtres=True)
 
     _detail(m, m_scope, export, gestions)
 
 
 @st.fragment
 def _detail(m, m_scope, export, gestions):
-    """Répartition + tableau filtrable. Fragment : filtrer ne relance que ce bloc."""
-    with ui.section(f"{TAB_ID}_detail", "Détail du périmètre", f"Codes Gestion {', '.join(str(g) for g in sorted(gestions))}"):
-        g, d = st.columns([1, 2.2], gap="large")
-        with g:
-            counts = m_scope["ACTION_CODE"].value_counts()
-            ui.graphe(charts.barres_h(
-                [(tf.ACTION_LABELS[c].split(" ", 1)[1], int(counts.get(c, 0)), None, ACTION_COULEURS[c])
-                 for c in tf.ACTION_ORDRE if c != "hors_perimetre"], titre="Répartition des actions", fmt=charts.entier))
-        with d:
-            f1, f2 = st.columns([1, 1.6])
-            recherche = f1.text_input("Rechercher un PN", key=K + "recherche", placeholder="🔎 PN…", persist_state="page")
-            filtre = f2.multiselect("Filtrer par statut", options=tf.ACTION_ORDRE, format_func=lambda c: tf.ACTION_LABELS[c],
-                                    key=K + "filtre_action", placeholder="Tous les statuts", persist_state="page")
-            vue = m_scope
-            if recherche:
-                vue = vue[vue["PN"].str.contains(recherche.strip().upper().replace(" ", ""), na=False, regex=False)]
-            if filtre:
-                vue = vue[vue["ACTION_CODE"].isin(filtre)]
-            vue = vue.sort_values("Qty_a_commander", ascending=False, kind="stable")
-            ui.tableau(tableau(vue), column_config=COLUMN_CONFIG, height=400)
-        b1, b2, b3 = st.columns([1.3, 1.3, 3])
-        with b1:
-            ui.telecharger(export, sio.nom_export(TAB_ID), K + "export_bas__btn")
-        with b2.popover(f"📎 Toutes les références ({len(m)})", width="stretch"):
+    """Tableau filtrable du périmètre. Fragment : filtrer ne relance que ce bloc."""
+    with ui.section(f"{TAB_ID}_detail", "Détail du périmètre", f"Toutes les références des codes Gestion "
+                    f"{', '.join(str(g) for g in sorted(gestions))}", export=(export, sio.nom_export(TAB_ID), K + "export_bas__btn")):
+        f1, f2 = st.columns([1, 1.6])
+        recherche = f1.text_input("Rechercher un PN", key=K + "recherche", placeholder="PN…", persist_state="page")
+        filtre = f2.multiselect("Filtrer par statut", options=tf.ACTION_ORDRE, format_func=lambda c: tf.ACTION_LABELS[c],
+                                key=K + "filtre_action", placeholder="Tous les statuts", persist_state="page")
+        vue = m_scope
+        if recherche:
+            vue = vue[vue["PN"].str.contains(recherche.strip().upper().replace(" ", ""), na=False, regex=False)]
+        if filtre:
+            vue = vue[vue["ACTION_CODE"].isin(filtre)]
+        _afficher(vue.sort_values("Qty_a_commander", ascending=False, kind="stable"), "detail", hauteur="30rem")
+        b2, b3, _ = st.columns([1.3, 1, 3])
+        with b2.popover(f"Toutes les références ({len(m)})", width="stretch"):
             st.caption("Y compris codes Gestion hors périmètre et PN sans code Gestion.")
             ui.tableau(tableau(m.sort_values("Qty_a_commander", ascending=False, kind="stable")),
-                         column_config=COLUMN_CONFIG, height=420, width=1100)
-        with b3.popover("ℹ️ Règles de calcul"):
+                       column_config=COLUMN_CONFIG, height=420, width=1100)
+        with b3.popover("Règles de calcul", width="stretch"):
             _aide()
 
 
@@ -320,6 +342,6 @@ s'ils viennent de plusieurs TRFX / RRS (colonnes TRFX et RRS : « A | B »). Con
 | {tf.ACTION_LABELS['relancer_urgent']} | PSD après le début du chantier |
 | {tf.ACTION_LABELS['en_cours']} | PSD avant le début du chantier |
 
-Classe 8/9 : préfixe « 🚨 PRIORITÉ », en tête des actions. Fournisseur manquant : retrouvé par le code fournisseur.
+Classe 8/9 : étiquette « Classe 8/9 » et mention « PRIORITÉ » dans l'action, en tête des actions. Fournisseur manquant : retrouvé par le code fournisseur.
 """)
 

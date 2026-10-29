@@ -86,7 +86,7 @@ def test_asreq():
     besoin = tf.agreger_besoins(lignes).set_index("PN")
     assert feuille == "Ordered"
     assert besoin.loc["FX-1002", "QTY_GEAV"] == 2
-    assert besoin.loc["FX-1002", "TRFX"] == "BC-0002"
+    assert besoin.loc["FX-1002", "TRFX"] == "BC-0002 | BC-0003"  # deux lignes, besoins additionnés (1 + 1)
     assert "Description" not in besoin.columns
 
 
@@ -97,6 +97,8 @@ def test_besoins_sommes_par_pn(sources):
     besoin = sources[0].set_index("PN")
     assert besoin.loc["FX-1002", "QTY_GEAV"] == 5
     assert besoin.loc["FX-1002", "Nb_lignes"] == 2
+    # deux TRFX (et deux RRS) pour un même PN : un seul besoin, quantités additionnées (2 + 3)
+    assert besoin.loc["FX-1002", "TRFX"] == "TRFX-02 | TRFX-18" and besoin.loc["FX-1002", "RRS"] == "RRS-0002 | RRS-0003"
     assert "FX-1013" in besoin.index  # « fx-1013 » normalisé
     assert len(besoin) == 16  # la ligne sans PN est ignorée
 
@@ -127,7 +129,8 @@ def test_action_par_cas(croise, pn, code):
 def test_quantites(croise):
     m = croise.set_index("PN")
     assert (m.loc["FX-1003", "Deficit"], m.loc["FX-1003", "Qty_a_commander"]) == (4, 2)
-    assert "Commander le complément (2) + relancer Fournisseur Charlie (contact: AC03)" in m.loc["FX-1003", "ACTION"]
+    # contact = Code agent (CODE AGT APPRO de l'État du stock), plus le code acheteur des commandes
+    assert "Commander le complément (2) + relancer Fournisseur Charlie (contact: AG02)" in m.loc["FX-1003", "ACTION"]
     assert m.loc["FX-1008", "ACTION"].startswith("🟠 Relancer Fournisseur Hotel")
 
 
@@ -191,6 +194,9 @@ def test_identique_au_script_origine_sur_fixtures(croise):
     besoin, _ = lg["load_besoin"](octets("besoins_chantier.xlsx"))
     stock, _ = lg["load_stock"](octets("etat_stock.xlsx"))
     cmd, _ = lg["load_commandes"](octets("commandes_sap.xlsx"))
+    # Seul écart voulu avec le script d'origine : le contact est le CODE AGT APPRO (le script ne l'utilisait qu'à
+    # défaut de code acheteur) ; on lui donne donc des commandes sans code acheteur.
+    cmd = cmd.assign(Code_acheteur=np.nan)
     attendu = lg["build_cross"](besoin, stock, cmd, GESTIONS, pd.Timestamp(DATE_CHANTIER))
     _comparer(attendu, croise)
 
@@ -230,7 +236,7 @@ def test_identique_au_script_origine_aleatoire(graine):
         "Has_risk_class": rng.choice([True, False], k), "CCN_cmd": "2",
     })
     date_chantier = pd.Timestamp("2026-12-15")
-    attendu = _legacy()["build_cross"](besoin, stock, commandes, [245, 246], date_chantier)
+    attendu = _legacy()["build_cross"](besoin, stock, commandes.assign(Code_acheteur=None), [245, 246], date_chantier)
     obtenu = tf.croiser_geav(besoin, stock, commandes, [245, 246], date_chantier)
     assert set(obtenu["ACTION_CODE"]) >= {"ok", "commander", "relancer", "relancer_urgent", "en_cours",
                                           "hors_perimetre", "inconnu"}
@@ -421,3 +427,19 @@ def test_dossier_r2_resultat_fait_foi():
     par_source, inconnus = dossiers.repartir(dossiers.appliquer_noms(sources, stock_chantier.NOMS_DOSSIER))
     assert par_source["stock"] == ["R2/F-HZUA - 110127/Résultat - HZUA.xlsx"] and par_source["besoins"]
     assert inconnus == ["R2/F-HZUA - 110127/vieux stock.xlsx"]
+
+
+def test_stock_chantier_colonnes_rrs_sar_pr_code_agent(sources, croise):
+    from modules import stock_chantier
+
+    stock = sources[1].set_index("PN")
+    assert stock.loc["FX-1003", "QTE_SAR"] == 1 and stock.loc["FX-1002", "QTE_PR"] == 2
+    m = croise.set_index("PN")
+    # contact = CODE AGT APPRO de l'État du stock (plus le code acheteur des commandes)
+    assert "(contact: AG01)" in m.loc["FX-1002", "ACTION"]
+    assert m.loc["FX-1002", "Qty_a_commander"] == 4   # besoin 5 (2 + 3, deux TRFX) − stock 1
+    t = stock_chantier.tableau(croise)
+    assert list(t.columns)[:19] == ["Statut", "PN", "CCN", "RRS", "À commander", "Besoin", "Stock", "En cmd", "SAR", "PR",
+                                    "N° commande", "PSD", "Fournisseur", "Code fournisseur", "Action", "Code agent",
+                                    "Gestion", "TL", "Date chantier"]
+    assert "Acheteur" not in t.columns

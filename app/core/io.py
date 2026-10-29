@@ -472,6 +472,7 @@ def lire_besoins_geav(data: bytes):
     c_desc = trouver_colonne(df, "description")
     c_task = trouver_colonne(df, "task trfx", exact=True) or trouver_colonne(
         df, "task trfx", "task name", "task wp line", "trfx")
+    c_rrs = trouver_colonne(df, "requestid", "request id", exact=True) or trouver_colonne(df, "requestid", "request id")
     if c_pn is None:
         raise ColonneIntrouvable("MPN Prime", FICHIER_BESOINS, feuille, df.columns)
     if c_qty is None:
@@ -482,6 +483,7 @@ def lire_besoins_geav(data: bytes):
         "Qty": nombre(df[c_qty], 0),
         "Description": df[c_desc] if c_desc else np.nan,
         "TRFX": texte(df[c_task]) if c_task else np.nan,
+        "RRS": _code(df[c_rrs]) if c_rrs else np.nan,  # Requestid de LOGOPS
     })
     return out[out["PN"].notna()], feuille
 
@@ -507,6 +509,7 @@ def lire_besoins_asreq(data: bytes):
         "PN": cle_pn(df[c_pn]),
         "Qty": nombre(df[c_qty], 0),
         "TRFX": texte(df[c_barecode]) if c_barecode else np.nan,
+        "RRS": np.nan,
     })
     return out[out["PN"].notna()], "Ordered"
 
@@ -521,6 +524,7 @@ STOCK_COMPLEMENTS = {
     "TDD 6M": "tdd_6m", "TDD 12M": "tdd_12m", "QTE COUVERTURE": "qte_couverture", "QTE SAR": "qte_sar",
     "Stock réservé": "stock_reserve", "B/O": "b/o", "Dernier PU (achat) Euros": "dernier_pu_(achat)_euros",
     "RP": "rp", "EOQ": "eoq", "LT observé moyen sur 2 ans": "lt_observe_moyen_sur_2_ans",
+    "Purchase Req.": "purchase_req.",  # quantité en demande d'achat (PR)
 }
 
 

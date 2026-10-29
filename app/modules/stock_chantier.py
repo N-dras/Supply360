@@ -29,20 +29,23 @@ ETUDE_ASREQ = "ASREQ/NOREQ"
 
 COLONNES_ATTENDUES = {
     ETUDE_CLASSIQUE: [("MPN Prime", "référence pièce", True), ("Qty", "quantité requise", True),
-                      ("Task TRFX / Task Name", "code TRFX", False), ("Description", "", False)],
+                      ("Task TRFX / Task Name", "code TRFX", False), ("Requestid", "affiché « RRS »", False),
+                      ("Description", "", False)],
     ETUDE_ASREQ: [("PN + infos pièce sortie", "feuille « Ordered »", True), ("Qty", "", True), ("ID BARECODE", "code TRFX", False)],
     "stock": [("PNR", "", True), ("QTE SUR ÉTAGÈRE", "", True), ("QTE EN CDE", "", False), ("GESTION", "", False),
-              ("CODE AGT APPRO", "contact par défaut", False), ("CODE / DERNIER FOURNISSEUR", "", False), ("CCN, CLASS CODE", "", False)],
-    "commandes": [("PN", "", True), ("Commande", "", False), ("Code acheteur", "", False), ("Gestion", "fait foi", False),
+              ("CODE AGT APPRO", "affiché « Code agent », contact des actions", False), ("QTE SAR, Purchase Req.", "affichés « SAR », « PR »", False),
+              ("CODE / DERNIER FOURNISSEUR", "", False), ("CCN, CLASS CODE, TRACKING LEVEL", "", False)],
+    "commandes": [("PN", "", True), ("Commande", "", False), ("Gestion", "fait foi", False),
                   ("Fournisseur, Code fournisseur", "le nom manquant est retrouvé par le code", False),
                   ("Date de livraison promise / demandée", "", False), ("Class code, CCN", "", False)],
 }
 
+# Ordre demandé par l'auteur ; TRFX et Class code (non cités) gardés en fin de tableau.
 COLONNES_TABLEAU = {
-    "PN": "PN", "TL": "TL", "STATUT": "Statut", "Qty_a_commander": "À commander", "QTY_GEAV": "Besoin", "QTY_STOCK": "Stock",
-    "QTY_CDE": "En cmd", "PSD": "PSD", "FOURNISSEUR": "Fournisseur", "CODE_ACHETEUR": "Acheteur", "ACTION": "Action",
-    "Commande": "N° commande", "CODE_FOURNISSEUR": "Code fournisseur", "TRFX": "TRFX", "CCN": "CCN", "GESTION": "Gestion",
-    "CLASS_CODE": "Class code", "GEAV_DATE": "Date chantier",
+    "STATUT": "Statut", "PN": "PN", "CCN": "CCN", "RRS": "RRS", "Qty_a_commander": "À commander", "QTY_GEAV": "Besoin",
+    "QTY_STOCK": "Stock", "QTY_CDE": "En cmd", "QTE_SAR": "SAR", "QTE_PR": "PR", "Commande": "N° commande", "PSD": "PSD",
+    "FOURNISSEUR": "Fournisseur", "CODE_FOURNISSEUR": "Code fournisseur", "ACTION": "Action", "CODE_AGENT": "Code agent",
+    "GESTION": "Gestion", "TL": "TL", "GEAV_DATE": "Date chantier", "TRFX": "TRFX", "CLASS_CODE": "Class code",
 }
 COLUMN_CONFIG = {
     "PSD": st.column_config.DateColumn("PSD", format="DD/MM/YYYY"),
@@ -53,6 +56,10 @@ COLUMN_CONFIG = {
     "Stock": st.column_config.NumberColumn("Stock", format="%d"),
     "En cmd": st.column_config.NumberColumn("En cmd", format="%d"),
     "À commander": st.column_config.NumberColumn("À commander", format="%d"),
+    "SAR": st.column_config.NumberColumn("SAR", format="%d", help="QTE SAR de l'État du stock"),
+    "PR": st.column_config.NumberColumn("PR", format="%d", help="Purchase Req. de l'État du stock (quantité en demande d'achat)"),
+    "RRS": st.column_config.TextColumn("RRS", help="Requestid du fichier LOGOPS (plusieurs RRS pour un même PN : besoins additionnés)"),
+    "Code agent": st.column_config.TextColumn("Code agent", help="CODE AGT APPRO de l'État du stock"),
     "Action": st.column_config.TextColumn("Action", width="large"),
     "TL": st.column_config.TextColumn("TL", help="Tracking level (État du stock) : 0 = consommable (TL0), 1 = réparable (TL1)",
                                       width="small"),
@@ -297,7 +304,9 @@ def _detail(m, m_scope, export, gestions):
 def _aide() -> None:
     st.markdown(f"""
 **Croisement** par PN (majuscules, sans espaces). La gestion du fichier Commandes fait foi ; la PSD retenue est
-la plus proche (à défaut, date de livraison demandée). Les besoins d'un même PN sont additionnés.
+la plus proche (à défaut, date de livraison demandée). Les besoins d'un même PN sont **additionnés**, même
+s'ils viennent de plusieurs TRFX / RRS (colonnes TRFX et RRS : « A | B »). Contact des actions : **Code agent**
+(CODE AGT APPRO de l'État du stock).
 
 - **Déficit** = max(0, besoin − stock) · **À commander** = max(0, déficit − en commande)
 

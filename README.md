@@ -73,14 +73,23 @@ périmètre (par défaut 245, 246, 247, 400, 401, 230).
 
 | Fichier | Colonnes obligatoires | Colonnes facultatives |
 |---|---|---|
-| Besoins chantier (LOGOPS) — étude Classique | `MPN Prime`, `Qty` | `Task TRFX` / `Task Name` / `Task WP Line`, `Description` |
+| Besoins chantier (LOGOPS) — étude Classique | `MPN Prime`, `Qty` | `Task TRFX` / `Task Name` / `Task WP Line`, `Requestid` (→ RRS), `Description` |
 | Étude ASREQ/NOREQ — `.xlsm`, feuille `Ordered`, en-tête en ligne 6 | `PN + infos pièce sortie`, `Qty` | `ID BARECODE` |
-| État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `GESTION`, `CODE AGT APPRO`, `CODE FOURNISSEUR`, `DERNIER FOURNISSEUR`, `CCN`, `CLASS CODE` |
-| Commandes (SAP) — feuille « Toutes les commandes » de préférence | `PN` | `Commande`, `Code acheteur`, `Gestion`, `Code fournisseur`, `Fournisseur`, `Date de livraison promise`, `Date de livraison demandée`, `Class code`, `CCN` |
+| État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `QTE SAR` (→ SAR), `Purchase Req.` (→ PR), `GESTION`, `CODE AGT APPRO` (→ Code agent), `CODE FOURNISSEUR`, `DERNIER FOURNISSEUR`, `CCN`, `CLASS CODE`, `TRACKING LEVEL` |
+| Commandes (SAP) — feuille « Toutes les commandes » de préférence | `PN` | `Commande`, `Gestion`, `Code fournisseur`, `Fournisseur`, `Date de livraison promise`, `Date de livraison demandée`, `Class code`, `CCN` |
 
 **Résultat** : synthèse, actions à lancer (classe 8/9 en tête), répartition des actions, tableau
-filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx`. Colonne **TL** (tracking
-level, colonne `TRACKING LEVEL` de l'État du stock) : 0 = consommable, 1 = réparable.
+filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx`.
+
+Colonnes des tableaux (et de l'export), dans cet ordre : Statut, PN, CCN, **RRS**, À commander, Besoin, Stock,
+En cmd, **SAR**, **PR**, N° commande, PSD, Fournisseur, Code fournisseur, Action, **Code agent**, Gestion, TL,
+Date chantier (puis TRFX et Class code).
+
+- **Besoin** = somme de toutes les lignes LOGOPS du PN : un même PN demandé par plusieurs TRFX / RRS forme un
+  seul besoin, additionné (TRFX et RRS listés « A | B ») ; **À commander** = max(0, besoin − stock − en commande).
+- **Code agent** = `CODE AGT APPRO` de l'État du stock : c'est le contact indiqué dans les actions (le code
+  acheteur des commandes n'est plus utilisé).
+- **TL** (tracking level, `TRACKING LEVEL`) : 0 = consommable, 1 = réparable.
 
 ### 🧵 Textile cabine
 

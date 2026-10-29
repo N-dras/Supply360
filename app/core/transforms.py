@@ -56,7 +56,7 @@ def joindre_par_groupe(df: pd.DataFrame, cle: str, col: str, sep: str = SEP) -> 
     Sans `groupby().agg` (une fonction Python par groupe, lent sous Pyodide) : tri stable par clé
     puis une seule boucle sur des listes.
     """
-    s = df[col].map(str, na_action="ignore").str.strip()
+    s = df[col].astype(object).map(str, na_action="ignore").astype(object).str.strip()  # colonne vide (tout NaN) acceptée
     garde = s.notna() & (s != "") & (s.str.lower() != "nan")
     tmp = pd.DataFrame({cle: df[cle], col: s})[garde].drop_duplicates()
     if tmp.empty:
@@ -112,12 +112,14 @@ def _premier_prioritaire(df: pd.DataFrame, cle: str, col: str, prioritaires) -> 
 # Agrégation par PN
 # --------------------------------------------------------------------------
 def agreger_besoins(lignes: pd.DataFrame) -> pd.DataFrame:
-    """Une ligne par PN : quantités sommées (doublons du fichier besoins additionnés)."""
+    """Une ligne par PN : quantités SOMMÉES sur toutes les lignes du fichier besoins (un même PN demandé par
+    plusieurs TRFX / RRS = un seul besoin, total) ; TRFX et RRS listés (« A | B »)."""
     g = lignes.groupby("PN")
     out = pd.DataFrame({"QTY_GEAV": g["Qty"].sum(), "Nb_lignes": g["Qty"].size()})
     if "Description" in lignes.columns:
         out["Description"] = joindre_par_groupe(lignes, "PN", "Description").reindex(out.index)
-    out["TRFX"] = g["TRFX"].first()
+    for col in ("TRFX", "RRS"):
+        out[col] = joindre_par_groupe(lignes, "PN", col).reindex(out.index) if col in lignes.columns else np.nan
     out["QTY_GEAV"] = out["QTY_GEAV"].astype(int)
     return out.reset_index()
 
@@ -136,6 +138,9 @@ def agreger_stock(lignes: pd.DataFrame) -> pd.DataFrame:
         "Description_stock": g["Description_stock"].first(),
         "CCN": g["CCN"].first(),
         "TL": g["TL"].first() if "TL" in lignes else np.nan,
+        # QTE SAR et Purchase Req. (quantité en demande d'achat) : comme le stock, maximum en cas de doublon
+        "QTE_SAR": g["QTE SAR"].max() if "QTE SAR" in lignes else np.nan,
+        "QTE_PR": g["Purchase Req."].max() if "Purchase Req." in lignes else np.nan,
     })
     out["CLASS_CODE_STOCK"] = _premier_prioritaire(lignes, "PN", "CLASS_CODE_STOCK", CLASSES_RISQUE)
     return out.reset_index()
@@ -182,8 +187,9 @@ def croiser_geav(besoin: pd.DataFrame, stock: pd.DataFrame, commandes: pd.DataFr
     date_chantier = pd.Timestamp(date_chantier)
     m = besoin.copy()
     m["GEAV_DATE"] = date_chantier
-    if "TRFX" not in m.columns:
-        m["TRFX"] = np.nan
+    for col in ("TRFX", "RRS"):
+        if col not in m.columns:
+            m[col] = np.nan
 
     m = m.merge(stock, on="PN", how="left")
     # Gestion : celle du fichier Commandes fait foi, repli sur l'État du stock.
@@ -201,8 +207,7 @@ def croiser_geav(besoin: pd.DataFrame, stock: pd.DataFrame, commandes: pd.DataFr
 
     m["FOURNISSEUR"] = m["Fournisseur"].where(_non_vide(m["Fournisseur"]), m["DERNIER_FOURNISSEUR"])
     m["CODE_FOURNISSEUR"] = m["CODE_FOURNISSEUR"].where(m["CODE_FOURNISSEUR"].notna(), m["Code_fournisseur_cmd"])
-    # Le code acheteur du fichier Commandes fait foi ; repli sur CODE AGT APPRO.
-    m["CODE_ACHETEUR"] = m["Code_acheteur"].where(m["Code_acheteur"].notna(), m["CODE_AGENT"])
+    # Contact : CODE AGT APPRO de l'État du stock (« Code agent ») ; le code acheteur des commandes n'est plus utilisé.
     m["CCN"] = m["CCN"].where(m["CCN"].notna(), m["CCN_cmd"])
     # Classe 8/9 : alerte si présente dans les commandes ou dans l'État du stock.
     m["CLASS_CODE"] = m["Class_code"].where(m["Class_code"].isin(CLASSES_RISQUE), m["CLASS_CODE_STOCK"])
@@ -219,7 +224,7 @@ def croiser_geav(besoin: pd.DataFrame, stock: pd.DataFrame, commandes: pd.DataFr
 
 def _actions(m: pd.DataFrame):
     """(codes, messages) de l'action recommandée, ligne à ligne mais vectorisé."""
-    agent = m["CODE_ACHETEUR"].where(m["CODE_ACHETEUR"].notna(), "?").astype(str)
+    agent = m["CODE_AGENT"].where(_non_vide(m["CODE_AGENT"]), "?").astype(str)
     fourn = (m["FOURNISSEUR"].where(_non_vide(m["FOURNISSEUR"]),
                                     m["CODE_FOURNISSEUR"].where(_non_vide(m["CODE_FOURNISSEUR"]),
                                                                 FOURNISSEUR_ABSENT))

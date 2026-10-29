@@ -51,26 +51,26 @@ def besoins():
     _feuille(wb, "Lisez-moi", ["Info"], [["Export fictif pour les tests"]])
     _feuille(
         wb, "Workpages_PartRequirements",
-        ["Task TRFX", "Task Name", "MPN Prime", "Description", "Qty"],
+        ["Task TRFX", "Task Name", "MPN Prime", "Description", "Qty", "Requestid"],
         [
-            ["TRFX-01", "Dépose sièges", "FX-1001", "Coussin assise", 4],
-            ["TRFX-02", "Housses", "FX-1002", "Housse dossier", 2],
-            ["TRFX-02", "Housses", "FX-1002", "Housse dossier", 3],
-            ["TRFX-03", "Tablettes", "FX-1003", "Tablette", 6],
-            ["TRFX-04", "Rideaux", "FX-1004", "Rideau galley", 3],
-            ["TRFX-05", "Moquette", "FX-1005", "Moquette allée", 3],
-            ["TRFX-06", "Accoudoirs", "FX-1006", "Accoudoir", 2],
-            ["TRFX-07", "Liseuses", "FX-1007", "Liseuse LED", 2],
-            ["TRFX-08", "Ceintures", "FX-1008", "Boucle ceinture", 2],
-            ["TRFX-09", "Divers", "FX-1009", "Pièce hors périmètre", 1],
-            ["TRFX-10", "Divers", "FX-1010", "Pièce non référencée", 1],
-            ["TRFX-11", "Divers", "FX-1011", "Pièce inconnue", 1],
-            ["TRFX-12", "Sécurité", "FX-1012", "Pièce classe 9", 2],
-            ["TRFX-13", "Divers", "  fx-1013 ", "Saisie en minuscules", 1],
-            ["TRFX-14", "Divers", 123456, "PN numérique", 1],
-            ["TRFX-15", "Divers", "FX-1014", "Gestion corrigée", 2],
-            ["TRFX-16", "Divers", "FX-1015", "Deux commandes", 2],
-            ["TRFX-17", "Divers", None, "Ligne sans PN (ignorée)", 9],
+            ["TRFX-01", "Dépose sièges", "FX-1001", "Coussin assise", 4, "RRS-0001"],
+            ["TRFX-02", "Housses", "FX-1002", "Housse dossier", 2, "RRS-0002"],
+            ["TRFX-18", "Housses arrière", "FX-1002", "Housse dossier", 3, "RRS-0003"],
+            ["TRFX-03", "Tablettes", "FX-1003", "Tablette", 6, "RRS-0004"],
+            ["TRFX-04", "Rideaux", "FX-1004", "Rideau galley", 3, "RRS-0005"],
+            ["TRFX-05", "Moquette", "FX-1005", "Moquette allée", 3, "RRS-0006"],
+            ["TRFX-06", "Accoudoirs", "FX-1006", "Accoudoir", 2, "RRS-0007"],
+            ["TRFX-07", "Liseuses", "FX-1007", "Liseuse LED", 2, "RRS-0008"],
+            ["TRFX-08", "Ceintures", "FX-1008", "Boucle ceinture", 2, "RRS-0009"],
+            ["TRFX-09", "Divers", "FX-1009", "Pièce hors périmètre", 1, "RRS-0010"],
+            ["TRFX-10", "Divers", "FX-1010", "Pièce non référencée", 1, "RRS-0011"],
+            ["TRFX-11", "Divers", "FX-1011", "Pièce inconnue", 1, "RRS-0012"],
+            ["TRFX-12", "Sécurité", "FX-1012", "Pièce classe 9", 2, "RRS-0013"],
+            ["TRFX-13", "Divers", "  fx-1013 ", "Saisie en minuscules", 1, "RRS-0014"],
+            ["TRFX-14", "Divers", 123456, "PN numérique", 1, "RRS-0015"],
+            ["TRFX-15", "Divers", "FX-1014", "Gestion corrigée", 2, "RRS-0016"],
+            ["TRFX-16", "Divers", "FX-1015", "Deux commandes", 2, "RRS-0017"],
+            ["TRFX-17", "Divers", None, "Ligne sans PN (ignorée)", 9, "RRS-0018"],
         ],
         prefixe=[["Besoins chantier — fichier fictif"], []],
     )
@@ -164,7 +164,8 @@ def stock():
     entete = ["PNR", "DESCRIPTION", "QTE SUR\nÉTAGÈRE", "QTE EN CDE", "GESTION", "CODE AGT APPRO",
               "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CCN", "CLASS CODE",
               "QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M", "QTE CONSO 2021", "QTE CONSO 2022", "QTE CONSO 2023",
-              "QTE CONSO 2024", "QTE CONSO 2025", "Dernier PU (achat) Euros", "B/O", "DATE DERNIERE CONSO", "TRACKING LEVEL"]
+              "QTE CONSO 2024", "QTE CONSO 2025", "Dernier PU (achat) Euros", "B/O", "DATE DERNIERE CONSO", "TRACKING LEVEL",
+              "QTE SAR", "Purchase Req."]
     lignes = [
             ["FX-1001", "Coussin assise", 10, 0, 245, "AG01", "F001", "Fournisseur Alpha", 11, 1],
             ["FX-1002", "Housse dossier", 1, 0, 245, "AG01", "F002", "Fournisseur Bravo", 12, 1],
@@ -187,6 +188,7 @@ def stock():
     for ligne in lignes:  # consommation et valorisation (fictives), pour l'onglet Textile
         ligne += CONSO.get(ligne[0], [4, 6, 9, 10, 8, 7, 6, 5, 25.0, 0, datetime(2026, 9, 1)])
         ligne.append("TL1" if str(ligne[0]).endswith(("1", "3", "5")) else "TL0")  # tracking level (fictif)
+        ligne += [1 if ligne[0] == "FX-1003" else 0, 2 if ligne[0] == "FX-1002" else 0]  # QTE SAR, Purchase Req. (fictifs)
     _feuille(wb, "Export", entete, lignes)
     wb.save(ICI / "etat_stock.xlsx")
 

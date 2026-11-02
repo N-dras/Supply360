@@ -82,7 +82,13 @@ def sante() -> str:
     client fermé ou tâche d'envoi arrêtée (les réponses n'arrivent plus à la page), messages reçus (s'il ne bouge
     plus alors que la page envoie, la lecture des clics est arrêtée).
     """
-    etat = {"recus": _RECUS[0] if _GARDES[0] else -1, "sessions": -1, "ferme": False}
+    etat = {"recus": _RECUS[0] if _GARDES[0] else -1, "sessions": -1, "ferme": False, "en_cours": False}
+    try:  # mémoire du moteur (Pyodide ne la rend jamais au navigateur) : pour le journal des relances
+        import pyodide_js
+
+        etat["memoire"] = round(pyodide_js._module.HEAP8.length / 1e6)
+    except Exception:
+        pass
     try:
         import streamlit.runtime as rt
 
@@ -94,6 +100,8 @@ def sante() -> str:
             ferme, envoi = getattr(client, "_closed", None), getattr(client, "_sender_task", None)
             if (ferme is not None and ferme.is_set()) or (envoi is not None and envoi.done()):
                 etat["ferme"] = True
+            if getattr(getattr(info.session, "_state", None), "name", "") == "APP_IS_RUNNING":  # calcul en cours : rien à conclure
+                etat["en_cours"] = True
     except Exception as exc:  # version de Streamlit différente : la page se fie au seul compteur
         etat["inconnu"] = f"{type(exc).__name__}: {exc}"
     return json.dumps(etat)

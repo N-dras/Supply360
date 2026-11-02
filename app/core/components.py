@@ -63,7 +63,7 @@ def header() -> None:
         '<div class="s360-header"><div class="s360-logo" role="img" '
         'aria-label="Air France Industries KLM Engineering &amp; Maintenance"></div><span class="s360-sep"></span>'
         '<div class="s360-brand">Supply<span>360</span></div>'
-        f'<div class="s360-today"><span class="s360-moteur"><i></i>Prêt</span>{ic("calendar")}{JOURS[j.weekday()]} {j:%d/%m/%Y}</div></div>'
+        f'<div class="s360-today"><span class="s360-moteur" title="Journal du moteur : relances et leur cause"><i></i>Prêt</span>{ic("calendar")}{JOURS[j.weekday()]} {j:%d/%m/%Y}</div></div>'
         '<div class="s360-busy">Calcul en cours…</div>'
     )
 

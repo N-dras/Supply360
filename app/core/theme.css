@@ -85,6 +85,15 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
   color: var(--muted); font-size: .875rem; font-weight: 600; white-space: nowrap;
 }
 .s360-moteur { display: inline-flex; align-items: center; gap: .4rem; margin-right: .8rem; color: var(--muted); font-weight: 600; }
+.s360-moteur { cursor: pointer; border-radius: 6px; padding: .1rem .35rem; }
+.s360-moteur:hover { background: var(--hover); color: var(--navy); }
+#s360-fenetre .boite.journal { width: min(52rem, 100%); }
+#s360-fenetre .journal pre { max-height: 55vh; overflow: auto; margin: 0; padding: .7rem .8rem; border-radius: 8px; background: #F5F7FA;
+  font-size: .8rem; white-space: pre-wrap; word-break: break-word; }
+#s360-fenetre .journal .actions { display: flex; gap: .5rem; }
+#s360-fenetre .journal .actions button { font: inherit; font-weight: 700; padding: .45rem .9rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: #fff; color: var(--navy); }
+#s360-fenetre .journal .actions .copier { background: var(--navy); color: #fff; border-color: var(--navy); }
 .s360-moteur i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px #E6F4EC; }
 .stApp[data-test-script-state="running"] .s360-moteur i, body.s360-attente .s360-moteur i { background: var(--bleu); box-shadow: 0 0 0 3px #E9F1FA;
   animation: s360-pulse 1s ease-in-out infinite; }

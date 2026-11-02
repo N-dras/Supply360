@@ -416,7 +416,7 @@ def _stock(s, o, today, cat):
                                        for st_ in tx.STOCK_STATUTS], titre="Valeur du stock par niveau de couverture"),
                       "Où est l'argent : stock utile, surstock (> 24 mois) et stock sans consommation")
         with b:
-            st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, key=K + "seuil_stock",
+            st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, format="%.1f", key=K + "seuil_stock",
                             persist_state="page", help="En dessous de ce nombre de mois de consommation, le PN est « Critique ». "
                             "Bas : moins de 3 mois ; Surstock : plus de 24 mois.")
             ui.callout("<b>Rupture</b> : consommé sur 12 mois, stock à 0 · <b>Critique</b> : sous le seuil · <b>Bas</b> : moins de 3 mois · "

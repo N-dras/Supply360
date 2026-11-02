@@ -243,6 +243,21 @@ TEMPLATE = """<!doctype html>
 #s360-loading.relance .avancement { display: block; }
 #s360-loading.relance .barre, #s360-loading.relance .lent, #s360-loading.relance .erreur { display: none; }
 #s360-loading.relance .texte { max-width: 26rem; text-align: center; color: var(--text); }
+/* Relance en arrière-plan : application vivante masquée, instantané de la page affiché par-dessus, bandeau en haut */
+#root.s360-cache { visibility: hidden !important; }
+#s360-ancien { position: fixed; inset: 0; z-index: 999970; overflow: hidden; }
+#s360-ancien .s360-busy { display: none !important; }
+#s360-relance { position: fixed; z-index: 1000001; left: 50%; top: 4.6rem; transform: translate(-50%, -12px); opacity: 0;
+  width: min(40rem, calc(100vw - 2rem)); padding: .75rem 1rem .85rem; border-radius: 12px; background: #fff; color: var(--text);
+  font-family: var(--font); box-shadow: 0 12px 32px rgba(0, 33, 87, .18); border: 1px solid #E3E8EF; border-left: 4px solid var(--bleu, #2B6CB0);
+  transition: opacity .25s, transform .25s; pointer-events: none; }
+#s360-relance.visible { opacity: 1; transform: translate(-50%, 0); }
+#s360-relance .l { display: flex; flex-wrap: wrap; gap: .2rem .6rem; align-items: baseline; font-size: .95rem; }
+#s360-relance .l b { color: var(--navy); }
+#s360-relance .l span { color: var(--muted); font-size: .88rem; }
+#s360-relance .piste { margin-top: .55rem; height: 5px; border-radius: 99px; background: #E3E9F1; overflow: hidden; }
+#s360-relance .piste i { display: block; height: 100%; width: 3%; border-radius: 99px; background: linear-gradient(90deg, var(--navy), var(--navy-2));
+  transition: width .4s ease; }
 #s360-loading button {
   font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 8px; padding: .5rem 1.1rem; cursor: pointer;
   background: var(--navy);
@@ -275,10 +290,26 @@ TEMPLATE = """<!doctype html>
 window.s360Version = "__VERSION__";  // date de génération du fichier : vérifier qu'on a bien la dernière version
 window.s360Moteur = (function () {
   const journal = ["Supply360, version du " + window.s360Version];
-  const noter = (m) => {
-    journal.push(new Date().toLocaleTimeString("fr-FR") + "  " + String(m).replace(/\\s+/g, " ").slice(0, 600));
-    if (journal.length > 30) journal.shift();
+  // Journal PERSISTANT (localStorage du navigateur, rien n'est envoyé) : relances, diagnostics et erreurs restent
+  // consultables après une relance ou un rechargement de la page (clic sur « Prêt » dans le header).
+  const CLE = "s360-journal";
+  const lirePersistant = () => { try { return JSON.parse(localStorage.getItem(CLE) || "[]"); } catch (_) { return []; } };
+  const persister = (texte) => {
+    try {
+      const l = lirePersistant();
+      l.push(new Date().toLocaleString("fr-FR") + "  " + texte);
+      localStorage.setItem(CLE, JSON.stringify(l.slice(-150)));
+    } catch (_) { /* stockage indisponible : journal en mémoire seulement */ }
   };
+  const noter = (m, important = false) => {
+    const texte = String(m).replace(/\\s+/g, " ").slice(0, 600);
+    journal.push(new Date().toLocaleTimeString("fr-FR") + "  " + texte);
+    if (journal.length > 30) journal.shift();
+    if (important) persister(texte);
+  };
+  // Page (re)chargée : un onglet « déchargé » par le navigateur (mise en veille d'Edge / Chrome) repart de zéro
+  persister("Page chargée (version du " + window.s360Version + ")" + (document.wasDiscarded
+    ? " — l'onglet avait été déchargé par le navigateur (mise en veille des onglets) : tout est rechargé" : ""));
   window.addEventListener("error", (e) => noter("Erreur : " + (e.message || e.error)));
   window.addEventListener("unhandledrejection", (e) => noter("Erreur : " + ((e.reason && e.reason.message) || e.reason)));
   const consoleErreur = console.error;
@@ -311,11 +342,11 @@ window.s360Moteur = (function () {
       const d = e.data;
       if (d && d.type === "websocket:message") etat.recu = Date.now();
       if (d && d.type === "s360:journal") {  // erreur Python transmise par core/journal.py
-        noter("Python " + d.texte);
+        noter("Python " + d.texte, /Error|Exception|Traceback|fermée|bug/.test(d.texte));
         if (d.evenement === "session_fermee" || /report this bug|RuntimeStoppedError/.test(d.texte)) etat.alerte = Date.now();
       }
     });
-    w.addEventListener("error", (e) => { if (w === etat.worker) { noter("Erreur du moteur : " + (e.message || "?")); etat.alerte = Date.now(); } });
+    w.addEventListener("error", (e) => { if (w === etat.worker) { noter("Erreur du moteur : " + (e.message || "?"), true); etat.alerte = Date.now(); } });
     const envoyer = w.postMessage.bind(w);
     w.postMessage = function (m, t) {
       if (m && m.type === "websocket:send") {
@@ -355,7 +386,8 @@ window.s360Moteur = (function () {
     };
     etat.brut({ type: "run_python", data: { code: 'import sys; getattr(sys, "_s360_sante", lambda: "{}")()' } }, [canal.port2]);
   });
-  return { etat, journal, noter, sonder, diagnostic, ecouteurs: new Set() };
+  return { etat, journal, noter, lirePersistant, effacer: () => { try { localStorage.removeItem(CLE); } catch (_) {} },
+           sonder, diagnostic, ecouteurs: new Set() };
 })();
 </script>
 <script>
@@ -422,7 +454,7 @@ window.fetch = function (ressource, options) {
     const relancerAuto = (raison) => {
       if (Date.now() - derniereRelance < 120000) return false;
       derniereRelance = Date.now();
-      M.noter("Relance automatique : " + raison);
+      M.noter("Relance automatique : " + raison, true);
       window.s360Relancer(raison);
       return true;
     };
@@ -441,7 +473,9 @@ window.fetch = function (ressource, options) {
           await pause(2500);
           const b = await M.diagnostic();
           if (perime() || b.etat !== "répond") return;  // un calcul a démarré entre-temps : rien à conclure
-          if (b.recus <= a.recus) panne = "le moteur ne lit plus les clics";
+          // Calcul en cours (côté Python ou page) : les clics attendent leur tour, ce n'est pas une panne
+          const calcul = a.en_cours || b.en_cours || !!document.querySelector(".stApp[data-test-script-state='running']");
+          if (b.recus <= a.recus && !calcul) panne = "le moteur ne lit plus les clics";
           else if (attenteAvant && attente && Date.now() - attenteAvant > 15000) {
             // Python libre, session saine, tous les messages lus : plus rien n'est attendu
             M.etat.recu = Date.now();
@@ -450,9 +484,9 @@ window.fetch = function (ressource, options) {
         }
         if (!panne) { pannes = 0; return; }
         pannes++;
-        M.noter("Diagnostic : " + panne + (pannes < 2 ? " (à confirmer)" : " (confirmé)"));
+        M.noter("Diagnostic : " + panne + (pannes < 2 ? " (à confirmer)" : " (confirmé)") + (a.memoire ? ` · mémoire ${a.memoire} Mo` : ""), true);
         if (pannes >= 2) { pannes = 0; M.etat.mort = panne; }
-        else prochainDiag = Date.now() + 1500;  // confirmation rapide
+        else prochainDiag = Date.now() + 6000;  // confirmation 6 s plus tard (une gêne passagère ne relance rien)
       } catch (err) {
         M.noter("Diagnostic impossible : " + err);
       } finally {
@@ -750,7 +784,8 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
   }, true);
   const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const M = () => window.s360Moteur;
-  const occupe = () => !document.querySelector(".s360-header") || !!document.querySelector(".stApp[data-test-script-state='running']")
+  const R = () => document.getElementById("root");  // application vivante (l'instantané affiché est à part)
+  const occupe = () => !R().querySelector(".s360-header") || !!R().querySelector(".stApp[data-test-script-state='running']")
     || M().etat.envoi > M().etat.recu;
   const libre = async (max = 180000) => {  // attend la fin du calcul Streamlit (et des réponses du moteur)
     const debut = Date.now();
@@ -783,10 +818,49 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
     }, 150);
   });
   const ouvrirOnglet = async (id) => {
-    const b = [...document.querySelectorAll(".st-key-s360_nav button")].find((x) => x.textContent.includes(ONGLETS[id]));
+    const b = [...R().querySelectorAll(".st-key-s360_nav button")].find((x) => x.textContent.includes(ONGLETS[id]));
     if (b && !b.matches('[aria-checked="true"], [data-selected="true"]')) { b.click(); await libre(); }
   };
-  // Écran de relance : celui du chargement (logo, Supply360, avion) avec une barre d'avancement.
+  const ouvrirSous = async (libelle) => {  // sous-onglet d'origine (Stock, Prévision…)
+    const b = [...R().querySelectorAll('[class*="st-key-s360sub_"] button')].find((x) => x.textContent.trim() === libelle);
+    if (b && b.getAttribute("aria-checked") !== "true") { b.click(); await libre(); }
+  };
+  // Instantané : copie figée de la page, affichée pendant que le moteur redémarre EN ARRIÈRE-PLAN (application
+  // vivante masquée). On peut faire défiler et lire ; les clics sont ignorés. Tableaux (canvas) recopiés.
+  const instantane = () => {
+    const racine = R();
+    if (!racine || !racine.querySelector(".s360-header")) return null;
+    const copie = racine.cloneNode(true);
+    copie.id = "s360-ancien";
+    copie.querySelectorAll("[id]").forEach((e) => e.removeAttribute("id"));
+    const src = racine.querySelectorAll("canvas"), dst = copie.querySelectorAll("canvas");
+    src.forEach((c, i) => { try { dst[i].getContext("2d").drawImage(c, 0, 0); } catch (_) { /* canvas vide */ } });
+    racine.after(copie);
+    const tous = racine.querySelectorAll("*"), copies = copie.querySelectorAll("*");
+    tous.forEach((e, i) => { if (e.scrollTop && copies[i]) copies[i].scrollTop = e.scrollTop; });
+    ["click", "mousedown", "pointerdown", "keydown", "input", "change", "submit"].forEach((t) =>
+      copie.addEventListener(t, (e) => { e.preventDefault(); e.stopPropagation(); }, true));
+    return copie;
+  };
+  // Bandeau de relance (en haut de la page, au-dessus de l'instantané) ; à défaut d'instantané, l'écran de chargement.
+  const bandeau = (() => {
+    let el = null;
+    return {
+      montrer(titre, etape, pct) {
+        if (!el) {
+          el = document.createElement("div");
+          el.id = "s360-relance";
+          el.innerHTML = "<div class='l'><b></b><span></span></div><div class='piste'><i></i></div>";
+          document.body.append(el);
+        }
+        el.classList.add("visible");
+        el.querySelector("b").textContent = titre;
+        el.querySelector("span").textContent = etape;
+        el.querySelector("i").style.width = Math.max(3, Math.min(100, pct)) + "%";
+      },
+      cacher(delai = 0) { setTimeout(() => el && el.classList.remove("visible"), delai); },
+    };
+  })();
   const ecran = (() => {
     const el = document.getElementById("s360-loading");
     let barre = el.querySelector(".avancement");
@@ -811,13 +885,20 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
     const Mo = M(), retour = ongletActif();
     if (window.s360EnRelance) return;
     window.s360EnRelance = true;
-    const titre = raison ? "Le moteur de calcul ne répondait plus : relance automatique, vos fichiers sont conservés."
-      : "Relance du moteur de calcul, vos fichiers sont conservés.";
+    const sous = [...R().querySelectorAll('[class*="st-key-s360sub_"] button[aria-checked="true"]')].map((b) => b.textContent.trim());
+    const copie = instantane();
+    const vue = copie ? bandeau : ecran;  // arrière-plan si la page peut être figée, sinon écran de chargement
+    const titre = copie ? "Remise en route du moteur en arrière-plan" + (raison ? " (" + raison + ")" : "") + " · la page reste consultable"
+      : (raison ? "Le moteur de calcul ne répondait plus : relance automatique, vos fichiers sont conservés."
+        : "Relance du moteur de calcul, vos fichiers sont conservés.");
+    Mo.noter((raison ? "Relance automatique" : "Relance manuelle") + (copie ? " en arrière-plan" : "") + (raison ? " : " + raison : ""), true);
     let pct = 2;
-    const montee = setInterval(() => { pct += (55 - pct) * 0.06; ecran.montrer(titre, "Redémarrage du moteur Python…", pct); }, 400);
+    const montee = setInterval(() => { pct += (55 - pct) * 0.06; vue.montrer(titre, "Redémarrage du moteur Python…", pct); }, 400);
     const echecs = [];
+    const debut = Date.now();
     try {
-      ecran.montrer(titre, "Redémarrage du moteur Python…", pct);
+      vue.montrer(titre, "Redémarrage du moteur Python…", pct);
+      if (copie) R().classList.add("s360-cache");
       try { window.s360App && window.s360App.unmount(); } catch (_) { /* moteur déjà arrêté */ }
       Mo.etat.mort = ""; Mo.etat.envoi = 0; Mo.etat.recu = Date.now();
       await window.s360Monter();
@@ -830,7 +911,7 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
         await ouvrirOnglet(id);
         for (const imp of imports.filter((x) => x.onglet === id)) {
           n++;
-          ecran.montrer(titre, `Réimport de vos fichiers (${n} / ${imports.length}) : ${ONGLETS[id] || ""}…`, 55 + 45 * (n - 1) / imports.length);
+          vue.montrer(titre, `Réimport de vos fichiers (${n} / ${imports.length}) : ${ONGLETS[id] || ""}…`, 55 + 45 * (n - 1) / imports.length);
           // fichiers relus sur le disque quand ils viennent d'un dossier mémorisé (version à jour, lisible)
           const fichiers = [];
           for (const f of imp.fichiers) {
@@ -839,26 +920,54 @@ window.s360Poignees = new WeakMap();  // fichier → poignée du dossier mémori
           }
           // zone d'origine ; à défaut (zone absente, ex. type d'étude différent) l'import du dossier de l'onglet,
           // qui reconnaît chaque fichier par son contenu
-          const input = document.querySelector(`[class*="st-key-${imp.cle}"] input[type=file]`)
-            || document.querySelector(`[class*="st-key-${id}__dossier__upload"] input[type=file]`);
+          const input = R().querySelector(`[class*="st-key-${imp.cle}"] input[type=file]`)
+            || R().querySelector(`[class*="st-key-${id}__dossier__upload"] input[type=file]`);
           if (!input || !(await deposerEtAttendre(input, fichiers))) echecs.push(imp.fichiers.map((f) => f.name).join(", "));
         }
       }
       await ouvrirOnglet(retour);
-      ecran.montrer(titre, echecs.length ? "Terminé, sauf : " + echecs.join(" ; ") : "✓ Moteur relancé, fichiers réimportés", 100);
-      if (echecs.length) Mo.noter("Réimport incomplet : " + echecs.join(" ; "));
-      await pause(echecs.length ? 4000 : 900);
-      ecran.cacher();
+      for (const libelle of sous) await ouvrirSous(libelle);
+      vue.montrer(echecs.length ? "Moteur relancé" : "✓ Moteur relancé, vos fichiers sont réimportés",
+        echecs.length ? "sauf : " + echecs.join(" ; ") : `en ${Math.round((Date.now() - debut) / 1000)} s`, 100);
+      Mo.noter(`Relance terminée en ${Math.round((Date.now() - debut) / 1000)} s` + (echecs.length ? ", réimport incomplet : " + echecs.join(" ; ") : ""), true);
+      if (copie) { copie.remove(); R().classList.remove("s360-cache"); bandeau.cacher(echecs.length ? 6000 : 2500); }
+      else { await pause(echecs.length ? 4000 : 900); ecran.cacher(); }
     } catch (err) {
-      Mo.noter("Relance impossible : " + err);
+      Mo.noter("Relance impossible : " + err, true);
       location.reload();
     } finally {
       clearInterval(montee);
       rejeu = false;
       window.s360EnRelance = false;
+      if (copie && copie.isConnected) { copie.remove(); R().classList.remove("s360-cache"); }
     }
   };
 })();
+</script>
+<script>
+// Journal du moteur : clic sur « Prêt » (header) → relances (avec leur cause), diagnostics et erreurs, conservés dans
+// le navigateur même après un rechargement. « Copier » pour le transmettre ; rien n'est envoyé automatiquement.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".s360-moteur") || e.target.closest("#s360-ancien")) return;
+  const M = window.s360Moteur;
+  const lignes = M.lirePersistant().slice().reverse();
+  const relances = lignes.filter((l) => /Relance (automatique|manuelle)/.test(l)).length;
+  document.getElementById("s360-fenetre")?.remove();
+  const f = document.createElement("div");
+  f.id = "s360-fenetre";
+  f.innerHTML = `<div class="boite journal" role="dialog" aria-modal="true"><button type="button" class="fermer" aria-label="Fermer">✕</button>
+    <h3>Journal du moteur</h3><p class="sous">${relances} relance(s) enregistrée(s) · les plus récents en haut · conservé dans ce navigateur</p>
+    <pre></pre><div class="actions"><button type="button" class="copier">Copier le journal</button>
+    <button type="button" class="effacer">Effacer</button></div></div>`;
+  f.querySelector("pre").textContent = lignes.join("\\n") || "Aucun événement enregistré.";
+  f.addEventListener("click", (ev) => {
+    if (ev.target === f || ev.target.closest(".fermer")) f.remove();
+    else if (ev.target.closest(".copier")) navigator.clipboard && navigator.clipboard.writeText(
+      "Supply360 " + window.s360Version + "\\n" + navigator.userAgent + "\\n\\n" + lignes.join("\\n") + "\\n\\nDernières minutes :\\n" + M.journal.join("\\n"));
+    else if (ev.target.closest(".effacer")) { M.effacer(); f.remove(); }
+  });
+  document.body.append(f);
+});
 </script>
 <script>
 // Filtres des tableaux HTML (components.tableau_html) : pastilles par statut au-dessus du tableau. Le filtrage se fait

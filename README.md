@@ -261,6 +261,8 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
 - Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt, avec
   sa durée au-delà de 10 s. **Un long calcul n'est jamais interrompu** : la page attend qu'il se termine (au-delà de
   3 minutes, un bandeau propose de relancer, à votre choix).
+- **Relance en arrière-plan** : pendant la remise en route, votre page reste affichée (figée, consultable) avec un bandeau d'avancement en haut ; à la fin, vous retrouvez l'onglet et le sous-onglet où vous étiez, fichiers réimportés.
+- **Journal du moteur** : cliquez sur **Prêt** (en haut à droite) pour voir les relances et leur cause, les erreurs et les rechargements de page, conservés dans le navigateur même après un rechargement. **Copier le journal** pour le transmettre à l'auteur si les relances se répètent.
 - **Relance automatique du moteur, seulement sur une panne constatée** : la page interroge le moteur (Python libre ?
   session ouverte ? clics bien reçus ? réponses bien envoyées ?) et ne le relance que si la panne est confirmée deux
   fois de suite (détection en 5 à 15 s). Un écran Supply360 (logo, barre d'avancement) suit la relance, puis **tous

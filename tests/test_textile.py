@@ -253,3 +253,25 @@ def test_top_ruptures(tables):
     top = tx.top_ruptures(tx.etat_stocks(s), n=3)
     assert list(top["PN"])[0] == "FX-1003"                      # le plus consommé d'abord
     assert len(top) == 3 and set(top["Statut"]) <= {"Rupture", "Critique"}
+
+
+def test_etat_des_stocks_classe_code_et_2001():
+    import pandas as pd
+    s = pd.DataFrame({
+        "PNR": ["A", "B", "C", "D", "E"], "REF_Equipement": ["HOUSSE"] * 5, "CCN": ["C1", "C2", "C3", "C4", "C5"], "DESCRIPTION": ["x"] * 5,
+        # A : surstock en classe 3 ; B : rupture en classe 9 ; C : classe 8 ; D : classe 1, surstock ; E : jamais consommé
+        "QTE SUR ÉTAGÈRE": [500, 0, 10, 500, 7], "QTE EN CDE": [0, 0, 0, 0, 0], "QTE CONSO 12M": [12, 24, 12, 12, 0],
+        "CLASS CODE": [3, 9, 8, 1, None], "Valeur stock (€)": [1000, 0, 50, 1000, 70],
+        "DATE DERNIERE CONSO": pd.to_datetime(["2026-05-01", "2026-06-01", "2025-01-01", "2026-01-01", "2001-01-01"]),
+    })
+    e = tx.etat_stocks(s).set_index("PN")
+    # classes 3 / 8 / 9 : jamais en surstock ni en rupture, comptées à part
+    assert (e.loc[["A", "B", "C"], "Statut"] == "Obsolète / supprimé").all()
+    assert e.loc["A", "Classe code"] == "3 · obsolète" and e.loc["B", "Classe code"] == "9 · supprimé"
+    assert e.loc["C", "Classe code"] == "8 · en cours de suppression" and e.loc["D", "Classe code"] == "1"
+    assert e.loc["D", "Statut"] == "Surstock" and e.loc["D", "CCN"] == "C4"
+    # 2001 = date fictive : jamais consommé
+    assert e.loc["E", "Dernière conso"] == "Jamais consommé" and e.loc["E", "Statut"] == "Sans conso"
+    assert pd.Timestamp(e.loc["D", "Dernière conso"]) == pd.Timestamp("2026-01-01")
+    assert "B" not in set(tx.top_ruptures(e.reset_index())["PN"])
+    assert list(tx.etat_stocks(s).columns[:6]) == ["Statut", "PN", "CCN", "Description", "Catégorie", "Classe code"]

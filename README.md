@@ -117,12 +117,15 @@ Consommation (par année, 12/18/24 mois, top PN, par PN), Prévision (commandes 
 les vues. Export `Supply360_textiles_AAAAMMJJ.xlsx` (avec les feuilles de prévision si elle est calculée).
 
 **Stock** : pour chaque PN, la **couverture** = stock sur étagère ÷ consommation mensuelle (12 derniers mois).
-Statuts : **Rupture** (consommé sur 12 mois, stock à 0), **Critique** (moins de 1 mois de stock, seuil réglable dans
-le sous-onglet), **Bas** (moins de 3 mois), **Correct** (jusqu'à 24 mois), **Surstock** (au-delà), **Sans conso**
-(aucune consommation sur 12 mois). On y trouve : les tuiles (ruptures, critiques, couverture médiane, valeur sans
-conso et en surstock), le **TOP 10 des PN consommés à stock nul ou presque** (avec stock et quantités déjà en
-commande), le niveau de stock par catégorie, la valeur du stock par niveau de couverture et le tableau de tous les PN
-(filtres par statut, recherche). Feuille « État des stocks » dans l'export.
+Statuts, par ordre de priorité : **Obsolète / supprimé** (CLASS CODE de l'État du stock = 3 obsolète, 8 en cours de
+suppression ou 9 supprimé : PN qu'on ne réapprovisionne plus, compté à part, jamais en surstock ni en rupture),
+**Sans conso** (aucune consommation sur 12 mois), **Rupture** (consommé sur 12 mois, stock à 0), **Critique** (moins
+de 1 mois de stock, seuil réglable dans le sous-onglet), **Bas** (moins de 3 mois), **Correct** (jusqu'à 24 mois),
+**Surstock** (au-delà). Une dernière conso en 2001 (date fictive) s'affiche « Jamais consommé ». On y trouve : les
+tuiles (ruptures, critiques, couverture médiane, valeur en surstock et sans conso, valeur obsolète / supprimée), le
+**TOP 10 des PN consommés à stock nul ou presque** (avec stock et quantités déjà en commande), le niveau de stock par
+catégorie, la valeur du stock par niveau de couverture et le tableau de tous les PN avec CCN et classe code (filtres
+par statut, recherche par PN, CCN ou description). Feuille « État des stocks » dans l'export.
 
 **Règles** : retard = date promise − date demandée au-delà de 10 jours de tolérance ; date promise 2001,
 2030 ou plus (ou vide) = sans date promise ; 2049 = en attente de BFE. PN **dormant** = du stock mais

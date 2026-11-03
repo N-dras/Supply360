@@ -30,7 +30,8 @@ LATE_BUFFER_DAYS = 10  # tolérance avant de déclarer une ligne en retard
 
 # Noms de colonnes de l'État du stock tels qu'affichés dans l'onglet (et dans l'export).
 STOCK_RENOMMAGE = {"PN": "PNR", "Description_stock": "DESCRIPTION", "QTY_STOCK": "QTE SUR ÉTAGÈRE", "QTY_CDE": "QTE EN CDE",
-                   "CODE_FOURNISSEUR": "CODE FOURNISSEUR", "DERNIER_FOURNISSEUR": "DERNIER FOURNISSEUR"}
+                   "CODE_FOURNISSEUR": "CODE FOURNISSEUR", "DERNIER_FOURNISSEUR": "DERNIER FOURNISSEUR",
+                   "CLASS_CODE_STOCK": "CLASS CODE"}
 
 
 # --------------------------------------------------------------------------
@@ -177,7 +178,7 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
     garder = ["PNR", "CCN", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", *WINDOW_COLUMNS, "TDD 6M", "TDD 12M",
               *[f"QTE CONSO {a}" for a in annees_conso(pbi)], "QTE COUVERTURE", "QTE SAR", "Stock réservé", "B/O",
               "Dernier PU (achat) Euros", "RP", "EOQ", "LT observé moyen sur 2 ans", "DATE DERNIERE CONSO",
-              "CODE FOURNISSEUR", "DERNIER FOURNISSEUR"]
+              "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CLASS CODE"]
     pbi = pbi[[c for c in garder if c in pbi.columns]].copy()
 
     catalogue = catalogue if catalogue is not None else pd.DataFrame(columns=["PN", "Equipement", "Description", "CCN"])
@@ -386,33 +387,47 @@ def relances(o: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 # État des stocks (sous-onglet Stock) : couverture de chaque PN en mois de consommation
 # --------------------------------------------------------------------------
-STOCK_STATUTS = ["Rupture", "Critique", "Bas", "Correct", "Surstock", "Sans conso"]
+STOCK_STATUTS = ["Rupture", "Critique", "Bas", "Correct", "Surstock", "Obsolète / supprimé", "Sans conso"]
 STOCK_STATUT_COULEURS = {"Rupture": COLORS["ko"], "Critique": COLORS["orange"], "Bas": COLORS["warn"], "Correct": COLORS["ok"],
-                         "Surstock": COLORS["bleu"], "Sans conso": COLORS["gris_clair"]}
+                         "Surstock": COLORS["bleu"], "Obsolète / supprimé": COLORS["violet"], "Sans conso": COLORS["gris_clair"]}
 BAS_MOIS = 3  # en dessous : stock « bas »
+# Classe code de l'État du stock : PN qu'on ne réapprovisionne plus (leur stock est à écouler, ni surstock ni rupture)
+CLASSES_FIN_DE_VIE = {3: "obsolète", 8: "en cours de suppression", 9: "supprimé"}
 
 
 def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float = 24) -> pd.DataFrame:
     """Une ligne par PN : stock, commandes, consommation 12 mois et couverture en mois (stock ÷ conso mensuelle).
 
-    Statut : Rupture = consommé sur 12 mois et stock à 0 ; Critique = moins de `seuil_mois` de stock ; Bas = moins de
-    3 mois ; Correct = jusqu'à `surstock_mois` ; Surstock = au-delà ; Sans conso = aucune consommation sur 12 mois.
+    Statut, dans cet ordre de priorité : Obsolète / supprimé = classe code 3, 8 ou 9 (PN qu'on ne réapprovisionne plus :
+    son stock n'est compté ni en surstock ni en rupture) ; Sans conso = aucune consommation sur 12 mois ; Rupture =
+    consommé, stock à 0 ; Critique = moins de `seuil_mois` de stock ; Bas = moins de 3 mois ; Correct = jusqu'à
+    `surstock_mois` ; Surstock = au-delà. Dernière conso en 2001 = jamais consommé (date fictive de l'État du stock).
     Trié du plus urgent au moins urgent, puis par consommation.
     """
     conso = _num(s, "QTE CONSO 12M")
     stock, cde = _num(s, "QTE SUR ÉTAGÈRE"), _num(s, "QTE EN CDE")
     mensuel = conso / 12
     couverture = (stock / mensuel).where(mensuel > 0)
-    statut = np.select([conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS, couverture <= surstock_mois],
-                       ["Sans conso", "Rupture", "Critique", "Bas", "Correct"], "Surstock")
+    classe = pd.to_numeric(s["CLASS CODE"], errors="coerce") if "CLASS CODE" in s else pd.Series(np.nan, index=s.index)
+    fin_de_vie = classe.isin(list(CLASSES_FIN_DE_VIE))
+    statut = np.select([fin_de_vie, conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS, couverture <= surstock_mois],
+                       ["Obsolète / supprimé", "Sans conso", "Rupture", "Critique", "Bas", "Correct"], "Surstock")
     fournisseur = s["Fournisseur principal"] if "Fournisseur principal" in s else pd.Series(np.nan, index=s.index)
     if "DERNIER FOURNISSEUR" in s:
         fournisseur = fournisseur.fillna(s["DERNIER FOURNISSEUR"])
+    derniere = pd.to_datetime(s["DATE DERNIERE CONSO"], errors="coerce") if "DATE DERNIERE CONSO" in s \
+        else pd.Series(pd.NaT, index=s.index)
+    jamais = (derniere.dt.year <= 2001).fillna(False)
+    libelle_classe = classe.map(lambda c: f"{int(c)} · {CLASSES_FIN_DE_VIE[int(c)]}" if c in CLASSES_FIN_DE_VIE
+                                else (str(int(c)) if pd.notna(c) else np.nan))
     out = pd.DataFrame({
-        "Statut": statut, "PN": s["PNR"], "Description": s.get("DESCRIPTION"), "Catégorie": categorie(s).str.capitalize(),
+        "Statut": statut, "PN": s["PNR"], "CCN": s.get("CCN"), "Description": s.get("DESCRIPTION"),
+        "Catégorie": categorie(s).str.capitalize(), "Classe code": libelle_classe,
         "Stock": stock, "En commande": cde, "Conso 12 mois": conso, "Conso / mois": mensuel.round(1),
         "Couverture (mois)": couverture.round(1), "Couverture avec commandes (mois)": ((stock + cde) / mensuel).where(mensuel > 0).round(1),
-        "Valeur stock (€)": _num(s, "Valeur stock (€)"), "Dernière conso": s.get("DATE DERNIERE CONSO"), "Fournisseur": fournisseur,
+        "Valeur stock (€)": _num(s, "Valeur stock (€)"),
+        "Dernière conso": derniere.astype(object).where(~jamais & derniere.notna(), np.where(jamais, "Jamais consommé", None)),
+        "Fournisseur": fournisseur,
     })
     out["_rang"] = out["Statut"].map({v: i for i, v in enumerate(STOCK_STATUTS)})
     return out.sort_values(["_rang", "Conso 12 mois"], ascending=[True, False], kind="stable").drop(columns="_rang").reset_index(drop=True)

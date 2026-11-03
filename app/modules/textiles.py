@@ -377,10 +377,11 @@ def _stock(s, o, today, cat):
     seuil = float(st.session_state.get(K + "seuil_stock", 1.0))
     etat = tx.etat_stocks(s, seuil)
     n = etat["Statut"].value_counts()
-    en_stock = etat[(etat["Conso 12 mois"] > 0) & (etat["Stock"] > 0)]
+    en_stock = etat[(etat["Conso 12 mois"] > 0) & (etat["Stock"] > 0) & (etat["Statut"] != "Obsolète / supprimé")]
     mediane = en_stock["Couverture (mois)"].median() if len(en_stock) else None
-    immobilise = etat.loc[etat["Statut"] == "Sans conso", "Valeur stock (€)"].sum()
-    surstock = etat.loc[etat["Statut"] == "Surstock", "Valeur stock (€)"].sum()
+    valeur = etat.groupby("Statut")["Valeur stock (€)"].sum()
+    immobilise, surstock = valeur.get("Sans conso", 0), valeur.get("Surstock", 0)
+    obsolete, n_obs = valeur.get("Obsolète / supprimé", 0), int(n.get("Obsolète / supprimé", 0))
     with ui.section(f"{TAB_ID}_stock", "État des stocks",
                     f"{'Toutes catégories' if cat == TOUTES else cat.capitalize()} · couverture = stock sur étagère ÷ consommation "
                     "mensuelle (12 derniers mois)", export=_export_btn("export_stock__btn"), carte=False):
@@ -390,8 +391,10 @@ def _stock(s, o, today, cat):
             ui.kpi_card("En rupture", charts.entier(n.get("Rupture", 0)), "consommés sur 12 mois, stock à 0", "ko", "box-off"),
             ui.kpi_card("Critiques", charts.entier(n.get("Critique", 0)), f"moins de {seuil:g} mois de stock", "orange", "alert"),
             ui.kpi_card("Couverture médiane", f"{mediane:.1f} mois".replace(".", ",") if mediane is not None and mediane == mediane else "—",
-                        "PN consommés et en stock", "info", "gauge"),
-            ui.kpi_card("Stock sans conso", charts.euros(immobilise), f"+ {charts.euros(surstock)} de surstock (> 24 mois)", "warn", "moon"),
+                        "PN consommés et en stock", "navy", "gauge"),
+            ui.kpi_card("Surstock", charts.euros(surstock), f"+ {charts.euros(immobilise)} sans conso sur 12 mois", "info", "package"),
+            ui.kpi_card("Obsolète / supprimé", charts.euros(obsolete), f"{n_obs} PN classe code 3, 8 ou 9 : stock à écouler",
+                        "violet", "x"),
         ])
     top = tx.top_ruptures(etat)
     with ui.section(f"{TAB_ID}_stock_top", "PN consommés à stock nul ou presque",
@@ -411,16 +414,18 @@ def _stock(s, o, today, cat):
             ui.graphe(charts.parts(ct, tx.STOCK_STATUT_COULEURS, "Niveau de stock par catégorie"), "Nombre de PN de chaque catégorie")
         a, b = st.columns([1.35, 1], gap="medium")
         with a:
-            v = etat.groupby("Statut")["Valeur stock (€)"].sum()
+            v = valeur
             ui.graphe(charts.barres_h([(st_, v.get(st_, 0), charts.euros(v.get(st_, 0)), tx.STOCK_STATUT_COULEURS[st_])
                                        for st_ in tx.STOCK_STATUTS], titre="Valeur du stock par niveau de couverture"),
-                      "Où est l'argent : stock utile, surstock (> 24 mois) et stock sans consommation")
+                      "Où est l'argent : stock utile, surstock (> 24 mois), PN obsolètes ou supprimés, stock sans consommation")
         with b:
             st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, format="%.1f", key=K + "seuil_stock",
                             persist_state="page", help="En dessous de ce nombre de mois de consommation, le PN est « Critique ». "
                             "Bas : moins de 3 mois ; Surstock : plus de 24 mois.")
             ui.callout("<b>Rupture</b> : consommé sur 12 mois, stock à 0 · <b>Critique</b> : sous le seuil · <b>Bas</b> : moins de 3 mois · "
-                       "<b>Correct</b> : jusqu'à 24 mois · <b>Surstock</b> : au-delà · <b>Sans conso</b> : aucune consommation sur 12 mois.",
+                       "<b>Correct</b> : jusqu'à 24 mois · <b>Surstock</b> : au-delà · <b>Obsolète / supprimé</b> : classe code 3 (obsolète), "
+                       "8 (en cours de suppression) ou 9 (supprimé), compté à part, ni en surstock ni en rupture · "
+                       "<b>Sans conso</b> : aucune consommation sur 12 mois. Dernière conso en 2001 = jamais consommé.",
                        "navy", "info")
     _etat_stocks_table(etat)
 
@@ -429,12 +434,13 @@ def _stock(s, o, today, cat):
 def _etat_stocks_table(etat):
     with ui.section(f"{TAB_ID}_stock_pn", "Stock par PN", "Du plus urgent au moins urgent ; filtrer par statut ou rechercher un PN",
                     tag=str(len(etat)), export=_export_btn("export_stock_pn__btn")):
-        q = st.text_input("Rechercher", placeholder="PN ou description", key=K + "q_stock", persist_state="page",
+        q = st.text_input("Rechercher", placeholder="PN, CCN ou description", key=K + "q_stock", persist_state="page",
                           label_visibility="collapsed")
         d = etat
         if q:
             qq = q.strip().upper()
             d = d[d["PN"].astype(str).str.contains(qq.replace(" ", ""), na=False, regex=False)
+                  | d["CCN"].astype(str).str.upper().str.contains(qq, na=False, regex=False)
                   | d["Description"].astype(str).str.upper().str.contains(qq, na=False, regex=False)]
         ui.tableau_html(d, statut="Statut", couleurs=tx.STOCK_STATUT_COULEURS,
                         num=["Stock", "En commande", "Conso 12 mois", "Conso / mois", "Couverture (mois)", "Couverture avec commandes (mois)"],

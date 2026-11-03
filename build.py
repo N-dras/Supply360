@@ -332,6 +332,23 @@ window.s360Moteur = (function () {
   // Page (re)chargée : un onglet « déchargé » par le navigateur (mise en veille d'Edge / Chrome) repart de zéro
   persister("Page chargée (version du " + window.s360Version + ")" + (document.wasDiscarded
     ? " — l'onglet avait été déchargé par le navigateur (mise en veille des onglets) : tout est rechargé" : ""));
+  // Cause probable des rechargements complets : la mise en veille des onglets (Edge « onglets en veille » / mode efficacité, Chrome
+  // « économiseur de mémoire »). Un onglet inactif est gelé puis DÉCHARGÉ : au retour, la page repart de zéro
+  // (écran de chargement, fichiers perdus). Pyodide pèse plusieurs centaines de Mo : c'est l'onglet choisi en premier.
+  // Un onglet qui détient un « Web Lock » n'est jamais mis en veille (règle documentée par Microsoft pour Edge, même
+  // règle de gel dans Chromium) : on en garde un en permanence, propre à cet onglet (nom unique : un autre onglet
+  // Supply360 ouvert n'attend pas sa libération). Rien n'est envoyé ; le verrou disparaît avec l'onglet.
+  const veille = { protegee: false };
+  try {
+    if (navigator.locks && navigator.locks.request) {
+      navigator.locks.request("supply360-eveil-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+        () => { veille.protegee = true; return new Promise(() => {}); }).catch((e) => persister("Protection contre la mise en veille impossible : " + e));
+    } else persister("Protection contre la mise en veille indisponible dans ce navigateur (Web Locks)");
+  } catch (e) { persister("Protection contre la mise en veille impossible : " + e); }
+  // Gel / reprise de l'onglet par le navigateur (API Page Lifecycle) : noté dans le journal pour le diagnostic
+  let gel = 0;
+  document.addEventListener("freeze", () => { gel = Date.now(); persister("Onglet gelé par le navigateur (mise en veille)"); });
+  document.addEventListener("resume", () => persister("Onglet réveillé" + (gel ? " après " + Math.round((Date.now() - gel) / 60000) + " min" : "")));
   window.addEventListener("error", (e) => noter("Erreur : " + (e.message || e.error)));
   window.addEventListener("unhandledrejection", (e) => noter("Erreur : " + ((e.reason && e.reason.message) || e.reason)));
   const consoleErreur = console.error;
@@ -356,7 +373,21 @@ window.s360Moteur = (function () {
     return vus;
   };
   const W = window.Worker;
+  // Moteur SANS « JSPI » (bascule de pile WebAssembly, activée par défaut depuis Chrome / Edge 137) : après un gel de
+  // l'onglet par le navigateur (mise en veille) puis son réveil, Pyodide finit en « fatal error : memory access out
+  // of bounds » quelques minutes plus tard (reproduit 2 fois sur 2 ; jamais sans gel). Sans JSPI, Pyodide fonctionne
+  // comme sous Firefox / Safari, le mode historique dont stlite n'a pas besoin. Le worker de stlite (blob classique)
+  // est relu et précédé d'une ligne qui retire JSPI.
+  const SANS_JSPI = "try { delete WebAssembly.Suspending; delete WebAssembly.promising; } catch (_) {}\\n";
   window.Worker = function (...args) {
+    if (typeof args[0] === "string" && args[0].startsWith("blob:") && !(args[1] && args[1].type === "module")) {
+      try {  // contenu lu tout de suite : stlite révoque son adresse blob juste après la création du worker
+        const x = new XMLHttpRequest();
+        x.open("GET", args[0], false);
+        x.send();
+        if (x.status === 200 || x.status === 0) args[0] = URL.createObjectURL(new Blob([SANS_JSPI + x.responseText], { type: "text/javascript" }));
+      } catch (_) { /* moteur d'origine */ }
+    }
     const w = new W(...args);
     etat.worker = w;
     w.addEventListener("message", (e) => {
@@ -408,7 +439,7 @@ window.s360Moteur = (function () {
     };
     etat.brut({ type: "run_python", data: { code: 'import sys; getattr(sys, "_s360_sante", lambda: "{}")()' } }, [canal.port2]);
   });
-  return { etat, journal, noter, lirePersistant, effacer: () => { try { localStorage.removeItem(CLE); } catch (_) {} },
+  return { etat, journal, noter, lirePersistant, veille, effacer: () => { try { localStorage.removeItem(CLE); } catch (_) {} },
            sonder, diagnostic, ecouteurs: new Set() };
 })();
 </script>
@@ -507,7 +538,8 @@ window.fetch = function (ressource, options) {
         if (!panne) { pannes = 0; return; }
         pannes++;
         M.noter("Diagnostic : " + panne + (pannes < 2 ? " (à confirmer)" : " (confirmé)") + (a.memoire ? ` · mémoire ${a.memoire} Mo` : ""), true);
-        if (pannes >= 2) { pannes = 0; M.etat.mort = panne; }
+        // Pyodide « fatally failed » : définitif, inutile d'attendre une confirmation
+        if (pannes >= 2 || /fatal/i.test(a.erreur || "")) { pannes = 0; M.etat.mort = panne; }
         else prochainDiag = Date.now() + 6000;  // confirmation 6 s plus tard (une gêne passagère ne relance rien)
       } catch (err) {
         M.noter("Diagnostic impossible : " + err);
@@ -978,7 +1010,8 @@ document.addEventListener("click", (e) => {
   const f = document.createElement("div");
   f.id = "s360-fenetre";
   f.innerHTML = `<div class="boite journal" role="dialog" aria-modal="true"><button type="button" class="fermer" aria-label="Fermer">✕</button>
-    <h3>Journal du moteur</h3><p class="sous">${relances} relance(s) enregistrée(s) · les plus récents en haut · conservé dans ce navigateur</p>
+    <h3>Journal du moteur</h3><p class="sous">${relances} relance(s) enregistrée(s) · mise en veille de l'onglet :
+    ${M.veille.protegee ? "bloquée" : "NON bloquée"} · les plus récents en haut · conservé dans ce navigateur</p>
     <pre></pre><div class="actions"><button type="button" class="copier">Copier le journal</button>
     <button type="button" class="effacer">Effacer</button></div></div>`;
   f.querySelector("pre").textContent = lignes.join("\\n") || "Aucun événement enregistré.";

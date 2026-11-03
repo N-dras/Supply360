@@ -263,6 +263,12 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
 - **Version** : la date de génération de la page s'affiche sur l'écran de chargement (« Version du … »). Si elle
   est ancienne, rechargez avec **Ctrl+F5** (ou retéléchargez le fichier HTML).
 
+- **Plus de redémarrage toutes les 10 minutes** : le moteur Python (Pyodide) plantait 10 minutes après l'ouverture de
+  la page, même sans rien faire, à cause d'une fonction récente de Chrome / Edge (JSPI). Elle est désactivée pour
+  Supply360 : le moteur reste stable (testé 40 minutes, mise en veille de l'onglet comprise).
+- **Onglet jamais mis en veille** : Supply360 empêche Edge / Chrome d'endormir puis de décharger l'onglet (ce qui
+  rechargeait toute la page et faisait perdre les fichiers). L'état s'affiche dans le journal (« mise en veille :
+  bloquée »).
 - **Ouvrir** : une barre de progression suit la lecture des fichiers, leur envoi puis l'analyse.
 - Pendant un calcul (y compris le traitement d'un import), la pastille « Calcul en cours… » s'affiche aussitôt, avec
   sa durée au-delà de 10 s. **Un long calcul n'est jamais interrompu** : la page attend qu'il se termine (au-delà de
@@ -271,7 +277,7 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
 - **Journal du moteur** : cliquez sur **Prêt** (en haut à droite) pour voir les relances et leur cause, les erreurs et les rechargements de page, conservés dans le navigateur même après un rechargement. **Copier le journal** pour le transmettre à l'auteur si les relances se répètent.
 - **Relance automatique du moteur, seulement sur une panne constatée** : la page interroge le moteur (Python libre ?
   session ouverte ? clics bien reçus ? réponses bien envoyées ?) et ne le relance que si la panne est confirmée deux
-  fois de suite (détection en 5 à 15 s). Un écran Supply360 (logo, barre d'avancement) suit la relance, puis **tous
+  fois de suite (détection en 5 à 15 s, immédiate si Python signale une erreur fatale). Un écran Supply360 (logo, barre d'avancement) suit la relance, puis **tous
   les fichiers sont réimportés**, onglet par onglet (relus dans le dossier mémorisé quand ils en viennent ; gardés en
   mémoire de la page, jamais écrits sur le disque). Une seconde panne en moins de 2 minutes : bandeau **Relancer en
   gardant mes fichiers** / **Recharger la page** ;
@@ -280,4 +286,4 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
   (il n'est plus fabriqué à chaque affichage d'onglet, ce qui ralentissait et chargeait la mémoire).
 - Mémoire : les gros fichiers (État du stock, Commandes) sont lus en ne gardant que les colonnes utiles ; les fichiers
   sont reconnus en ne lisant que leurs en-têtes ; chaque fichier n'est gardé qu'une fois (format Excel compressé).
-Conseil Edge : *Paramètres › Système et performances › Ne jamais mettre en veille ces sites* → ajouter l'adresse de Supply360.
+Sécurité supplémentaire (facultative) dans Edge : *Paramètres › Système et performances › Ne jamais mettre en veille ces sites* → ajouter l'adresse de Supply360.

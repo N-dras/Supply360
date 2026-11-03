@@ -634,7 +634,8 @@ EXPLICATION = """
    la commande part maintenant et le manque avant livraison est signalé.
 6. **Statuts** : « A commander » = déjà sous l'objectif ; « A planifier » = passera sous l'objectif avant la fin de
    l'horizon ; « OK » = objectif couvert.
-7. **PN dormants et inactifs** : aucune commande recommandée (la quantité bloquée est indiquée à part).
+7. **PN dormants, inactifs, obsolètes ou supprimés** (classe code 3, 8 ou 9) : aucune commande recommandée (la quantité
+   bloquée est indiquée à part).
 8. **Fournisseur** d'un PN : celui de ses commandes habituelles ; à défaut le dernier fournisseur de l'État du stock,
    puis le code fournisseur.
 """
@@ -661,8 +662,9 @@ def _section_prevision(prev, cat, o):
             ui.kpi_card("Valeur à commander", charts.euros(now["Valeur à commander maintenant (€)"].sum()), "maintenant", "ko"),
             ui.kpi_card("PN à planifier", charts.entier((s["Statut prévision"] == "A planifier").sum()), "sur l'horizon", "warn"),
             ui.kpi_card("Groupes sous l'objectif", charts.entier((gs["Statut groupe"] == "Sous l'objectif").sum()), "", "accent"),
-            ui.kpi_card("Dormants / inactifs", charts.entier((s["Statut prévision"] == "Dormant / inactif : pas de commande").sum()),
-                        "non commandés", "violet"),
+            ui.kpi_card("Non commandés", charts.entier(s["Statut prévision"].isin(["Dormant / inactif : pas de commande", pv.OBSOLETE]).sum()),
+                        f"dormants / inactifs, dont {charts.entier((s['Statut prévision'] == pv.OBSOLETE).sum())} en classe code 3, 8 ou 9",
+                        "violet"),
         ])
         c1, c2, c3 = st.columns(3)
         with c1.popover("Comment le besoin est calculé", width="stretch"):
@@ -707,7 +709,7 @@ def _section_prevision(prev, cat, o):
 
 def _tableaux_prevision(s, plan, gs, res):
     choix = st.selectbox("Tableau", ["À commander maintenant", "Plan de commande", "Manque avant livraison",
-                                     "Dormants / inactifs non commandés", "Groupes d'avions", "Besoin par groupe et PN"],
+                                     "PN non commandés (dormants, inactifs, obsolètes)", "Groupes d'avions", "Besoin par groupe et PN"],
                          key=K + "tab_prev", persist_state="page", label_visibility="collapsed")
     if choix == "À commander maintenant":
         d = s[s["Qté à commander maintenant"] > 0].sort_values("Valeur à commander maintenant (€)", ascending=False)
@@ -717,10 +719,11 @@ def _tableaux_prevision(s, plan, gs, res):
     elif choix == "Manque avant livraison":
         d = s[s["Manque avant livraison possible (qté)"] > 0].sort_values("Manque avant livraison possible (qté)", ascending=False)
         d = d[[c for c in [*COL_PREV, "Manque avant livraison possible (qté)"] if c in d.columns]].rename(columns=COL_PREV)
-    elif choix == "Dormants / inactifs non commandés":
-        d = s[s["Dans un groupe avion"] & s["Statut activité"].isin(["Dormant", "Inactif"])]
-        d = d.sort_values("Commande bloquée PN dormant/inactif (qté)", ascending=False)
-        d = d[[c for c in [*COL_PREV, "Statut activité", "Commande bloquée PN dormant/inactif (qté)"] if c in d.columns]].rename(columns=COL_PREV)
+    elif choix == "PN non commandés (dormants, inactifs, obsolètes)":
+        d = s[s["Statut prévision"].isin(["Dormant / inactif : pas de commande", pv.OBSOLETE])]
+        d = d.sort_values(pv.BLOQUEE, ascending=False)
+        d = d[[c for c in [*COL_PREV, "Statut activité", "CLASS CODE", pv.BLOQUEE] if c in d.columns]].rename(
+            columns={**COL_PREV, "CLASS CODE": "Classe code"})
     elif choix == "Groupes d'avions":
         d = gs.sort_values(["equipment", "Ecart vs objectif (avions)"])
     else:
@@ -740,7 +743,8 @@ def _vue_fournisseur_prev(s, o, fours):
                     for _, r in opts.iterrows()}
         f = f1.selectbox("Fournisseur", list(libelles), format_func=libelles.get, key=K + "vf", persist_state="page",
                          label_visibility="collapsed")
-        cand = s[s["Dans un groupe avion"] & (s["Statut activité"] == "Actif") & (s["Fournisseur"] == f)]
+        cand = pv.suivis(s)
+        cand = cand[cand["Fournisseur"] == f]
         d = cand.sort_values("Qté à commander maintenant", ascending=False)
         a_cmd = d[d["Qté à commander maintenant"] > 0]
         lignes = o[o["Fournisseur"] == f] if len(o) else o

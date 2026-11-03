@@ -20,9 +20,11 @@ from core import textile as tx
 
 MAX_LT = 24
 RAW_COLS = ["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description", "qty_per_ac"]
-STATUS_ORDER = ["A commander", "A planifier", "OK", "Dormant / inactif : pas de commande", "Hors groupe avion"]
+OBSOLETE = "Obsolète / supprimé : pas de commande"  # classe code 3, 8 ou 9 (textile.fin_de_vie)
+STATUS_ORDER = ["A commander", "A planifier", "OK", "Dormant / inactif : pas de commande", OBSOLETE, "Hors groupe avion"]
 STATUS_COLORS = {"A commander": "#A61B1B", "A planifier": "#DBA100", "OK": "#1E8E5A",
-                 "Dormant / inactif : pas de commande": "#7B61C9", "Hors groupe avion": "#B5BDCB"}
+                 "Dormant / inactif : pas de commande": "#7B61C9", OBSOLETE: "#5B6478", "Hors groupe avion": "#B5BDCB"}
+BLOQUEE = "Commande bloquée (PN dormant, inactif ou obsolète) (qté)"
 GROUP_STATUS_ORDER = ["Sous l'objectif", "Couvert si commandes livrées", "Objectif atteint"]
 # Même code couleur que partout : vert = stock, bleu = à réception des commandes, rouge = à commander.
 GROUP_STATUS_COLORS = {"Sous l'objectif": "#A61B1B", "Couvert si commandes livrées": "#2B6CB0", "Objectif atteint": "#1E8E5A"}
@@ -348,8 +350,10 @@ def project_orders(pbi, orders, events, p, today):
         below = np.where(gap[i, :H] > 1e-9)[0]
         first_short[i] = below[0] if len(below) else -1
     inactive = pbi["Statut activité"].isin(["Inactif", "Dormant"]).to_numpy() if "Statut activité" in pbi.columns else np.zeros(n, dtype=bool)
-    blocked_qty = np.where(inactive, orders_m.sum(axis=1), 0.0)
-    orders_m[inactive] = 0.0
+    obsolete = tx.fin_de_vie(pbi).to_numpy()  # classe code 3 / 8 / 9 : plus de réapprovisionnement
+    blocked_qty = np.where(inactive | obsolete, orders_m.sum(axis=1), 0.0)
+    orders_m[inactive | obsolete] = 0.0
+    shortfall_mask = obsolete  # PN qu'on ne réapprovisionne plus : pas de « manque avant livraison »
     in_group = pbi["Nb groupes avions"].fillna(0).to_numpy() > 0
     ord_now = orders_m[:, 0]
     ord_total = orders_m.sum(axis=1)
@@ -365,12 +369,13 @@ def project_orders(pbi, orders, events, p, today):
     out["Date 1ère commande"] = [to_month(k) for k in first_ord]
     out["Commandes recommandées sur l'horizon (qté)"] = ord_total
     out["Valeur commandes recommandées (€)"] = (ord_total * pu).round(0)
-    out["Manque avant livraison possible (qté)"] = shortfall
+    out["Manque avant livraison possible (qté)"] = np.where(shortfall_mask, 0.0, shortfall)
     out["Premier mois sous le minimum (sans commande)"] = [to_month(k) for k in first_short]
     out["Valeur stock hors groupe avion (€)"] = np.where(in_group, 0, out["Valeur stock (€)"].fillna(0))
     out["Statut prévision"] = np.select(
-        [~in_group, inactive, ord_now > 0, ord_total > 0], ["Hors groupe avion", "Dormant / inactif : pas de commande", "A commander", "A planifier"], default="OK")
-    out["Commande bloquée PN dormant/inactif (qté)"] = blocked_qty
+        [~in_group, obsolete, inactive, ord_now > 0, ord_total > 0],
+        ["Hors groupe avion", OBSOLETE, "Dormant / inactif : pas de commande", "A commander", "A planifier"], default="OK")
+    out[BLOQUEE] = blocked_qty
     out["Stock / besoin minimum (%)"] = np.where(req > 0, (stock0 / np.where(req > 0, req, 1) * 100).round(0), np.nan)
 
     months = [(t0 + k).start_time for k in range(H)]
@@ -443,9 +448,14 @@ def fournisseur_prevision(pbi: pd.DataFrame) -> pd.Series:
     return nom.fillna(FOURNISSEUR_ABSENT)
 
 
+def suivis(s: pd.DataFrame) -> pd.DataFrame:
+    """PN réapprovisionnés : actifs, rattachés à un groupe d'avions, hors classe code 3 / 8 / 9."""
+    return s[s["Dans un groupe avion"] & (s["Statut activité"] == "Actif") & (s["Statut prévision"] != OBSOLETE)]
+
+
 def par_fournisseur(s: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
     """Une ligne par fournisseur (PN actifs rattachés à un groupe d'avions) : quoi commander, quand, pour combien."""
-    cand = s[s["Dans un groupe avion"] & (s["Statut activité"] == "Actif")]
+    cand = suivis(s)
     if cand.empty:
         return pd.DataFrame(columns=["Fournisseur", "PN suivis", "PN à commander", "Qté à commander maintenant",
                                      "Valeur maintenant (€)", "Valeur sur l'horizon (€)", "Prochaine commande", "Délai moyen (mois)"])

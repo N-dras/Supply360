@@ -137,7 +137,7 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
   moins 1), additionné sur les groupes d'avions qui l'utilisent ;
 - **commande** au plus tard à la date de besoin moins le délai fournisseur ; si le délai est trop long,
   la commande part maintenant ;
-- les PN dormants ou inactifs ne sont jamais recommandés ;
+- les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés (statut « Obsolète / supprimé : pas de commande » pour ces derniers) ;
 - vue **par fournisseur** : PN à commander, valeur maintenant et sur l'horizon, détail d'un fournisseur
   (stock / en commande / à commander par PN, **écart promis − demandé par ligne de commande**).
   Fournisseur d'un PN : celui de ses commandes, à défaut le dernier fournisseur de l'État du stock, puis

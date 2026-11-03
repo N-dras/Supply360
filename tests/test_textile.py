@@ -275,3 +275,19 @@ def test_etat_des_stocks_classe_code_et_2001():
     assert pd.Timestamp(e.loc["D", "Dernière conso"]) == pd.Timestamp("2026-01-01")
     assert "B" not in set(tx.top_ruptures(e.reset_index())["PN"])
     assert list(tx.etat_stocks(s).columns[:6]) == ["Statut", "PN", "CCN", "Description", "Catégorie", "Classe code"]
+
+
+def test_prevision_sans_commande_classe_code_3_8_9(tables):
+    """Un PN en classe code 3, 8 ou 9 n'est jamais proposé à la commande, même sous l'objectif."""
+    s, o = tables
+    s = s.copy()
+    s.loc[s["PNR"] == "FX-1002", "CLASS CODE"] = 9
+    p = pv.Params()
+    parts, fleet, _ = pv.preparer_pieces(pv.lire_pieces(octets("pieces_par_avion.csv"), "pieces_par_avion.csv"), p)
+    plan = pv.lire_planning(octets("planning_pe.xlsx"), "planning_pe.xlsx")
+    pbi, res = pv.run_policy(s, o, parts, fleet, plan, pv.regles_pe_defaut(parts), p, TODAY)
+    r = pbi.set_index("PNR").loc["FX-1002"]
+    assert r["Statut prévision"] == pv.OBSOLETE
+    assert r["Qté à commander maintenant"] == 0 and r["Commandes recommandées sur l'horizon (qté)"] == 0
+    assert r[pv.BLOQUEE] > 0 and r["Manque avant livraison possible (qté)"] == 0
+    assert "FX-1002" not in set(res["plan"]["PNR"]) and "FX-1002" not in set(pv.suivis(pbi)["PNR"])

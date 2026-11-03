@@ -395,6 +395,15 @@ BAS_MOIS = 3  # en dessous : stock « bas »
 CLASSES_FIN_DE_VIE = {3: "obsolète", 8: "en cours de suppression", 9: "supprimé"}
 
 
+def classe_code(s: pd.DataFrame) -> pd.Series:
+    return pd.to_numeric(s["CLASS CODE"], errors="coerce") if "CLASS CODE" in s else pd.Series(np.nan, index=s.index)
+
+
+def fin_de_vie(s: pd.DataFrame) -> pd.Series:
+    """PN en classe code 3, 8 ou 9 : on ne le réapprovisionne plus."""
+    return classe_code(s).isin(list(CLASSES_FIN_DE_VIE))
+
+
 def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float = 24) -> pd.DataFrame:
     """Une ligne par PN : stock, commandes, consommation 12 mois et couverture en mois (stock ÷ conso mensuelle).
 
@@ -408,9 +417,8 @@ def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float =
     stock, cde = _num(s, "QTE SUR ÉTAGÈRE"), _num(s, "QTE EN CDE")
     mensuel = conso / 12
     couverture = (stock / mensuel).where(mensuel > 0)
-    classe = pd.to_numeric(s["CLASS CODE"], errors="coerce") if "CLASS CODE" in s else pd.Series(np.nan, index=s.index)
-    fin_de_vie = classe.isin(list(CLASSES_FIN_DE_VIE))
-    statut = np.select([fin_de_vie, conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS, couverture <= surstock_mois],
+    classe = classe_code(s)
+    statut = np.select([fin_de_vie(s), conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS, couverture <= surstock_mois],
                        ["Obsolète / supprimé", "Sans conso", "Rupture", "Critique", "Bas", "Correct"], "Surstock")
     fournisseur = s["Fournisseur principal"] if "Fournisseur principal" in s else pd.Series(np.nan, index=s.index)
     if "DERNIER FOURNISSEUR" in s:

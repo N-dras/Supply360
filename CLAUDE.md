@@ -194,7 +194,7 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
 - **Fond neutre** clair, **aucune photo** ; cartes blanches à filet fin, ombre légère, coins 12 px. **Icônes
   vectorielles** (`core/icones.py`) au lieu d'emojis (les emojis encore passés par les modules sont convertis par
   `components.EMOJIS`).
-- **Header** fixe : logo AFI + « Supply**360** » + navigation (une icône et une couleur par onglet : règles
+- **Header** fixe : logo AFI + « Supply**360** » + navigation **centrée** (à gauche sous 1 260 px ; une icône et une couleur par onglet : règles
   `nth-of-type` de theme.css, **à compléter quand un onglet est ajouté au registre**) + état du moteur (« Prêt ») et
   date. Barre animée et pastille « Calcul en cours… » quand Python travaille.
 - **En-tête de page** (`hero`) : bandeau dégradé à la couleur de l'onglet, icône, surtitre, titre, et à droite un

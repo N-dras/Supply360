@@ -133,7 +133,7 @@
     <div class="barre"></div>
     <div class="texte">Chargement de Supply360… le premier lancement peut prendre jusqu'à une minute.</div>
     <div class="etape" id="s360-etape">Téléchargement du moteur (stlite)…</div>
-    <div class="version">Version du 03/11/2026 12:59 UTC</div>
+    <div class="version">Version du 03/11/2026 13:48 UTC</div>
     <div class="erreur" id="s360-erreur"></div>
     <div class="lent"><span id="s360-lent">Le chargement est plus long que prévu : le navigateur doit pouvoir accéder à
       cdn.jsdelivr.net et pypi.org (proxy).</span><br><br>
@@ -147,7 +147,7 @@
 // Surveillance du moteur Python (Pyodide, dans un « worker » du navigateur). On note l'heure des messages envoyés à
 // l'application qui attendent une réponse (clics) et celle des réponses, les erreurs, et on peut diagnostiquer le
 // moteur (`diagnostic`, réponse de Python hors session) : la page ne relance le moteur que sur une panne constatée.
-window.s360Version = "03/11/2026 12:59 UTC";  // date de génération du fichier : vérifier qu'on a bien la dernière version
+window.s360Version = "03/11/2026 13:48 UTC";  // date de génération du fichier : vérifier qu'on a bien la dernière version
 window.s360Moteur = (function () {
   const journal = ["Supply360, version du " + window.s360Version];
   // Journal PERSISTANT (localStorage du navigateur, rien n'est envoyé) : relances, diagnostics et erreurs restent
@@ -1100,8 +1100,8 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 /* Navigation (st.segmented_control) placée dans le header. Une couleur et une icône par onglet, dans l'ordre du
    registre (app/modules/__init__.py) : règles « nth-of-type » ci-dessous, à compléter quand un onglet est ajouté. */
 .st-key-s360_nav {
-  position: fixed; z-index: 999991; top: 0; left: 21rem;   /* juste après logo + Supply360 */
-  height: var(--header-h); width: auto !important; max-width: calc(100% - 33rem); display: flex; align-items: center;
+  position: fixed; z-index: 999991; top: 0; left: 50%; transform: translateX(-50%);   /* centrée dans le header */
+  height: var(--header-h); width: auto !important; max-width: calc(100% - 44rem); display: flex; align-items: center;
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
 }
 .st-key-s360_nav::-webkit-scrollbar { display: none; }
@@ -1135,6 +1135,10 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .st-key-s360_nav button:nth-of-type(4)::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z%22/%3E%3Cpath d=%22M17 18h1%22/%3E%3Cpath d=%22M12 18h1%22/%3E%3Cpath d=%22M7 18h1%22/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z%22/%3E%3Cpath d=%22M17 18h1%22/%3E%3Cpath d=%22M12 18h1%22/%3E%3Cpath d=%22M7 18h1%22/%3E%3C/svg%3E"); }
 .st-key-s360_nav button:nth-of-type(5) { --onglet: #B83D4B; }  /* alertes */
 .st-key-s360_nav button:nth-of-type(5)::before { -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9%22/%3E%3Cpath d=%22M10.3 21a1.94 1.94 0 0 0 3.4 0%22/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9%22/%3E%3Cpath d=%22M10.3 21a1.94 1.94 0 0 0 3.4 0%22/%3E%3C/svg%3E"); }
+/* Écran plus étroit : la barre centrée toucherait le logo ; elle se place juste après « Supply360 ». */
+@media (max-width: 1259px) {
+  .st-key-s360_nav { left: 21rem; transform: none; max-width: calc(100% - 33rem); }
+}
 /* Écran moyen : la date laisse sa place aux onglets. */
 @media (max-width: 1180px) {
   .s360-today { display: none; }

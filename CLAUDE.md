@@ -234,7 +234,7 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
 - **TDD (Taux De Disponibilité)** : disponibilité des équipements par rapport à la demande de production.
 - **TL0** = consommable, **TL1** = réparable (repair, TAT).
 - **Commandes fournisseurs** : elles ne sont pas forcément liées à un chantier (besoins imprévus). Les classer du pire au meilleur statut.
-- **Surplus / stock dormant** : équipements sans consommation depuis plus de 4 ans.
+- **Surplus / stock dormant** : équipements en stock sans consommation depuis 3 ans et plus (textile : 24 mois glissants et 3 dernières années civiles). Dernière conso en 2001 = date fictive, PN **jamais consommé** (compté à part, pas en surstock). Classe code 3 / 8 / 9 = obsolète / en cours de suppression / supprimé : ni surstock, ni rupture, jamais de commande recommandée.
 - **Enjeu cabine** : pas d'immobilisation avion pour une pièce cabine. L'enjeu est la **décommercialisation de sièges** et l'expérience client.
 
 En cas de doute sur une règle métier, **poser la question plutôt que supposer**.

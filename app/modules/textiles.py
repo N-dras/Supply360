@@ -380,7 +380,8 @@ def _stock(s, o, today, cat):
     en_stock = etat[(etat["Conso 12 mois"] > 0) & (etat["Stock"] > 0) & (etat["Statut"] != "Obsolète / supprimé")]
     mediane = en_stock["Couverture (mois)"].median() if len(en_stock) else None
     valeur = etat.groupby("Statut")["Valeur stock (€)"].sum()
-    immobilise, surstock = valeur.get("Sans conso", 0), valeur.get("Surstock", 0)
+    dormants = etat[etat["Statut"] == tx.DORMANT]
+    n_cde = int((dormants["En commande"] > 0).sum())
     obsolete, n_obs = valeur.get("Obsolète / supprimé", 0), int(n.get("Obsolète / supprimé", 0))
     with ui.section(f"{TAB_ID}_stock", "État des stocks",
                     f"{'Toutes catégories' if cat == TOUTES else cat.capitalize()} · couverture = stock sur étagère ÷ consommation "
@@ -392,10 +393,16 @@ def _stock(s, o, today, cat):
             ui.kpi_card("Critiques", charts.entier(n.get("Critique", 0)), f"moins de {seuil:g} mois de stock", "orange", "alert"),
             ui.kpi_card("Couverture médiane", f"{mediane:.1f} mois".replace(".", ",") if mediane is not None and mediane == mediane else "—",
                         "PN consommés et en stock", "navy", "gauge"),
-            ui.kpi_card("Surstock", charts.euros(surstock), f"+ {charts.euros(immobilise)} sans conso sur 12 mois", "info", "package"),
+            ui.kpi_card("Surstock (dormants)", charts.euros(valeur.get(tx.DORMANT, 0)),
+                        f"{len(dormants)} PN en stock sans conso depuis 3 ans" + (f", dont {n_cde} avec une commande en cours" if n_cde else ""),
+                        "info", "moon"),
             ui.kpi_card("Obsolète / supprimé", charts.euros(obsolete), f"{n_obs} PN classe code 3, 8 ou 9 : stock à écouler",
                         "violet", "x"),
         ])
+        with st.popover("Règles de calcul et seuil"):
+            st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, format="%.1f", key=K + "seuil_stock",
+                            persist_state="page", help="En dessous de ce nombre de mois de consommation, le PN est « Critique ».")
+            st.markdown(REGLES_STOCK)
     top = tx.top_ruptures(etat)
     with ui.section(f"{TAB_ID}_stock_top", "PN consommés à stock nul ou presque",
                     f"Les plus consommés parmi les PN en rupture ou à moins de {seuil:g} mois de stock : à commander ou à relancer en priorité",
@@ -412,22 +419,40 @@ def _stock(s, o, today, cat):
             ct = etat.groupby(["Catégorie", "Statut"]).size().unstack(fill_value=0)
             ct = ct.reindex(columns=[c for c in tx.STOCK_STATUTS if c in ct.columns], fill_value=0)
             ui.graphe(charts.parts(ct, tx.STOCK_STATUT_COULEURS, "Niveau de stock par catégorie"), "Nombre de PN de chaque catégorie")
+    top = tx.top_dormants(etat)
+    with ui.section(f"{TAB_ID}_stock_dormants", "Surstock : PN dormants",
+                    "Du stock sur étagère mais aucune consommation depuis 3 ans : à écouler, transférer ou réformer ; "
+                    "ne pas recommander", tag=str(len(dormants))):
         a, b = st.columns([1.35, 1], gap="medium")
         with a:
-            v = valeur
-            ui.graphe(charts.barres_h([(st_, v.get(st_, 0), charts.euros(v.get(st_, 0)), tx.STOCK_STATUT_COULEURS[st_])
-                                       for st_ in tx.STOCK_STATUTS], titre="Valeur du stock par niveau de couverture"),
-                      "Où est l'argent : stock utile, surstock (> 24 mois), PN obsolètes ou supprimés, stock sans consommation")
+            def _date(v):
+                return v.strftime("%m/%Y") if hasattr(v, "strftime") else "—"
+            lignes = [(f"{r['PN']} · {str(r['Description'] or '')[:30]}", r["Valeur stock (€)"],
+                       f"{charts.euros(r['Valeur stock (€)'])} · stock {charts.entier(r['Stock'])} · dernière conso {_date(r['Dernière conso'])}"
+                       + (f" · {charts.entier(r['En commande'])} en cde" if r["En commande"] > 0 else ""),
+                       tx.STOCK_STATUT_COULEURS[tx.DORMANT]) for _, r in top.iterrows()]
+            ui.graphe(charts.barres_h(lignes, titre=f"TOP {len(top)} : valeur immobilisée des PN dormants", max_lignes=10)
+                      if len(top) else charts.vide("Aucun PN dormant"),
+                      "Classés par valeur du stock. « en cde » : une commande est encore ouverte sur un PN dormant, à revoir")
         with b:
-            st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, format="%.1f", key=K + "seuil_stock",
-                            persist_state="page", help="En dessous de ce nombre de mois de consommation, le PN est « Critique ». "
-                            "Bas : moins de 3 mois ; Surstock : plus de 24 mois.")
-            ui.callout("<b>Rupture</b> : consommé sur 12 mois, stock à 0 · <b>Critique</b> : sous le seuil · <b>Bas</b> : moins de 3 mois · "
-                       "<b>Correct</b> : jusqu'à 24 mois · <b>Surstock</b> : au-delà · <b>Obsolète / supprimé</b> : classe code 3 (obsolète), "
-                       "8 (en cours de suppression) ou 9 (supprimé), compté à part, ni en surstock ni en rupture · "
-                       "<b>Sans conso</b> : aucune consommation sur 12 mois. Dernière conso en 2001 = jamais consommé.",
-                       "navy", "info")
+            ui.graphe(charts.barres_h([(st_, valeur.get(st_, 0), charts.euros(valeur.get(st_, 0)), tx.STOCK_STATUT_COULEURS[st_])
+                                       for st_ in tx.STOCK_STATUTS], titre="Valeur du stock par statut"),
+                      "Où est l'argent : stock utile, surstock dormant, PN obsolètes ou supprimés, jamais consommés")
     _etat_stocks_table(etat)
+
+
+REGLES_STOCK = """
+Statuts, dans cet ordre de priorité :
+
+- **Obsolète / supprimé** : classe code 3 (obsolète), 8 (en cours de suppression) ou 9 (supprimé). Compté à part, ni en
+  surstock ni en rupture, jamais proposé à la commande.
+- **Jamais consommé** : dernière conso en 2001 (date fictive de l'État du stock). Compté à part, pas en surstock.
+- **Surstock (dormant)** : du stock sur étagère mais aucune consommation depuis 3 ans (24 mois glissants et 3 dernières
+  années civiles), même avec une commande en cours.
+- **Sans conso** : aucune consommation sur 12 mois mais consommé dans les 3 ans, ou ni stock ni consommation.
+- **Rupture** : consommé sur 12 mois, stock à 0 · **Critique** : sous le seuil ci-dessus · **Bas** : moins de 3 mois ·
+  **Correct** : jusqu'à 24 mois · **Couverture élevée** : au-delà de 24 mois. Le PN est consommé : ce n'est pas du surstock.
+"""
 
 
 @st.fragment

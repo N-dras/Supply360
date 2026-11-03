@@ -135,13 +135,18 @@ def delais_fournisseurs(o: pd.DataFrame, min_lignes=3) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 # Stock et consommation
 # --------------------------------------------------------------------------
+def consomme_3_ans(pbi: pd.DataFrame) -> pd.Series:
+    """Consommé sur 24 mois glissants ou sur l'une des 3 dernières années civiles de l'État du stock."""
+    c3y = sum((_num(pbi, f"QTE CONSO {a}") for a in annees_conso(pbi)[-3:]), pd.Series(0.0, index=pbi.index))
+    return (_num(pbi, "QTE CONSO 24M") > 0) | (_num(pbi, "QTE CONSO 12M") > 0) | (c3y > 0)
+
+
 def ajouter_consommation(pbi: pd.DataFrame) -> pd.DataFrame:
     """Évolutions de consommation, valeurs (€) et statut d'activité (Actif / Dormant / Inactif)."""
     pbi = pbi.copy()
     annees = annees_conso(pbi)
     c12, c24 = _num(pbi, "QTE CONSO 12M"), _num(pbi, "QTE CONSO 24M")
     shelf, ordered, pu = _num(pbi, "QTE SUR ÉTAGÈRE"), _num(pbi, "QTE EN CDE"), _num(pbi, "Dernier PU (achat) Euros")
-    c3y = sum((_num(pbi, f"QTE CONSO {a}") for a in annees[-3:]), pd.Series(0.0, index=pbi.index))
     prev12 = (c24 - c12).clip(lower=0)
     pbi["Conso 12 mois précédents"] = prev12
     pbi["Evolution 12M vs 12M précédents (%)"] = np.where(prev12 > 0, (c12 / prev12.where(prev12 > 0) - 1) * 100, np.nan).round(0)
@@ -154,7 +159,7 @@ def ajouter_consommation(pbi: pd.DataFrame) -> pd.DataFrame:
     last = pd.to_datetime(pbi["DATE DERNIERE CONSO"], errors="coerce") if "DATE DERNIERE CONSO" in pbi.columns \
         else pd.Series(pd.NaT, index=pbi.index)
     jamais = (last.dt.year <= 2001).fillna(False).to_numpy()  # 2001 = jamais consommé (date fictive)
-    consomme = ((c24 > 0) | (c3y > 0)).to_numpy()
+    consomme = consomme_3_ans(pbi).to_numpy()
     sh, od = (shelf > 0).to_numpy(), (ordered > 0).to_numpy()
     pbi["Statut activité"] = np.select([consomme, sh & jamais, od], ["Actif"] * 3, default=np.where(sh, "Dormant", "Inactif"))
     pbi["Motif activité"] = np.select([consomme, sh & jamais, od & ~sh, od],
@@ -387,9 +392,12 @@ def relances(o: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 # État des stocks (sous-onglet Stock) : couverture de chaque PN en mois de consommation
 # --------------------------------------------------------------------------
-STOCK_STATUTS = ["Rupture", "Critique", "Bas", "Correct", "Surstock", "Obsolète / supprimé", "Sans conso"]
+DORMANT = "Surstock (dormant)"
+STOCK_STATUTS = ["Rupture", "Critique", "Bas", "Correct", "Couverture élevée", DORMANT, "Obsolète / supprimé", "Jamais consommé",
+                 "Sans conso"]
 STOCK_STATUT_COULEURS = {"Rupture": COLORS["ko"], "Critique": COLORS["orange"], "Bas": COLORS["warn"], "Correct": COLORS["ok"],
-                         "Surstock": COLORS["bleu"], "Obsolète / supprimé": COLORS["violet"], "Sans conso": COLORS["gris_clair"]}
+                         "Couverture élevée": "#2A9D8F", DORMANT: COLORS["bleu"], "Obsolète / supprimé": COLORS["violet"],
+                         "Jamais consommé": COLORS["gris"], "Sans conso": COLORS["gris_clair"]}
 BAS_MOIS = 3  # en dessous : stock « bas »
 # Classe code de l'État du stock : PN qu'on ne réapprovisionne plus (leur stock est à écouler, ni surstock ni rupture)
 CLASSES_FIN_DE_VIE = {3: "obsolète", 8: "en cours de suppression", 9: "supprimé"}
@@ -404,13 +412,17 @@ def fin_de_vie(s: pd.DataFrame) -> pd.Series:
     return classe_code(s).isin(list(CLASSES_FIN_DE_VIE))
 
 
-def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float = 24) -> pd.DataFrame:
+def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, couverture_haute_mois: float = 24) -> pd.DataFrame:
     """Une ligne par PN : stock, commandes, consommation 12 mois et couverture en mois (stock ÷ conso mensuelle).
 
-    Statut, dans cet ordre de priorité : Obsolète / supprimé = classe code 3, 8 ou 9 (PN qu'on ne réapprovisionne plus :
-    son stock n'est compté ni en surstock ni en rupture) ; Sans conso = aucune consommation sur 12 mois ; Rupture =
-    consommé, stock à 0 ; Critique = moins de `seuil_mois` de stock ; Bas = moins de 3 mois ; Correct = jusqu'à
-    `surstock_mois` ; Surstock = au-delà. Dernière conso en 2001 = jamais consommé (date fictive de l'État du stock).
+    Statut, dans cet ordre de priorité :
+    - Obsolète / supprimé : classe code 3, 8 ou 9 (PN qu'on ne réapprovisionne plus, compté à part) ;
+    - Jamais consommé : dernière conso en 2001 (date fictive de l'État du stock) ;
+    - Surstock (dormant) : du stock mais aucune consommation depuis 3 ans (24 mois glissants et 3 dernières années
+      civiles), même avec une commande en cours ;
+    - Sans conso : aucune consommation sur 12 mois (mais dans les 3 ans), ou ni stock ni conso ;
+    - Rupture : consommé, stock à 0 ; Critique : moins de `seuil_mois` de stock ; Bas : moins de 3 mois ;
+      Correct : jusqu'à `couverture_haute_mois` ; Couverture élevée : au-delà (PN consommé : ce n'est pas du surstock).
     Trié du plus urgent au moins urgent, puis par consommation.
     """
     conso = _num(s, "QTE CONSO 12M")
@@ -418,14 +430,17 @@ def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float =
     mensuel = conso / 12
     couverture = (stock / mensuel).where(mensuel > 0)
     classe = classe_code(s)
-    statut = np.select([fin_de_vie(s), conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS, couverture <= surstock_mois],
-                       ["Obsolète / supprimé", "Sans conso", "Rupture", "Critique", "Bas", "Correct"], "Surstock")
-    fournisseur = s["Fournisseur principal"] if "Fournisseur principal" in s else pd.Series(np.nan, index=s.index)
-    if "DERNIER FOURNISSEUR" in s:
-        fournisseur = fournisseur.fillna(s["DERNIER FOURNISSEUR"])
     derniere = pd.to_datetime(s["DATE DERNIERE CONSO"], errors="coerce") if "DATE DERNIERE CONSO" in s \
         else pd.Series(pd.NaT, index=s.index)
     jamais = (derniere.dt.year <= 2001).fillna(False)
+    dormant = (stock > 0) & ~consomme_3_ans(s)  # surstock : du stock, aucune consommation depuis 3 ans (avec ou sans commande)
+    statut = np.select([fin_de_vie(s), jamais, dormant, conso <= 0, stock <= 0, couverture < seuil_mois, couverture < BAS_MOIS,
+                        couverture <= couverture_haute_mois],
+                       ["Obsolète / supprimé", "Jamais consommé", DORMANT, "Sans conso", "Rupture", "Critique", "Bas", "Correct"],
+                       "Couverture élevée")
+    fournisseur = s["Fournisseur principal"] if "Fournisseur principal" in s else pd.Series(np.nan, index=s.index)
+    if "DERNIER FOURNISSEUR" in s:
+        fournisseur = fournisseur.fillna(s["DERNIER FOURNISSEUR"])
     libelle_classe = classe.map(lambda c: f"{int(c)} · {CLASSES_FIN_DE_VIE[int(c)]}" if c in CLASSES_FIN_DE_VIE
                                 else (str(int(c)) if pd.notna(c) else np.nan))
     out = pd.DataFrame({
@@ -439,6 +454,12 @@ def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, surstock_mois: float =
     })
     out["_rang"] = out["Statut"].map({v: i for i, v in enumerate(STOCK_STATUTS)})
     return out.sort_values(["_rang", "Conso 12 mois"], ascending=[True, False], kind="stable").drop(columns="_rang").reset_index(drop=True)
+
+
+def top_dormants(etat: pd.DataFrame, n: int = 10) -> pd.DataFrame:
+    """Les `n` PN dormants (surstock) qui immobilisent le plus de valeur."""
+    d = etat[etat["Statut"] == DORMANT]
+    return d.sort_values(["Valeur stock (€)", "Stock"], ascending=[False, False], kind="stable").head(n)
 
 
 def top_ruptures(etat: pd.DataFrame, n: int = 10) -> pd.DataFrame:

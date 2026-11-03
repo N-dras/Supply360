@@ -241,8 +241,9 @@ def test_etat_des_stocks(tables):
     # 2 en stock pour 30 consommés par an (2,5 / mois) → 0,8 mois : critique (seuil 1 mois)
     assert e.loc["FX-1003", "Statut"] == "Critique" and e.loc["FX-1003", "Couverture (mois)"] == 0.8
     assert e.loc["FX-1002", "Statut"] == "Correct"            # 3 mois
-    assert e.loc["FX-1001", "Statut"] == "Surstock"           # 30 mois > 24
-    assert e.loc["FX-2001", "Statut"] == "Sans conso"         # dormant
+    assert e.loc["FX-1001", "Statut"] == "Couverture élevée"  # 30 mois > 24, mais consommé : pas du surstock
+    assert e.loc["FX-2001", "Statut"] == tx.DORMANT           # du stock, dernière conso en 2019 : surstock
+    assert list(tx.top_dormants(tx.etat_stocks(s))["PN"]) == ["FX-2001"]
     assert tx.etat_stocks(s, seuil_mois=4).set_index("PN").loc["FX-1002", "Statut"] == "Critique"  # seuil réglable
     statuts = list(tx.etat_stocks(s)["Statut"])
     assert statuts == sorted(statuts, key=tx.STOCK_STATUTS.index)  # du plus urgent au moins urgent
@@ -269,9 +270,9 @@ def test_etat_des_stocks_classe_code_et_2001():
     assert (e.loc[["A", "B", "C"], "Statut"] == "Obsolète / supprimé").all()
     assert e.loc["A", "Classe code"] == "3 · obsolète" and e.loc["B", "Classe code"] == "9 · supprimé"
     assert e.loc["C", "Classe code"] == "8 · en cours de suppression" and e.loc["D", "Classe code"] == "1"
-    assert e.loc["D", "Statut"] == "Surstock" and e.loc["D", "CCN"] == "C4"
-    # 2001 = date fictive : jamais consommé
-    assert e.loc["E", "Dernière conso"] == "Jamais consommé" and e.loc["E", "Statut"] == "Sans conso"
+    assert e.loc["D", "Statut"] == "Couverture élevée" and e.loc["D", "CCN"] == "C4"
+    # 2001 = date fictive : jamais consommé, compté à part (pas en surstock)
+    assert e.loc["E", "Dernière conso"] == "Jamais consommé" and e.loc["E", "Statut"] == "Jamais consommé"
     assert pd.Timestamp(e.loc["D", "Dernière conso"]) == pd.Timestamp("2026-01-01")
     assert "B" not in set(tx.top_ruptures(e.reset_index())["PN"])
     assert list(tx.etat_stocks(s).columns[:6]) == ["Statut", "PN", "CCN", "Description", "Catégorie", "Classe code"]
@@ -291,3 +292,17 @@ def test_prevision_sans_commande_classe_code_3_8_9(tables):
     assert r["Qté à commander maintenant"] == 0 and r["Commandes recommandées sur l'horizon (qté)"] == 0
     assert r[pv.BLOQUEE] > 0 and r["Manque avant livraison possible (qté)"] == 0
     assert "FX-1002" not in set(res["plan"]["PNR"]) and "FX-1002" not in set(pv.suivis(pbi)["PNR"])
+
+
+def test_surstock_dormant_3_ans():
+    s = pd.DataFrame({
+        "PNR": ["F", "G", "H", "I"], "REF_Equipement": ["HOUSSE"] * 4, "DESCRIPTION": ["x"] * 4,
+        "QTE SUR ÉTAGÈRE": [5, 5, 0, 5], "QTE EN CDE": [0, 0, 0, 3], "QTE CONSO 12M": [0, 0, 0, 0], "QTE CONSO 24M": [0, 0, 0, 0],
+        "QTE CONSO 2022": [9, 0, 0, 0], "QTE CONSO 2023": [0, 4, 0, 0], "QTE CONSO 2024": [0, 0, 0, 0], "QTE CONSO 2025": [0, 0, 0, 0],
+        "DATE DERNIERE CONSO": pd.to_datetime(["2022-03-01", "2023-06-01", "2020-01-01", "2018-01-01"]),
+    })
+    e = tx.etat_stocks(s).set_index("PN")["Statut"]
+    assert e["F"] == tx.DORMANT                # dernière conso en 2022 : plus de 3 ans
+    assert e["G"] == "Sans conso"              # consommé en 2023 : dans les 3 dernières années civiles
+    assert e["H"] == "Sans conso"              # dormant mais sans stock : rien à écouler
+    assert e["I"] == tx.DORMANT                # surstock même avec une commande en cours

@@ -17,6 +17,7 @@ import streamlit as st
 from core import dossiers
 from core import io as sio
 from core.icones import ICONES, ic
+from core.charts import aff as charts_aff
 from core.style import ONGLETS, teinte
 
 # Tons : (couleur du trait / de l'icône, couleur du chiffre, fond teinté) — palette de core/style.py
@@ -137,7 +138,7 @@ def en_developpement(icone: str, titre: str, points: list[str]) -> None:
 # --------------------------------------------------------------------------
 def kpi_card(label: str, value, sub: str = "", tone: str = "navy", icone: str | None = None, note: str = "", info: str = "") -> str:
     """HTML d'une tuile KPI (à passer à `kpi_grid`) : icône teintée, libellé, chiffre coloré, précision ; `info` = « ? »."""
-    sub_html = f'<div class="sub">{escape(str(sub))}</div>' if sub else ""
+    sub_html = f'<div class="sub" title="{escape(str(sub))}">{escape(str(sub))}</div>' if sub else ""
     note_html = (f'<span class="note">{escape(note)}</span>' if note else "") + aide(info)
     return (f'<div class="s360-kpi" style="{_vars(tone)}"><div class="t"><span class="pastille">{_icone(icone or ICONE_TON.get(tone, "layers"))}'
             f'</span><span>{escape(str(label))}</span>{note_html}</div><div class="val">{escape(str(value))}</div>{sub_html}</div>')
@@ -343,6 +344,9 @@ def tableau_html(df: pd.DataFrame, statut: str | None = None, couleurs: dict | N
     compteur de lignes et « Effacer les filtres ». Au-delà de `max_lignes`, seules les premières lignes sont affichées."""
     cle = cle or f"t{uuid.uuid4().hex[:10]}"
     couleurs = couleurs or {}
+    for c in ("Catégorie", "Equipement", "Équipement", "equipment"):  # « HOUSSE » → « Housse », comme dans les graphes
+        if c in df.columns and df[c].dtype == object:
+            df = df.assign(**{c: df[c].map(lambda v: charts_aff(v) if isinstance(v, str) else v)})
     total = len(df)
     if total > max_lignes:
         df = df.head(max_lignes)

@@ -79,6 +79,15 @@ def _tip(lignes) -> str:
     return f' data-tip="{escape(texte, quote=True)}"'.replace("\n", "&#10;")
 
 
+MOTS_CAPITALES = {"CEINTURE", "HOUSSE", "MOUSSE", "RIDEAUX", "ENSEMBLE", "TEXTILE", "TOUTES", "AUTRES"}
+
+
+def aff(x) -> str:
+    """Libellé affiché : équipements écrits en capitales dans les fichiers (« HOUSSE ») → « Housse », partout pareil."""
+    s = str(x)
+    return s.capitalize() if s in MOTS_CAPITALES else s
+
+
 def _titre(t):
     return f"<h5>{escape(t)}</h5>" if t else ""
 
@@ -88,7 +97,7 @@ def legende(items) -> str:
     if not items:
         return ""
     cls = {"ligne": "ln", "repere": "rp", "trait": "tr"}
-    spans = "".join(f'<span><i class="{cls.get(k, "")}" style="background:{c}"></i>{escape(str(n))}</span>' for n, c, k in items)
+    spans = "".join(f'<span><i class="{cls.get(k, "")}" style="background:{c}"></i>{escape(aff(n))}</span>' for n, c, k in items)
     return f'<div class="s360-legend">{spans}</div>'
 
 
@@ -99,7 +108,7 @@ def vide(message="Aucune donnée à afficher") -> str:
 def _libelle(c, temporel):
     if temporel:
         return pd.Timestamp(c).strftime("%m/%y")
-    return str(c)
+    return aff(c)
 
 
 def _etiquettes_x(cats, temporel=False):
@@ -108,9 +117,12 @@ def _etiquettes_x(cats, temporel=False):
     if temporel:
         pas = max(1, math.ceil(n / 14))
         spans = "".join(f"<span>{escape(c) if i % pas == 0 else ''}</span>" for i, c in enumerate(cats))
-        return f'<div class="s360-xl" style="grid-template-columns:repeat({n},minmax(0,1fr))">{spans}</div>', False
+        # « mois » : une étiquette sur `pas` ; elle peut déborder sur les colonnes voisines (vides) au lieu d'être tronquée
+        return f'<div class="s360-xl mois" style="grid-template-columns:repeat({n},minmax(0,1fr))">{spans}</div>', False
     long_ = max(len(c) for c in cats)
     tourner = n > 4 and (n > 12 or long_ > 9)
+    if all(len(c) <= 5 for c in cats) and n <= 40 and not any(" " in c for c in cats):
+        tourner = n > 24  # étiquettes courtes (« 11/26 », « 2027 ») : droites tant qu'il y a la place
     spans = "".join(f'<span title="{escape(c)}">{escape(c)}</span>' for c in cats)
     cls = "s360-xl rot" if tourner else "s360-xl"
     return f'<div class="{cls}" style="grid-template-columns:repeat({n},minmax(0,1fr))">{spans}</div>', tourner
@@ -169,8 +181,12 @@ def barres(cats, series: dict, couleurs: dict | None = None, empile=False, ligne
     if lig:  # la courbe occupe une bande au-dessus des barres : les étiquettes ne se chevauchent pas
         bande = (hauteur - HAUT) * 0.32
     zone = hauteur - HAUT - bande
-    grp = 62 if n > 3 else 40  # largeur du groupe de barres (% de la colonne)
-    montrer = etiquettes and (n * (1 if empile else len(noms)) <= 36)
+    # Densité : beaucoup de colonnes (ex. 36 mois) → barres plus larges dans leur colonne, étiquettes plus petites,
+    # pas de valeur écrite dans les segments (elles restent dans l'infobulle) : rien n'est coupé.
+    barres_n = n * (1 if empile else len(noms))
+    dense, tres_dense = barres_n > 16, barres_n > 28
+    grp = (84 if dense else 62) if n > 3 else 40  # largeur du groupe de barres (% de la colonne)
+    montrer = etiquettes and barres_n <= 48
 
     # Position verticale des points de la courbe (px depuis le haut)
     pts_l = {}
@@ -198,7 +214,7 @@ def barres(cats, series: dict, couleurs: dict | None = None, empile=False, ligne
                 h = vals[k][i] / ymax * zone
                 if h <= 0:
                     continue
-                txt = fmt(vals[k][i]) if montrer and plusieurs and h >= 17 else ""
+                txt = fmt(vals[k][i]) if montrer and plusieurs and h >= 17 and not dense else ""
                 segs.append(f'<i style="height:{h:.1f}px;background:{coul[k]}">{txt}</i>')
             haut_txt = fmt(tot[i]) if montrer and tot[i] else ""
             corps.append(f'<div class="bw"><b>{haut_txt}</b><div class="stk">{"".join(segs)}</div></div>')
@@ -232,7 +248,8 @@ def barres(cats, series: dict, couleurs: dict | None = None, empile=False, ligne
     svg = (f'<svg class="ov" viewBox="0 0 100 {hauteur}" preserveAspectRatio="none">{"".join(traces)}</svg>'
            if traces else "")
     xl, tourner = _etiquettes_x(libelles, temporel)
-    plot = (f'<div class="s360-plot" style="height:{hauteur}px"><div class="cols" style="grid-template-columns:'
+    densite = " tres-dense" if tres_dense else " dense" if dense else ""
+    plot = (f'<div class="s360-plot{densite}" style="height:{hauteur}px"><div class="cols" style="grid-template-columns:'
             f'repeat({n},minmax(0,1fr))">{"".join(colonnes)}</div>{svg}</div>{xl}')
     if tourner:  # marge à gauche : la première étiquette inclinée n'est pas coupée
         plot = f'<div class="s360-rotpad">{plot}</div>'
@@ -289,7 +306,7 @@ def multiples(panneaux: dict, couleurs: dict | None = None, hauteur=140, fmt=cou
     cartes = []
     for i, (t, (cats, vals)) in enumerate(panneaux.items()):
         c = couleurs.get(t, PALETTE[i % len(PALETTE)])
-        cartes.append(f'<div class="s360-mini"><b>{escape(str(t))}</b>'
+        cartes.append(f'<div class="s360-mini"><b>{escape(aff(t))}</b>'
                       f'{barres(cats, {str(t): vals}, {str(t): c}, hauteur=hauteur, fmt=fmt, legende_auto=False)}</div>')
     return f'<div class="s360-chart">{_titre(titre)}<div class="s360-minis">{"".join(cartes)}</div></div>'
 
@@ -309,7 +326,7 @@ def barres_h(lignes, couleur=COLORS["navy_2"], fmt=court, titre="", max_lignes=1
         txt = l[2] if len(l) > 2 and l[2] is not None else fmt(v)
         c = l[3] if len(l) > 3 else couleur
         pct = 0 if _nan(v) or not float(v) else max(float(v) / vmax * 100, 1.5)
-        rows.append(f'<div class="rw"{_tip([nom, txt])}><span class="nm">{escape(str(nom))}</span>'
+        rows.append(f'<div class="rw"{_tip([nom, txt])}><span class="nm">{escape(aff(nom))}</span>'
                     f'<div class="bar"><i style="width:{pct:.1f}%;--tone:{c}"></i></div><b>{escape(str(txt))}</b></div>')
     return f'<div class="s360-chart">{_titre(titre)}<div class="s360-rows">{"".join(rows)}</div></div>'
 
@@ -333,7 +350,7 @@ def parts(tableau, couleurs: dict, titre="", afficher="nombre", **_) -> str:
             txt = (f"{p:.0f} %" if afficher == "pourcent" else court(v)) if p >= 7 else ""
             segs.append(f'<span style="width:{p:.2f}%;background:{couleurs.get(col, COLORS["gris"])}"'
                         f'{_tip([f"{idx} · {col}", f"{court(v)} ({p:.0f} %)"])}>{txt}</span>')
-        rows.append(f'<div class="rw"><span class="nm" title="{escape(str(idx))}">{escape(str(idx))}</span>'
+        rows.append(f'<div class="rw"><span class="nm" title="{escape(aff(idx))}">{escape(aff(idx))}</span>'
                     f'<div class="s360-stack">{"".join(segs)}</div></div>')
     leg = legende([(c, couleurs.get(c, COLORS["gris"]), "barre") for c in tableau.columns])
     return f'<div class="s360-chart">{_titre(titre)}<div class="s360-share">{"".join(rows)}</div>{leg}</div>'
@@ -402,7 +419,7 @@ def chaleur(tableau, titre="", couleur=(31, 78, 156), libelle="lignes", hauteur_
             cells.append(f'<td style="background:rgba({r},{g},{b},{a:.2f});color:{fg}"'
                          f'{_tip([idx, f"{col} : {entier(v)} {libelle}", plus if isinstance(plus, str) else ""])}>'
                          f'{court(v) if v else ""}</td>')
-        lignes.append(f'<tr><th class="f" title="{escape(str(idx))}">{escape(str(idx))}</th>{"".join(cells)}</tr>')
+        lignes.append(f'<tr><th class="f" title="{escape(aff(idx))}">{escape(aff(idx))}</th>{"".join(cells)}</tr>')
     table = f'<table class="s360-heat"><thead><tr><th></th>{tete}</tr></thead><tbody>{"".join(lignes)}</tbody></table>'
     if hauteur_max:
         table = f'<div class="s360-heat-scroll" style="max-height:{hauteur_max}">{table}</div>'

@@ -220,7 +220,10 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
   Pas de champ de recherche ni de multisélection Python au-dessus d'un tableau : la barre du tableau suffit.
 - **Graphiques** (`core/charts.py`) : chacun dans sa **carte** (`graphe(html, sous)` : titre, une ligne
   d'explication, légende en bas), deux par ligne au plus, de même hauteur. Couleurs des palettes, **valeurs affichées**,
-  pas de double axe. Affichage par `st.markdown` (car `st.html` supprime le SVG). **Infobulle au survol** : attribut
+  pas de double axe. Affichage par `st.markdown` (car `st.html` supprime le SVG). **Graphes denses** (`charts.barres`, ex. 36 mois) :
+  au-delà de 16 barres, barres plus larges et étiquettes plus petites, pas de valeur dans les segments (infobulle) ;
+  mois sous l'axe : un sur k, sans troncature. **Libellés d'équipement** : `charts.aff` (« HOUSSE » → « Housse ») dans
+  les graphes, et colonnes Catégorie / Équipement des tableaux. **Infobulle au survol** : attribut
   `data-tip` affiché en CSS. **Agrandir / PNG** (JavaScript de build.py) : boutons ⛶ et ⤓ sur chaque `.s360-chart` ;
   PNG = copie du graphe dans un SVG `foreignObject` avec les règles CSS « s360 » et la police Manrope.
 - **Écran de chargement** (build.py) : fond clair, grande carte (logo, Supply360, barre, étape, version), l'avion

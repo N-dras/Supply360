@@ -334,10 +334,11 @@ def catalogue_mousses(parts: pd.DataFrame) -> pd.DataFrame:
                          "CCN": ccn})  # CCN : les PN écrits autrement dans l'État du stock sont aussi retrouvés
 
 
-def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None, pns) -> pd.DataFrame:
+def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None, pns, ccn_par_pn=None) -> pd.DataFrame:
     """Mousses sans fournisseur (PN introuvable dans la table stock, ou sans nom) : fournisseur lu directement dans
-    l'État du stock (« Résultat ») : DERNIER FOURNISSEUR, à défaut CODE FOURNISSEUR (« Code … »). Les PN sont comparés
-    sans espaces, tirets ni points (« 12-345.A » = « 12345A »). Ne change ni le stock ni le prix."""
+    l'État du stock (« Résultat ») : DERNIER FOURNISSEUR, à défaut CODE FOURNISSEUR (« Code … »). Recherche par PN
+    (comparé sans espaces, tirets ni points : « 12-345.A » = « 12345A »), puis par CCN (`ccn_par_pn` : CCN de chaque
+    PN, ex. textile_all_parts). Ne change ni le stock ni le prix."""
     pns = list(dict.fromkeys(pns))
     art = art.reindex(art.index.union(pd.Index(pns), sort=False)) if len(pns) else art
     if stock_lignes is None or not len(stock_lignes) or "PN" not in stock_lignes:
@@ -348,9 +349,17 @@ def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None,
     code = src["CODE_FOURNISSEUR"] if "CODE_FOURNISSEUR" in src else pd.Series(np.nan, index=src.index)
     vide = lambda s: s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])  # noqa: E731
     libelle = nom.where(~vide(nom), ("Code " + code.astype(str)).where(~vide(code)))
-    connus = src.assign(_f=libelle.to_numpy()).dropna(subset=["_f"]).drop_duplicates("_k").set_index("_k")["_f"]
+    avec = src.assign(_f=libelle.to_numpy()).dropna(subset=["_f"])
+    connus = avec.drop_duplicates("_k").set_index("_k")["_f"]
     manque = art["Fournisseur"].isna() | (art["Fournisseur"] == FOURNISSEUR_ABSENT)
     art.loc[manque, "Fournisseur"] = cle(art.index[manque]).map(connus).to_numpy()
+    # Toujours rien : même CCN dans le Résultat (PN écrit autrement, ou autre PN de la même pièce)
+    manque = art["Fournisseur"].isna() | (art["Fournisseur"] == FOURNISSEUR_ABSENT)
+    if manque.any() and ccn_par_pn is not None and "CCN" in avec:
+        from core.textile import cle_ccn
+        par_ccn = avec.assign(_c=cle_ccn(avec["CCN"]).to_numpy()).dropna(subset=["_c"]).drop_duplicates("_c").set_index("_c")["_f"]
+        ccn = cle_ccn(pd.Series(pd.Series(ccn_par_pn).reindex(art.index[manque]).to_numpy(), dtype=object))
+        art.loc[manque, "Fournisseur"] = ccn.map(par_ccn).to_numpy()
     return art
 
 

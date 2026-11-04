@@ -225,31 +225,33 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 [class*="st-key-s360tete_"] [data-testid="stColumn"]:last-child [data-testid="stVerticalBlock"] { align-items: flex-end; }
 
 /* ---------------------------------------------------------------- tuiles KPI */
-.s360-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr)); gap: 1rem; }
+.s360-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .8rem; }
 .s360-kpi {
-  position: relative; display: grid; gap: .3rem; align-content: start; min-width: 0;
-  padding: 1.1rem 1.2rem 1rem; background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--c, var(--line));
+  position: relative; display: grid; gap: .2rem; align-content: start; min-width: 0;
+  padding: .85rem 1rem .8rem; background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--c, var(--line));
   border-radius: var(--radius); box-shadow: var(--shadow);
 }
 .s360-kpi.large { grid-column: span 2; }
-.s360-kpi .t { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-weight: 700; font-size: .9rem; }
+.s360-kpi .t { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-weight: 700; font-size: .86rem; }
 .s360-kpi .t .note { margin-left: auto; font-weight: 600; font-size: .8rem; color: var(--faint); text-align: right; }
-.s360-kpi .pastille { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 8px; flex: none;
+.s360-kpi .pastille { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 7px; flex: none;
   background: var(--f); color: var(--c); }
-.s360-kpi .val { color: var(--t, var(--navy)); font-size: 2.2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
+.s360-kpi .val { color: var(--t, var(--navy)); font-size: 1.95rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1;
   font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s360-kpi .val small { font-size: 1rem; font-weight: 600; color: var(--muted); letter-spacing: 0; }
 .s360-kpi.large .val { color: var(--text); }
-.s360-kpi .sub { color: var(--muted); font-size: .88rem; }
+/* Sous-texte : deux lignes au plus (texte complet au survol, attribut title) : tuiles compactes et de même hauteur */
+.s360-kpi .sub { color: var(--muted); font-size: .82rem; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; }
 .s360-kpi .sub b { color: var(--text); }
-.s360-repart { display: flex; gap: 2px; height: .75rem; margin: .45rem 0 .15rem; }
+.s360-repart { display: flex; gap: 2px; height: .65rem; margin: .35rem 0 .1rem; }
 .s360-repart span { position: relative; min-width: 6px; border-radius: 2px; }
 .s360-repart span:first-child { border-radius: 4px 2px 2px 4px; }
 .s360-repart span:last-child { border-radius: 2px 4px 4px 2px; }
 .s360-repart span:only-child { border-radius: 4px; }
 .s360-repart span:hover { filter: brightness(1.1); }
 .s360-repart [data-tip]:hover::after { bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); }
-.s360-leg { display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; margin: .2rem 0 0; padding: 0; list-style: none; font-size: .86rem; color: var(--muted); }
+.s360-leg { display: flex; flex-wrap: wrap; gap: .15rem .9rem; margin: .15rem 0 0; padding: 0; list-style: none; font-size: .8rem; color: var(--muted); }
 .s360-leg li { display: flex; align-items: center; gap: .4rem; margin: 0; }
 .s360-leg i { width: .65rem; height: .65rem; border-radius: 3px; }
 .s360-leg b { color: var(--text); }
@@ -440,6 +442,12 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-plot .col.tr[data-tip]:hover::after { left: auto; right: 0; transform: none; }
 .s360-xl { display: grid; margin-top: .35rem; color: var(--muted); font-size: .8125rem; }
 .s360-xl span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; padding: 0 .1rem; }
+.s360-xl.mois span { overflow: visible; text-overflow: clip; display: flex; justify-content: center; padding: 0; }
+/* Graphes en barres denses (charts.barres : beaucoup de colonnes) : étiquettes plus petites, rien de coupé */
+.s360-plot.dense .grp { gap: 1px; }
+.s360-plot.dense .bw > b { font-size: .7rem; letter-spacing: -.02em; }
+.s360-plot.tres-dense .bw > b { font-size: .62rem; font-weight: 700; }
+.s360-plot.tres-dense .b, .s360-plot.tres-dense .stk i:last-child { border-radius: 2px 2px 0 0; }
 .s360-xl.rot { height: 4.8rem; }
 .s360-xl.rot span { text-align: right; justify-self: center; width: 7rem; max-width: 7rem;
   transform: translateX(-3.5rem) rotate(-38deg); transform-origin: right top; }

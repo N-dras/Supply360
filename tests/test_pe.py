@@ -131,3 +131,11 @@ def test_fournisseur_manquant_repris_du_resultat():
     assert r.loc["P3A", "Fournisseur"] == "Code F003"                  # « P-3 A » = « P3A »
     assert r.loc["P4", "Fournisseur"] == "Delta" and pd.isna(r.loc["P5", "Fournisseur"])
     assert r.loc["P2", "Stock"] == 2 and pd.isna(r.loc["P3A", "Stock"])  # stock et prix inchangés
+
+
+def test_fournisseur_manquant_par_ccn():
+    """PN absent du Résultat sous ce nom : le fournisseur est pris par le CCN (code fournisseur du Résultat)."""
+    art = pd.DataFrame({"Stock": [1], "Prix": [5], "Fournisseur": [pe.FOURNISSEUR_ABSENT]}, index=["FM-XYZ"])
+    lignes = pd.DataFrame({"PN": ["AUTRE-PN"], "CCN": ["7104"], "DERNIER_FOURNISSEUR": [np.nan], "CODE_FOURNISSEUR": ["F777"]})
+    r = pe.completer_fournisseurs(art, lignes, ["FM-XYZ"], pd.Series({"FM-XYZ": "7104"}))
+    assert r.loc["FM-XYZ", "Fournisseur"] == "Code F777"

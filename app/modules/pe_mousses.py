@@ -11,7 +11,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from core import cache, charts
+from core import cache, charts, dossiers
 from core import components as ui
 from core import io as sio
 from core import pe
@@ -31,10 +31,14 @@ K = f"{TAB_ID}__"
 SECTIONS = ["Synthèse", "Avions faisables", "CCN et commandes", "Avancement PE", "Forecast"]
 
 # Dossier Textile : règles de nommage prioritaires (sans accents ni majuscules), puis reconnaissance par le contenu.
-NOMS_DOSSIER = {"stock": r"^resultat", "pieces": r"textile_all_parts", "pe": r"^pe_mousse", "besoin_prod": r"besoin_prod"}
+# Dossier Textile partagé avec Textile cabine : « Résultat … PE » = État du stock de cet onglet (le plus récent) ;
+# « Résultat … ALL TEXTILE » est celui de Textile cabine (source « stock_textile », ignorée ici sans être signalée).
+NOMS_DOSSIER = {"stock_textile": dossiers.RESULTAT_ALL_TEXTILE, "stock": [dossiers.RESULTAT_PE, r"^resultat"],
+                "pieces": r"textile_all_parts", "pe": r"^pe_mousse", "besoin_prod": r"besoin_prod"}
 NOMMAGE = ("Dossier Textile : « Besoin_Prod… » = Besoin Prod mousses (objectif de l'année), « PE_MOUSSE… » = PE mousses "
-           "(mensuel), « Résultat… » = État du stock, « textile_all_parts » = Pièces par avion. À défaut, reconnaissance "
-           "par le contenu. Commandes (SAP) : dossier COMMANDE.")
+           "(mensuel), le « Résultat … PE » le plus récent = État du stock (les « Résultat … ALL TEXTILE » sont pour l'onglet "
+           "Textile cabine), « textile_all_parts » = Pièces par avion. À défaut, reconnaissance par le contenu ; s'il y a "
+           "plusieurs fichiers du même type, le plus récent est retenu. Commandes (SAP) : dossier COMMANDE.")
 COLONNES_ATTENDUES = {
     "besoin_prod": [("Feuille « QUOTE en euro »", "en-tête détecté automatiquement", False),
                     ("A/C, Flotte, Area, CCN, Qty per A/C, NB_AC", "type d'avion, classe, quantité par avion", True),
@@ -148,7 +152,7 @@ def _bloc_import():
         with bilan:
             ui.import_dossier(K + "dossier", {"besoin_prod": K + "besoin", "stock": K + "stock", "pieces": K + "pieces", "pe": K + "pe"},
                               label="Tout le dossier Textile (Ctrl+A pour tout sélectionner)", aide=NOMMAGE, noms=NOMS_DOSSIER,
-                              zone=zone_dossier, autres=("references",))
+                              zone=zone_dossier, autres=("references", "stock_textile"))
         with puces:
             ui.etat_fichiers([(p26.FICHIER_BESOIN, K + "besoin", True), (sio.FICHIER_STOCK, K + "stock", True),
                               (sio.FICHIER_COMMANDES, "commun__commandes", False), (pe.FICHIER_PE, K + "pe", False),

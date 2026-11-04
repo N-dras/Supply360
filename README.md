@@ -30,7 +30,8 @@ jour). Les fichiers importés restent dans le navigateur : rien n'est envoyé, n
 ```
 SharePoint (canal Teams MS-LGT1-Analystes, bibliothèque Documents)
 ├── COMMANDE/          fichier Commandes (SAP) à jour (le plus récent est pris) — c'est lui qui fait foi
-├── Textile/           « Résultat… » (État du stock), « textile_master_export » (Références textile),
+├── Textile/           « Résultat … ALL TEXTILE » (État du stock de Textile cabine), « Résultat … PE » (État du
+│                      stock de PE mousses), « textile_master_export » (Références textile),
 │                      « textile_all_parts » (Pièces par avion)
 │                      « PE_MOUSSE_JJMMAAAA » (âge des mousses, fichier mensuel tel quel)
 │                      « Besoin_Prod… » (objectif PE mousses de l'année : avions et CCN par type d'avion)
@@ -58,8 +59,14 @@ actualisation : clic sur le bouton → **Autoriser** →
 **Commandes (SAP)** : seul le fichier du dossier COMMANDE fait foi ; un fichier de commandes trouvé dans un dossier
 R2 ou Textile est ignoré (c'est signalé).
 
-**Textile** : le nom fait foi — « Résultat… », « textile_master_export », « textile_all_parts ». Si aucun fichier ne
-porte ce nom, la reconnaissance par le contenu prend le relais.
+**Textile** : le nom fait foi — « textile_master_export », « textile_all_parts », et pour l'État du stock :
+- l'onglet **Textile cabine** prend le **« Résultat … ALL TEXTILE » le plus récent** ;
+- l'onglet **PE mousses** prend le **« Résultat … PE » le plus récent** ;
+- chaque onglet laisse de côté le Résultat de l'autre, sans le signaler. S'il n'y a ni « ALL TEXTILE » ni « PE » dans
+  les noms, tout « Résultat » est accepté. Si aucun fichier ne porte ces noms, la reconnaissance par le contenu prend
+  le relais.
+
+« Le plus récent » : la date écrite dans le nom si elle existe, sinon la **date de modification** du fichier.
 
 Sinon, les fichiers sont reconnus par leur **contenu** (en-têtes de colonnes), quel que soit leur nom ; à défaut
 par un mot du nom (`logops`, `asreq`, `stock`, `commande`/`sap`, `reference`, `piece`). Si un dossier

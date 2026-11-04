@@ -430,18 +430,18 @@ def fichier(label: str, cle: str, types: list[str], colonnes: list[tuple[str, st
         if f is None:
             st.session_state.pop(memoire, None)   # l'utilisateur a retiré le fichier
         elif _fichier_valide(f):
-            st.session_state[memoire] = (f.name, f.getvalue(), f.file_id)
+            st.session_state[memoire] = (dossiers.sans_marque(f.name), f.getvalue(), f.file_id)
             st.session_state[vu] = f.file_id
             # Zone d'import vidée (nouvelle version du widget) : Streamlit libère sa propre copie du fichier, seule
             # la mémoire ci-dessus reste (le fichier n'est plus gardé deux fois).
             vider_emplacement(cle, garder_donnees=True)
             if on_import:
-                on_import(f.name)
+                on_import(dossiers.sans_marque(f.name))
 
     up = st.file_uploader(label, type=types, key=cle_up, on_change=_maj)
     garde = st.session_state.get(memoire)
     if _fichier_valide(up) and st.session_state.get(vu) != up.file_id:
-        garde = st.session_state[memoire] = (up.name, up.getvalue(), up.file_id)
+        garde = st.session_state[memoire] = (dossiers.sans_marque(up.name), up.getvalue(), up.file_id)
         st.session_state[vu] = up.file_id
     if garde and not (_fichier_valide(up) and up.file_id == garde[2]):
         st.markdown(f'<div class="s360-file">{ic("check")}<span>{escape(garde[0])}</span></div>', unsafe_allow_html=True)
@@ -461,7 +461,8 @@ def vider_emplacement(cle: str, garder_donnees: bool = False) -> None:
         st.session_state.pop(f"{cle}__data", None)
 
 
-LIBELLES_SOURCES = {"besoins": sio.FICHIER_BESOINS, "asreq": sio.FICHIER_ASREQ, "stock": sio.FICHIER_STOCK,
+LIBELLES_SOURCES = {"stock_pe": "Résultat PE (onglet PE mousses)", "stock_textile": "Résultat ALL TEXTILE (onglet Textile cabine)",
+                    "besoins": sio.FICHIER_BESOINS, "asreq": sio.FICHIER_ASREQ, "stock": sio.FICHIER_STOCK,
                     "commandes": sio.FICHIER_COMMANDES, "references": sio.FICHIER_REFERENCES, "pieces": "Pièces par avion",
                     "pe": "PE mousses", "besoin_prod": "Besoin Prod mousses"}
 

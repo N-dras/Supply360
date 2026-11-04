@@ -6,7 +6,7 @@ local (`streamlit run`), seul le nom est connu et tout est rangé dans un même 
 """
 
 import re
-from datetime import date
+from datetime import date, datetime
 
 from core import io as sio
 
@@ -14,10 +14,28 @@ from core import io as sio
 DATE_ISO = re.compile(r"(?<!\d)(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])(?!\d)")
 DATE_FR = re.compile(r"(?<!\d)(0[1-9]|[12]\d|3[01])[-_./]?(0[1-9]|1[0-2])[-_./]?(20\d{2}|\d{2})(?!\d)")
 HORS_CHANTIER = ""
+# Date de modification du fichier (ms), ajoutée devant le chemin par build.py (« @1730650000000@/Textile/x.xlsx ») :
+# sert à retenir le fichier le plus récent quand aucune date n'est écrite dans son nom.
+MARQUE_MODIF = re.compile(r"@(\d{10,})@/")
+# Fichiers « Résultat » du dossier Textile (nom normalisé : minuscules, sans accents, espaces → _) :
+# « Résultat … ALL TEXTILE … » pour l'onglet Textile cabine, « Résultat … PE … » pour l'onglet PE mousses.
+RESULTAT_ALL_TEXTILE = r"^resultat.*all[_\-.]*textile"
+RESULTAT_PE = r"^resultat.*(?<![a-z])pe(?![a-z])"
 
 
 def nom_court(chemin: str) -> str:
     return chemin.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+def date_modif(chemin: str) -> int:
+    """Date de modification du fichier en millisecondes (0 si inconnue, ex. en développement local)."""
+    m = MARQUE_MODIF.search(chemin.replace("\\", "/"))
+    return int(m.group(1)) if m else 0
+
+
+def sans_marque(chemin: str) -> str:
+    """Chemin sans la date de modification ajoutée par build.py."""
+    return MARQUE_MODIF.sub("", chemin)
 
 
 def date_dans_nom(nom: str) -> date | None:
@@ -56,9 +74,16 @@ def chantiers_tries(groupes: dict[str, list[str]]) -> list[str]:
     return sorted(noms, key=lambda g: (sio.chantier_depuis_nom(g)[1], g))
 
 
+def _recence(chemin: str) -> tuple:
+    ms = date_modif(chemin)
+    jour = date_dans_nom(chemin) or (datetime.fromtimestamp(ms / 1000).date() if ms else date.min)
+    return jour, ms, nom_court(chemin).lower()
+
+
 def meilleur(chemins: list[str]) -> str:
-    """Parmi plusieurs fichiers d'une même source, le plus récent (date dans le nom), sinon le dernier par nom."""
-    return max(chemins, key=lambda c: (date_dans_nom(c) or date.min, nom_court(c).lower()))
+    """Parmi plusieurs fichiers d'une même source, le plus récent : date écrite dans le nom, à défaut date de
+    modification du fichier ; à égalité, le dernier modifié, puis le dernier par nom."""
+    return max(chemins, key=_recence)
 
 
 def repartir(sources: dict[str, str | None]) -> tuple[dict[str, list[str]], list[str]]:
@@ -76,20 +101,29 @@ def repartir(sources: dict[str, str | None]) -> tuple[dict[str, list[str]], list
     return par_source, inconnus
 
 
-def appliquer_noms(sources: dict[str, str | None], regles: dict[str, str]) -> dict[str, str | None]:
-    """Règles de nommage propres à un dossier ({source: motif regex sur le nom normalisé, sans accents ni majuscules}).
+def appliquer_noms(sources: dict[str, str | None], regles: dict) -> dict[str, str | None]:
+    """Règles de nommage propres à un dossier ({source: motif regex, ou liste de motifs par ordre de préférence}, sur le
+    nom normalisé, sans accents ni majuscules), appliquées dans l'ordre.
 
     Si au moins un fichier correspond au motif d'une source, il fait foi : il prend cette source et les autres
-    fichiers reconnus comme cette source par leur contenu sont écartés. Sinon la détection par contenu s'applique.
+    fichiers reconnus comme cette source par leur contenu sont écartés. Avec une liste, le premier motif qui trouve un
+    fichier l'emporte (ex. « Résultat ALL TEXTILE », à défaut tout « Résultat »). Un fichier pris par une règle ne
+    peut plus l'être par une règle suivante. Sans fichier correspondant, la détection par contenu s'applique.
     """
     sources = dict(sources)
-    for source, motif in regles.items():
-        retenus = [c for c in sources if re.search(motif, sio.normaliser(nom_court(c)))]
+    pris: set[str] = set()
+    for source, motifs in regles.items():
+        retenus = []
+        for motif in [motifs] if isinstance(motifs, str) else motifs:
+            retenus = [c for c in sources if c not in pris and re.search(motif, sio.normaliser(nom_court(c)))]
+            if retenus:
+                break
         if not retenus:
             continue
+        pris.update(retenus)
         for c in sources:
             if c in retenus:
                 sources[c] = source
-            elif sources[c] == source:
+            elif sources[c] == source and c not in pris:
                 sources[c] = None
     return sources

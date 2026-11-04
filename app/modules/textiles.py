@@ -10,7 +10,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from core import cache, charts
+from core import cache, charts, dossiers
 from core import components as ui
 from core import io as sio
 from core import prevision as pv
@@ -194,10 +194,14 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
 SHAREPOINT_TEXTILE = ("https://afkl.sharepoint.com/:f:/r/teams/MS-LGT1-Analystes/Shared%20Documents/Textile"
                       "?d=w58572b00036a42e395a6b6435ecf4000&csf=1&web=1&e=ExlJGH")
 # Noms des fichiers du dossier Textile (prioritaires sur la reconnaissance par le contenu), sans accents ni majuscules.
-NOMS_DOSSIER = {"stock": r"^resultat", "references": r"textile_master_export", "pieces": r"textile_all_parts"}
-NOMMAGE = ("Dossier Textile : « Résultat… » = État du stock, « textile_master_export » = Références textile, "
-           "« textile_all_parts » = Pièces par avion. À défaut, les fichiers sont reconnus par leur contenu ; s'il y en a "
-           "plusieurs du même type, le plus récent (date dans le nom) est retenu. Commandes (SAP) : dossier COMMANDE.")
+# Dossier Textile partagé avec PE mousses : « Résultat … ALL TEXTILE » = État du stock de cet onglet (le plus récent) ;
+# « Résultat … PE » est celui de PE mousses (source « stock_pe », ignorée ici sans être signalée).
+NOMS_DOSSIER = {"stock_pe": dossiers.RESULTAT_PE, "stock": [dossiers.RESULTAT_ALL_TEXTILE, r"^resultat"],
+                "references": r"textile_master_export", "pieces": r"textile_all_parts"}
+NOMMAGE = ("Dossier Textile : le « Résultat … ALL TEXTILE » le plus récent = État du stock (les « Résultat … PE » sont "
+           "pour l'onglet PE mousses), « textile_master_export » = Références textile, « textile_all_parts » = Pièces par "
+           "avion. À défaut, les fichiers sont reconnus par leur contenu ; s'il y en a plusieurs du même type, le plus récent "
+           "est retenu (date dans le nom, sinon date de modification). Commandes (SAP) : dossier COMMANDE.")
 
 
 def _bloc_import():
@@ -223,7 +227,7 @@ def _bloc_import():
         with bilan:
             ui.import_dossier(K + "dossier", {"stock": K + "stock", "references": K + "references", "pieces": K + "pieces"},
                               label="Tout le dossier Textile (Ctrl+A pour tout sélectionner)", aide=NOMMAGE, noms=NOMS_DOSSIER,
-                              autres=("pe", "besoin_prod"),
+                              autres=("pe", "besoin_prod", "stock_pe"),
                               zone=zone_dossier)
         with puces:
             ui.etat_fichiers([(sio.FICHIER_STOCK, K + "stock", True), (sio.FICHIER_COMMANDES, "commun__commandes", False),

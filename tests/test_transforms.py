@@ -443,3 +443,28 @@ def test_stock_chantier_colonnes_rrs_sar_pr_code_agent(sources, croise):
                                     "N° commande", "PSD", "Fournisseur", "Code fournisseur", "Action", "Code agent",
                                     "Gestion", "TL", "Date chantier"]
     assert "Acheteur" not in t.columns
+
+
+def test_dossier_textile_resultat_all_textile_et_pe():
+    """Même dossier Textile : Textile cabine prend le dernier « Résultat ALL TEXTILE », PE mousses le dernier « Résultat PE »."""
+    from core import dossiers as d
+    from modules import pe_mousses, textiles
+    # contenu : tous les « Résultat » sont des États du stock ; dates de modification ajoutées par build.py
+    sources = {"@1730000000000@/Textile/Résultat ALL TEXTILE.xlsx": "stock",
+               "@1730900000000@/Textile/Résultat ALL TEXTILE (2).xlsx": "stock",
+               "@1730950000000@/Textile/Résultat PE.xlsx": "stock",
+               "@1730100000000@/Textile/Résultat PE ancien.xlsx": "stock",
+               "@1730000000000@/Textile/textile_all_parts.csv": "pieces"}
+    tx_src, _ = d.repartir(d.appliquer_noms(sources, textiles.NOMS_DOSSIER))
+    assert d.nom_court(tx_src["stock"][0]) == "Résultat ALL TEXTILE (2).xlsx"     # le plus récemment modifié
+    assert len(tx_src["stock"]) == 2 and len(tx_src["stock_pe"]) == 2             # les « Résultat PE » sont mis de côté
+    pe_src, _ = d.repartir(d.appliquer_noms(sources, pe_mousses.NOMS_DOSSIER))
+    assert d.nom_court(pe_src["stock"][0]) == "Résultat PE.xlsx"
+    assert "Résultat ALL TEXTILE" not in " ".join(pe_src["stock"])
+    # sans « ALL TEXTILE » / « PE » dans les noms : un « Résultat » quelconque reste accepté, le plus récent
+    seuls = {"@1730000000000@/T/Résultat.xlsx": "stock", "@1730500000000@/T/Résultat 2.xlsx": "stock"}
+    assert d.nom_court(d.repartir(d.appliquer_noms(seuls, textiles.NOMS_DOSSIER))[0]["stock"][0]) == "Résultat 2.xlsx"
+    # la date écrite dans le nom passe avant la date de modification
+    dates = {"@1730900000000@/T/Résultat ALL TEXTILE 01102026.xlsx": "stock", "@1730000000000@/T/Résultat ALL TEXTILE 01112026.xlsx": "stock"}
+    assert d.meilleur(list(dates)).endswith("01112026.xlsx")
+    assert d.sans_marque("@1730000000000@/T/Résultat.xlsx") == "T/Résultat.xlsx" and d.date_modif("T/x.xlsx") == 0

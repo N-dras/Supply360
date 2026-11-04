@@ -1375,10 +1375,12 @@ document.addEventListener("click", (e) => {
 // Import d'un dossier : stlite n'envoie que le nom du fichier. On transmet son chemin relatif
 // (« R2/F-XKAA - 151126/extraction.xlsx ») pour que l'app regroupe les fichiers par dossier chantier.
 const ajouterFormData = FormData.prototype.append;
+// La date de modification du fichier est ajoutée devant (« @1730650000000@/… », core/dossiers.py) : quand un dossier
+// contient plusieurs fichiers du même type, l'app retient le plus récent même sans date dans le nom.
 FormData.prototype.append = function (nom, valeur, fichier) {
   if (valeur instanceof File && fichier === undefined) {
-    const chemin = window.s360Chemins.get(`${valeur.name}|${valeur.size}|${valeur.lastModified}`) || valeur.webkitRelativePath;
-    if (chemin) return ajouterFormData.call(this, nom, valeur, chemin);
+    const chemin = window.s360Chemins.get(`${valeur.name}|${valeur.size}|${valeur.lastModified}`) || valeur.webkitRelativePath || valeur.name;
+    return ajouterFormData.call(this, nom, valeur, (valeur.lastModified ? `@${valeur.lastModified}@/` : "") + chemin);
   }
   return ajouterFormData.apply(this, arguments);
 };

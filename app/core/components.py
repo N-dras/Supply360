@@ -190,6 +190,33 @@ def empty_state(title: str, message: str, etapes: list[tuple[str, bool]] | None 
                 f'<div class="s360-steps">{steps}</div></div>', unsafe_allow_html=True)
 
 
+@contextmanager
+def barre_perimetre(cle: str):
+    """Barre « Périmètre » sous les sous-onglets (flotte, classe, équipement…) : même allure dans tous les onglets."""
+    with st.container(key=f"s360perimetre_{cle}"):
+        yield
+
+
+def choix_multiple(colonne, label: str, options: list, cle: str, tout: str = "Toutes", libelles: dict | None = None,
+                   aide: str | None = None) -> list:
+    """Groupe de boutons d'une barre « Périmètre » : « tout » sélectionné par défaut ; un clic choisit une valeur
+    (plusieurs possibles) ; cliquer sur « tout », ou tout désélectionner, revient à tout. Renvoie les valeurs retenues
+    (toutes si rien n'est choisi)."""
+    def maj():
+        v, avant = list(st.session_state.get(cle) or []), st.session_state.get(cle + "__avant", [tout])
+        if tout in v and tout not in avant:      # clic sur « tout » : on repart de tout
+            v = [tout]
+        elif tout in v and len(v) > 1:           # clic sur une valeur : « tout » se désélectionne
+            v = [x for x in v if x != tout]
+        st.session_state[cle] = v or [tout]
+        st.session_state[cle + "__avant"] = st.session_state[cle]
+
+    sel = colonne.pills(label, [tout] + list(options), selection_mode="multi", default=[tout], key=cle, on_change=maj,
+                        format_func=lambda x: (libelles or {}).get(x, x), persist_state="page", help=aide)
+    sel = [x for x in (sel or []) if x != tout]
+    return sel or list(options)
+
+
 def tableau(df, column_config=None, height=None, cle: str = "", statut: str | None = None, couleurs: dict | None = None,
             **_ignore) -> None:
     """Tableau standard de l'app : même rendu et mêmes filtres que `tableau_html` (tri et filtre au clic sur un

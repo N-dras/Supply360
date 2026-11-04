@@ -7,6 +7,7 @@ Imports : État du stock, Commandes (SAP), Références textile ; pour la prévi
 from dataclasses import asdict
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -48,7 +49,7 @@ COL_RELANCES = {"Statut commande": "Statut", "Fournisseur": "Fournisseur", "Comm
 COL_PREV = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Statut prévision": "Statut",
             "Qté à commander maintenant": "À commander", "Date 1ère commande": "1re commande", "QTE SUR ÉTAGÈRE": "Stock",
             "QTE EN CDE": "En commande", "Besoin minimum (qté)": "Stock minimum", "Délai (mois)": "Délai (mois)",
-            "Source délai": "Source délai", "Commandes recommandées sur l'horizon (qté)": "À commander (horizon)",
+            "Source délai": "Source délai", "Commandes recommandées sur l'horizon (qté)": "À commander sur la période",
             "Valeur à commander maintenant (€)": "Valeur maintenant (€)", "Fournisseur": "Fournisseur"}
 CFG = {
     "Demandée": st.column_config.DateColumn("Demandée", format="DD/MM/YYYY"),
@@ -113,15 +114,36 @@ def _prevision(cle_tables: tuple, pieces: tuple, params: pv.Params, regles: tupl
     return pv.run_policy(s_all, o_all, parts, fleet, None, rules, params, pd.Timestamp(cle_tables[3]))
 
 
-def _filtrer(s_all, o_all, cat):
-    s = s_all if cat == TOUTES else s_all[tx.categorie(s_all) == cat]
-    o = o_all if cat == TOUTES or o_all.empty else o_all[tx.categorie(o_all) == cat]
+def _dans_perimetre(df: pd.DataFrame, perim: tuple, pn: str = "PNR") -> pd.Series:
+    """Lignes du périmètre choisi : perim = (équipements, (PN, CCN) des flottes choisies) ; vide = tout."""
+    cats, cles = perim
+    garde = pd.Series(True, index=df.index)
+    if cats:
+        garde &= tx.categorie(df).isin(cats)
+    if cles is not None:
+        pns, ccns = cles
+        ccn = tx.cle_ccn(df["CCN"]) if "CCN" in df else pd.Series(np.nan, index=df.index)
+        garde &= df[pn].isin(pns) | ccn.isin(ccns)
+    return garde
+
+
+def _filtrer(s_all, o_all, perim):
+    s = s_all[_dans_perimetre(s_all, perim)]
+    o = o_all if o_all.empty else o_all[_dans_perimetre(o_all, perim)]
     return s, o
 
 
+def _cles_flottes(parts: pd.DataFrame | None, flottes: tuple) -> tuple | None:
+    """PN et CCN montés sur les flottes choisies (textile_all_parts : aircraft_type, pn, ccn) ; None = toutes."""
+    if not flottes or parts is None or not len(parts):
+        return None
+    p = parts[parts["aircraft_type"].isin(flottes)]
+    return frozenset(p["pn"]), frozenset(tx.cle_ccn(p["ccn"].replace("", np.nan)).dropna())
+
+
 @st.cache_resource(show_spinner=False, max_entries=4)
-def _export(cle_tables: tuple, cat: str, cle_prev: tuple | None) -> bytes:
-    s, o = _filtrer(*_tables(*cle_tables), cat)
+def _export(cle_tables: tuple, perim: tuple, cle_prev: tuple | None) -> bytes:
+    s, o = _filtrer(*_tables(*cle_tables), perim)
     rel = tx.relances(o) if len(o) else o
     feuilles = {
         "Synthèse catégories": tx.resume_categories(s, o),
@@ -135,8 +157,8 @@ def _export(cle_tables: tuple, cat: str, cle_prev: tuple | None) -> bytes:
     }
     if cle_prev:
         pbi, res = _prevision(*cle_prev)
-        pbi = pbi if cat == TOUTES else pbi[tx.categorie(pbi) == cat]
-        plan = res["plan"] if cat == TOUTES else res["plan"][res["plan"]["Catégorie"] == cat]
+        pbi = pbi[_dans_perimetre(pbi, perim)]
+        plan = res["plan"][res["plan"]["PNR"].isin(set(pbi["PNR"]))]
         feuilles = {"Prévision fournisseurs": pv.par_fournisseur(pbi, plan), "Plan de commande": plan,
                     "Prévision par PN": pbi, "Groupes avions": res["gs"], **feuilles}
     teinte = lambda serie, couleurs: [style.teinte(couleurs.get(v, "")) for v in serie]  # noqa: E731
@@ -158,7 +180,7 @@ def _parametres(parts) -> tuple[pv.Params, tuple]:
         ratio = a.slider("Avions d'avance (% du groupe)", 2, 40, int(d.buffer_ratio * 100), key=K + "ratio", persist_state="page",
                          help="10 % : 10 avions → 1, 50 avions → 5.")
         bmin = b.number_input("Minimum d'avions d'avance par groupe", 1, 10, d.buffer_min, key=K + "bmin", persist_state="page")
-        hz = a.slider("Horizon de prévision (mois)", 12, 60, d.horizon_months, key=K + "hz", persist_state="page")
+        hz = a.slider("Période couverte par la prévision (mois)", 12, 60, d.horizon_months, key=K + "hz", persist_state="page")
         never = b.checkbox("Stock d'avance aussi pour les pièces jamais remplacées (cycle 0)", value=d.buffer_on_never,
                            key=K + "never", persist_state="page",
                            help="Coché : toutes les pièces ont un stock d'avance. Décoché : seulement celles qui ont un cycle de remplacement.")
@@ -257,7 +279,7 @@ def render() -> None:
     f_stock, f_cmd, f_ref, f_pieces, today, seul, params, regles = _bloc_import()
     with entete:
         ui.hero(TAB_ICON, "Textile cabine", TAB_DESCRIPTION, "Supply Chain · Achats",
-                ui.contexte(("Données au", f"{today:%d/%m/%Y}", ""), ("Catégorie", (st.session_state.get(K + "cat") or TOUTES).capitalize(), "")))
+                ui.contexte(("Données au", f"{today:%d/%m/%Y}", "")))
     if not f_stock:
         with ui.section(f"{TAB_ID}_vide", "Analyse"):
             ui.empty_state("Importez l'État du stock", "Les autres fichiers enrichissent ensuite l'analyse.",
@@ -278,17 +300,27 @@ def render() -> None:
         ui.callout("Aucun PN du catalogue textile dans l'État du stock. Vérifiez les fichiers ou désactivez le filtre catalogue.", "warn", "⚠️")
         return
 
-    # Barre de sous-onglets + filtre catégorie : seule la section choisie est calculée et affichée.
+    # Sous-onglets, puis barre « Périmètre » (flotte, équipement) : seule la section choisie est calculée et affichée.
     with st.container(key="s360barre"):
-        n1, n2 = st.columns([3, 1.5], vertical_alignment="center")
-        with n1:
-            section = ui.sous_onglets(K + "section", SECTIONS)
-        with n2, st.container(key="s360pills_" + K + "cat"):
-            cats = [TOUTES] + tx.categories(s_all)
-            cat = st.pills("Catégorie", cats, default=TOUTES, key=K + "cat", label_visibility="collapsed", persist_state="page",
-                           format_func=lambda c: c if c == TOUTES else c.capitalize()) or TOUTES
-    s, o = _filtrer(s_all, o_all, cat)
-    st.session_state[K + "cle_export"] = (cle, cat, cle_prev)
+        section = ui.sous_onglets(K + "section", SECTIONS)
+    parts = _pieces(f_pieces[1], f_pieces[0], params)[0] if f_pieces else None
+    with ui.barre_perimetre(TAB_ID):
+        a, b = st.columns([1.3, 1.7], gap="medium")
+        types = sorted(x for x in parts["aircraft_type"].dropna().unique() if x) if parts is not None else []
+        if types:
+            flottes = ui.choix_multiple(a, "Flotte", types, K + "flottes", "Toutes")
+        else:
+            flottes = []
+            a.html('<div class="s360-perimetre-vide"><b>FLOTTE</b><span>Ajoutez « Pièces par avion » (textile_all_parts) '
+                   "pour filtrer par flotte</span></div>")
+        toutes_cats = tx.categories(s_all)
+        cats = ui.choix_multiple(b, "Équipement", toutes_cats, K + "cats", "Tous", {c: c.capitalize() for c in toutes_cats})
+    perim = (tuple(c for c in cats if len(cats) < len(toutes_cats)),
+             _cles_flottes(parts, tuple(flottes) if types and len(flottes) < len(types) else ()))
+    cat = TOUTES if not perim[0] and perim[1] is None else " · ".join(
+        ([", ".join(flottes)] if perim[1] is not None else []) + ([", ".join(c.capitalize() for c in cats)] if perim[0] else []))
+    s, o = _filtrer(s_all, o_all, perim)
+    st.session_state[K + "cle_export"] = (cle, perim, cle_prev)
 
     if section == "Prévision":  # calculée seulement ici (et pour l'export) : c'est le calcul le plus lourd de l'onglet
         try:
@@ -296,7 +328,7 @@ def render() -> None:
         except ValueError as exc:
             ui.callout(f"<b>Prévision impossible.</b> {exc}", "ko", "⛔")
             return
-        _section_prevision(prev, cat, o)
+        _section_prevision(prev, cat, o, perim, flottes if perim[1] is not None else None, params, today)
     else:
         {"Synthèse": _synthese, "Stock": _stock, "Commandes": _commandes, "Fournisseurs": _fournisseurs,
          "Consommation": _consommation}[section](s, o, today, cat)
@@ -386,67 +418,38 @@ def _stock(s, o, today, cat):
     seuil = float(st.session_state.get(K + "seuil_stock", 1.0))
     etat = tx.etat_stocks(s, seuil)
     n = etat["Statut"].value_counts()
-    en_stock = etat[(etat["Conso 12 mois"] > 0) & (etat["Stock"] > 0) & (etat["Statut"] != "Obsolète / supprimé")]
-    mediane = en_stock["Couverture (mois)"].median() if len(en_stock) else None
     valeur = etat.groupby("Statut")["Valeur stock (€)"].sum()
     dormants = etat[etat["Statut"] == tx.DORMANT]
     n_cde = int((dormants["En commande"] > 0).sum())
     obsolete, n_obs = valeur.get("Obsolète / supprimé", 0), int(n.get("Obsolète / supprimé", 0))
-    with ui.section(f"{TAB_ID}_stock", "État des stocks",
-                    f"{'Toutes catégories' if cat == TOUTES else cat.capitalize()} · couverture = stock sur étagère ÷ consommation "
-                    "mensuelle (12 derniers mois)", export=_export_btn("export_stock__btn"), carte=False):
+    with ui.section(f"{TAB_ID}_stock", "État des stocks", "" if cat == TOUTES else cat,
+                    export=_export_btn("export_stock__btn"), carte=False):
         ui.kpi_grid([
             ui.kpi_repartition("PN par niveau de stock", len(etat), "PN", [(v, int(n.get(v, 0)), tx.STOCK_STATUT_COULEURS[v])
                                                                        for v in tx.STOCK_STATUTS], icone="layers"),
-            ui.kpi_card("En rupture", charts.entier(n.get("Rupture", 0)), "consommés sur 12 mois, stock à 0", "ko", "box-off"),
-            ui.kpi_card("Critiques", charts.entier(n.get("Critique", 0)), f"moins de {seuil:g} mois de stock", "orange", "alert"),
-            ui.kpi_card("Couverture médiane", f"{mediane:.1f} mois".replace(".", ",") if mediane is not None and mediane == mediane else "—",
-                        "PN consommés et en stock", "navy", "gauge"),
+            ui.kpi_card("En rupture", charts.entier(n.get("Rupture", 0)), "sortent encore, stock à 0", "ko", "box-off"),
+            ui.kpi_card("Critiques", charts.entier(n.get("Critique", 0)), f"moins de {seuil:g} mois de stock".replace(".", ","),
+                        "orange", "alert"),
             ui.kpi_card("Surstock (dormants)", charts.euros(valeur.get(tx.DORMANT, 0)),
-                        f"{len(dormants)} PN en stock sans conso depuis 3 ans" + (f", dont {n_cde} avec une commande en cours" if n_cde else ""),
+                        f"{len(dormants)} PN sans sortie depuis 3 ans" + (f", dont {n_cde} encore en commande" if n_cde else ""),
                         "info", "moon"),
-            ui.kpi_card("Obsolète / supprimé", charts.euros(obsolete), f"{n_obs} PN classe code 3, 8 ou 9 : stock à écouler",
+            ui.kpi_card("Obsolète / supprimé", charts.euros(obsolete), f"{n_obs} PN classe code 3, 8 ou 9 : à écouler",
                         "violet", "x"),
         ])
         with st.popover("Règles de calcul et seuil"):
             st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, format="%.1f", key=K + "seuil_stock",
                             persist_state="page", help="En dessous de ce nombre de mois de consommation, le PN est « Critique ».")
             st.markdown(regles_stock(seuil))
-    top = tx.top_ruptures(etat)
-    with ui.section(f"{TAB_ID}_stock_top", "PN consommés à stock nul ou presque",
-                    f"Les plus consommés parmi les PN en rupture ou à moins de {seuil:g} mois de stock : à commander ou à relancer en priorité",
-                    tag=str(int(n.get("Rupture", 0) + n.get("Critique", 0)))):
-        a, b = st.columns([1.35, 1], gap="medium")
+    with ui.section(f"{TAB_ID}_stock_graphes", "Où en est le stock", carte=False):
+        a, b = st.columns(2, gap="medium")
         with a:
-            lignes = [(f"{r['PN']} · {str(r['Description'] or '')[:30]}", r["Conso 12 mois"],
-                       f"{charts.entier(r['Conso 12 mois'])} conso · stock {charts.entier(r['Stock'])} · {charts.entier(r['En commande'])} en cde",
-                       tx.STOCK_STATUT_COULEURS[r["Statut"]]) for _, r in top.iterrows()]
-            ui.graphe(charts.barres_h(lignes, titre=f"TOP {len(top)} : consommation 12 mois des PN à stock nul ou presque", max_lignes=10)
-                      if len(top) else charts.vide("Aucun PN consommé à stock nul ou presque"),
-                      "Rouge : stock à 0 · orange : stock critique. À droite : stock et quantités déjà en commande")
-        with b:
             ct = etat.groupby(["Catégorie", "Statut"]).size().unstack(fill_value=0)
             ct = ct.reindex(columns=[c for c in tx.STOCK_STATUTS if c in ct.columns], fill_value=0)
             ui.graphe(charts.parts(ct, tx.STOCK_STATUT_COULEURS, "Niveau de stock par catégorie"), "Nombre de PN de chaque catégorie")
-    top = tx.top_dormants(etat)
-    with ui.section(f"{TAB_ID}_stock_dormants", "Surstock : PN dormants",
-                    "Du stock sur étagère mais aucune consommation depuis 3 ans : à écouler, transférer ou réformer ; "
-                    "ne pas recommander", tag=str(len(dormants))):
-        a, b = st.columns([1.35, 1], gap="medium")
-        with a:
-            def _date(v):
-                return v.strftime("%m/%Y") if hasattr(v, "strftime") else "—"
-            lignes = [(f"{r['PN']} · {str(r['Description'] or '')[:30]}", r["Valeur stock (€)"],
-                       f"{charts.euros(r['Valeur stock (€)'])} · stock {charts.entier(r['Stock'])} · dernière conso {_date(r['Dernière conso'])}"
-                       + (f" · {charts.entier(r['En commande'])} en cde" if r["En commande"] > 0 else ""),
-                       tx.STOCK_STATUT_COULEURS[tx.DORMANT]) for _, r in top.iterrows()]
-            ui.graphe(charts.barres_h(lignes, titre=f"TOP {len(top)} : valeur immobilisée des PN dormants", max_lignes=10)
-                      if len(top) else charts.vide("Aucun PN dormant"),
-                      "Classés par valeur du stock. « en cde » : une commande est encore ouverte sur un PN dormant, à revoir")
         with b:
             ui.graphe(charts.barres_h([(st_, valeur.get(st_, 0), charts.euros(valeur.get(st_, 0)), tx.STOCK_STATUT_COULEURS[st_])
-                                       for st_ in tx.STOCK_STATUTS], titre="Valeur du stock par statut"),
-                      "Où est l'argent : stock utile, surstock dormant, PN obsolètes ou supprimés, jamais consommés")
+                                       for st_ in tx.STOCK_STATUTS if valeur.get(st_, 0) > 0], titre="Valeur du stock par statut"),
+                      "Montant immobilisé dans chaque statut")
     _etat_stocks_table(etat)
 
 
@@ -627,35 +630,63 @@ def _vue_fournisseur(o):
 # --------------------------------------------------------------------------
 # Consommation
 # --------------------------------------------------------------------------
+MOIS_COURTS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+
+
+def _periode(fin: pd.Timestamp) -> str:
+    """12 mois qui se terminent au mois de `fin` : « nov. 2025 → oct. 2026 »."""
+    debut = fin - pd.DateOffset(months=11)
+    return f"{MOIS_COURTS[debut.month - 1]} {debut.year} → {MOIS_COURTS[fin.month - 1]} {fin.year}"
+
+
 def _consommation(s, o, today, cat):
     annees = tx.annees_conso(s)
     cats = tx.categories(s)
-    with ui.section(f"{TAB_ID}_conso", "Consommation", "Quantités consommées, issues de l'État du stock"):
-        if annees:
-            ui.graphe(charts.multiples({c: ([str(a) for a in annees], [s.loc[tx.categorie(s) == c, f"QTE CONSO {a}"].fillna(0).sum()
-                                                                       for a in annees]) for c in cats},
-                                       tx.CATEGORY_COLORS, titre="Par année"))
-        fen = [w for w in tx.WINDOW_COLUMNS if w in s.columns]
-        if fen:
-            ui.graphe(charts.multiples({c: (["12 mois", "18 mois", "24 mois"][:len(fen)], [s.loc[tx.categorie(s) == c, w].fillna(0).sum() for w in fen])
-                                        for c in cats}, tx.CATEGORY_COLORS, titre="Sur 12 / 18 / 24 mois glissants"))
-        with st.popover("Tableau par catégorie"):
+    fin = pd.Timestamp(today) - pd.DateOffset(months=1)                 # dernier mois complet
+    recent, avant = _periode(fin), _periode(fin - pd.DateOffset(months=12))
+    c12 = s["QTE CONSO 12M"].fillna(0) if "QTE CONSO 12M" in s else pd.Series(0.0, index=s.index)
+    c_av = s["Conso 12 mois précédents"].fillna(0) if "Conso 12 mois précédents" in s else pd.Series(0.0, index=s.index)
+    pu = pd.to_numeric(s.get("Dernier PU (achat) Euros", pd.Series(0.0, index=s.index)), errors="coerce").fillna(0)
+    evol = (c12.sum() / c_av.sum() - 1) * 100 if c_av.sum() > 0 else None
+    with ui.section(f"{TAB_ID}_conso", "Consommation", "Pièces sorties du stock, d'après l'État du stock", carte=False):
+        ui.kpi_grid([
+            ui.kpi_card("Sorties sur 12 mois", charts.entier(c12.sum()), recent, "navy", "trend"),
+            ui.kpi_card("Valeur sortie", charts.euros((c12 * pu).sum()), "au dernier prix d'achat", "teal", "euro"),
+            ui.kpi_card("Les 12 mois d'avant", charts.entier(c_av.sum()), avant, "info", "calendar"),
+            ui.kpi_card("Tendance", "—" if evol is None else f"{evol:+.0f} %".replace("-", "−"),
+                        "par rapport aux 12 mois d'avant", "ok" if evol is None or evol <= 0 else "orange", "gauge"),
+            ui.kpi_card("PN consommés", charts.entier((c12 > 0).sum()), f"sur {charts.entier(len(s))} PN", "violet", "layers"),
+        ])
+    with ui.section(f"{TAB_ID}_conso_g", "Qui consomme quoi", carte=False):
+        a, b = st.columns(2, gap="medium")
+        with a:
+            if annees:
+                par_an = {c: [s.loc[tx.categorie(s) == c, f"QTE CONSO {an}"].fillna(0).sum() for an in annees] for c in cats}
+                ui.graphe(charts.barres([str(an) for an in annees], {c.capitalize(): v for c, v in par_an.items()},
+                                        {c.capitalize(): tx.CATEGORY_COLORS.get(c) for c in cats}, empile=True, titre="Sorties par année"),
+                          "Pièces sorties chaque année civile, par équipement")
+            else:
+                ui.graphe(charts.vide("Pas de consommation par année dans l'État du stock"))
+        with b:
+            d = s.assign(_c=c12, _a=c_av).sort_values("_c", ascending=False).head(10)
+            d = d[d["_c"] > 0]
+            def _tendance(r):
+                return "nouveau" if r["_a"] <= 0 else f"{(r['_c'] / r['_a'] - 1) * 100:+.0f} %".replace("-", "−")
+            lignes = [(f"{r['PNR']} · {str(r.get('DESCRIPTION') or '')[:28]}", r["_c"],
+                       f"{charts.entier(r['_c'])} · {_tendance(r)}") for _, r in d.iterrows()]
+            ui.graphe(charts.barres_h(lignes, titre="Les 10 PN qui sortent le plus", max_lignes=10)
+                      if lignes else charts.vide("Aucune sortie sur 12 mois"),
+                      f"Pièces sorties ({recent}) · % = évolution par rapport à {avant}")
+        with st.popover("Tableau par équipement"):
             ui.tableau(tx.conso_par_categorie(s), width=1000)
-    if "QTE CONSO 12M" in s.columns:
-        with ui.section(f"{TAB_ID}_top", "PN les plus consommés", "12 derniers mois face aux 12 mois précédents"):
-            d = s.sort_values("QTE CONSO 12M", ascending=False).head(15)
-            ui.graphe(charts.barres(d["PNR"], {"12 derniers mois": d["QTE CONSO 12M"].fillna(0), "12 mois précédents": d["Conso 12 mois précédents"]},
-                                    {"12 derniers mois": COLORS["navy_2"], "12 mois précédents": COLORS["gris"]},
-                                    ligne={"Évolution": d["Evolution 12M vs 12M précédents (%)"]}, fmt_ligne=charts.pourcent,
-                                    survol=list(d["DESCRIPTION"].fillna("").astype(str)) if "DESCRIPTION" in d else None, hauteur=260))
-        _conso_pn(s, annees)
+    _conso_pn(s, annees)
 
 
 @st.fragment
 def _conso_pn(s, annees):
     if not annees:
         return
-    with ui.section(f"{TAB_ID}_pn", "Par PN"):
+    with ui.section(f"{TAB_ID}_pn", "Sorties par année d'un PN", "Les 6 PN les plus consommés, ou ceux que vous choisissez"):
         pool = s.sort_values("QTE CONSO 12M", ascending=False) if "QTE CONSO 12M" in s.columns else s
         libelles = dict(zip(pool["PNR"], pool["PNR"] + " — " + pool.get("DESCRIPTION", pd.Series("", index=pool.index)).fillna("").astype(str).str[:40]))
         choix = st.multiselect("PN", list(libelles), format_func=libelles.get, key=K + "pn", max_selections=9,
@@ -672,6 +703,7 @@ def _conso_pn(s, annees):
 # --------------------------------------------------------------------------
 EXPLICATION = """
 **L'idée** : toujours avoir assez de pièces pour équiper une partie des avions de chaque groupe (ex. « A320 Group 1 »).
+La prévision couvre la période **{periode}** (réglable dans Paramètres › Horizon).
 
 1. **Combien d'avions d'avance ?** 10 % des avions du groupe, au moins 1 (réglable dans Paramètres).
    Exemple : un groupe de 50 avions → 5 avions d'avance.
@@ -691,55 +723,74 @@ EXPLICATION = """
 """
 
 
-def _section_prevision(prev, cat, o):
+def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=None):
     if prev is None:
         with ui.section(f"{TAB_ID}_prev_vide", "Prévision de commandes"):
             ui.empty_state(f"Importez le fichier {pv.FICHIER_PIECES}", "La prévision s'appuie sur les pièces par avion. "
                            "Les paramètres sont réglables dans « Paramètres » › Prévision.",
                            [(pv.FICHIER_PIECES, False)], icon="🧮")
         return
+    params = params or pv.Params()
     pbi, res = prev
-    s = pbi if cat == TOUTES else pbi[tx.categorie(pbi) == cat]
-    plan = res["plan"] if cat == TOUTES else res["plan"][res["plan"]["Catégorie"] == cat]
-    gs = res["gs"] if cat == TOUTES else res["gs"][res["gs"]["equipment"] == cat]
+    s = pbi[_dans_perimetre(pbi, perim)]
+    plan = res["plan"][res["plan"]["PNR"].isin(set(s["PNR"]))]
+    gs = res["gs"]
+    if perim[0]:
+        gs = gs[gs["equipment"].isin(perim[0])]
+    if flottes:
+        gs = gs[gs["aircraft_type"].isin(flottes)]
     now = s[s["Qté à commander maintenant"] > 0]
-    with ui.section(f"{TAB_ID}_prev", "Prévision de commandes", "Stock minimum à tenir : avions d'avance par groupe d'avions"):
-        if len(now):
-            ui.callout(f"<b>{len(now)} PN à commander maintenant</b> pour {charts.euros(now['Valeur à commander maintenant (€)'].sum())}, "
-                       f"chez <b>{now['Fournisseur'].nunique()} fournisseur(s)</b>.", "ko", "📌")
+    # Période couverte par la prévision (paramètre « Horizon ») : écrite en clair, jamais « horizon » seul
+    debut = pd.Timestamp(today or date.today()).to_period("M").to_timestamp()
+    fin = debut + pd.DateOffset(months=params.horizon_months - 1)
+    periode = f"{MOIS_COURTS[debut.month - 1]} {debut.year} → {MOIS_COURTS[fin.month - 1]} {fin.year}"
+    v_now = now["Valeur à commander maintenant (€)"].sum()
+    v_total = s["Valeur commandes recommandées (€)"].sum()
+    plus_tard = s[(s["Commandes recommandées sur l'horizon (qté)"] > s["Qté à commander maintenant"])]
+    with ui.section(f"{TAB_ID}_prev", "Prévision de commandes",
+                    f"Garder assez de pièces pour équiper {params.buffer_ratio:.0%} des avions de chaque groupe · "
+                    f"période de {params.horizon_months} mois : {periode}", carte=False):
         ui.kpi_grid([
-            ui.kpi_card("PN à commander maintenant", charts.entier(len(now)), "", "ko"),
-            ui.kpi_card("Valeur à commander", charts.euros(now["Valeur à commander maintenant (€)"].sum()), "maintenant", "ko"),
-            ui.kpi_card("PN à planifier", charts.entier((s["Statut prévision"] == "A planifier").sum()), "sur l'horizon", "warn"),
-            ui.kpi_card("Groupes sous l'objectif", charts.entier((gs["Statut groupe"] == "Sous l'objectif").sum()), "", "accent"),
-            ui.kpi_card("Non commandés", charts.entier(s["Statut prévision"].isin(["Dormant / inactif : pas de commande", pv.OBSOLETE]).sum()),
-                        f"dormants / inactifs, dont {charts.entier((s['Statut prévision'] == pv.OBSOLETE).sum())} en classe code 3, 8 ou 9",
-                        "violet"),
+            ui.kpi_card("À commander maintenant", charts.euros(v_now), f"{len(now)} PN, chez {now['Fournisseur'].nunique()} fournisseur(s)",
+                        "ko", "cart"),
+            ui.kpi_card("À commander plus tard", charts.euros(max(v_total - v_now, 0)),
+                        f"{len(plus_tard)} PN, d'ici {MOIS_COURTS[fin.month - 1]} {fin.year}", "warn", "calendar"),
+            ui.kpi_card("Total sur la période", charts.euros(v_total), periode, "navy", "euro"),
+            ui.kpi_card("Groupes d'avions sous l'objectif", charts.entier((gs["Statut groupe"] == "Sous l'objectif").sum()),
+                        f"sur {charts.entier(len(gs))} (groupe × classe × assise / dossier)", "accent", "plane"),
+            ui.kpi_card("Jamais commandés", charts.entier(s["Statut prévision"].isin(["Dormant / inactif : pas de commande", pv.OBSOLETE]).sum()),
+                        "PN dormants, inactifs ou obsolètes", "violet", "x"),
         ])
-        c1, c2, c3 = st.columns(3)
-        with c1.popover("Comment le besoin est calculé", width="stretch"):
-            st.markdown(EXPLICATION)
-        with c2.popover("Tableaux détaillés", width="stretch"):
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1.popover("Comment c'est calculé", width="stretch"):
+            st.markdown(EXPLICATION.replace("{periode}", periode))
+        with c2.popover("Autres tableaux", width="stretch"):
             _tableaux_prevision(s, plan, gs, res)
         with c3:
             cle_export = st.session_state[K + "cle_export"]
             ui.telecharger(lambda: _export(*cle_export), sio.nom_export(TAB_ID), K + "export_prev__btn")
 
+    with ui.section(f"{TAB_ID}_prev_now", "À commander maintenant", "Commandes à passer ce mois-ci, la plus grosse valeur en premier",
+                    tag=str(len(now))):
+        if len(now):
+            d = now.sort_values("Valeur à commander maintenant (€)", ascending=False)
+            ui.tableau(d[[c for c in COL_PREV if c in d.columns]].rename(columns=COL_PREV), column_config=CFG, height=360,
+                       statut="Statut", couleurs=pv.STATUS_COLORS)
+        else:
+            ui.callout("Rien à commander maintenant.", "ok", "check-circle")
+
     fours = pv.par_fournisseur(s, plan)
-    with ui.section(f"{TAB_ID}_prev_four", "Prévision par fournisseur",
-                    "PN actifs rattachés à un groupe d'avions · fournisseur, ou à défaut code fournisseur", tag=str(len(fours))):
-        a, b = st.columns(2, gap="large")
-        with a:
-            top = fours[fours["Valeur maintenant (€)"] > 0].sort_values("Valeur maintenant (€)", ascending=False).head(12)
-            ui.graphe(charts.barres_h([(r["Fournisseur"], r["Valeur maintenant (€)"], charts.euros(r["Valeur maintenant (€)"]))
-                                       for _, r in top.iterrows()], couleur=COLORS["ko"], titre="Valeur à commander maintenant")
-                      if len(top) else charts.vide("Aucune commande à passer maintenant"))
-        with b:
-            top = fours[fours["Valeur sur l'horizon (€)"] > 0].sort_values("Valeur sur l'horizon (€)", ascending=False).head(12)
-            ui.graphe(charts.barres_h([(r["Fournisseur"], r["Valeur sur l'horizon (€)"], charts.euros(r["Valeur sur l'horizon (€)"]))
-                                       for _, r in top.iterrows()], titre="Valeur à commander sur l'horizon")
-                      if len(top) else charts.vide("Aucune commande sur l'horizon"))
-        ui.tableau(fours, column_config=CFG, height=min(38 + 35 * len(fours), 420))
+    with ui.section(f"{TAB_ID}_prev_four", "Par fournisseur", f"Ce qu'il faut commander chez chacun, maintenant et d'ici {periode.split(' → ')[1]}",
+                    tag=str(len(fours))):
+        top = fours[fours["Valeur sur l'horizon (€)"] > 0].head(12)
+        ui.graphe(charts.barres(list(top["Fournisseur"]), {"Maintenant": top["Valeur maintenant (€)"].to_numpy(),
+                                                            "Plus tard": (top["Valeur sur l'horizon (€)"] - top["Valeur maintenant (€)"]).clip(lower=0).to_numpy()},
+                                {"Maintenant": COLORS["ko"], "Plus tard": COLORS["warn"]}, empile=True, fmt=charts.euros,
+                                titre="Valeur à commander par fournisseur") if len(top) else charts.vide("Aucune commande sur la période"),
+                  f"Rouge : à commander maintenant · jaune : plus tard, d'ici {periode.split(' → ')[1]}")
+        ui.tableau(fours.rename(columns={"Valeur maintenant (€)": "À commander maintenant (€)", "Valeur sur l'horizon (€)": "Total sur la période (€)",
+                                         "Qté à commander maintenant": "Qté maintenant", "PN suivis": "PN suivis"}),
+                   column_config=CFG, height=min(38 + 35 * len(fours), 420))
     _vue_fournisseur_prev(s, o, fours)
     with ui.section(f"{TAB_ID}_prev_statut", "Statut des PN et des groupes d'avions"):
         a, b = st.columns(2, gap="large")

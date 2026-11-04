@@ -326,3 +326,17 @@ def test_croisement_par_ccn():
     ligne = o[o["PN commandé"] == "PN-FOURNISSEUR-1004"]
     assert len(ligne) == 1 and ligne["PNR"].iloc[0] == "FX-1004"          # rattachée au PN du stock par le CCN
     assert tx.cle_ccn(pd.Series([12.0, " ab 1", None, "nan"])).tolist()[:2] == ["12", "AB1"]
+
+
+def test_perimetre_flotte_et_equipement(tables):
+    """Barre « Périmètre » : flotte (PN ou CCN montés sur ces avions, textile_all_parts) et équipement."""
+    from modules import textiles as T
+    s, o = tables
+    parts = pd.DataFrame({"aircraft_type": ["A320", "A350"], "pn": ["FX-1002", "AUTRE-PN"],
+                          "ccn": ["", str(s.loc[s["PNR"] == "FX-1003", "CCN"].iloc[0])]})
+    cles = T._cles_flottes(parts, ("A350",))
+    s2, _ = T._filtrer(s, o, ((), cles))
+    assert set(s2["PNR"]) == {"FX-1003"}                         # retrouvé par le CCN monté sur A350
+    s3, _ = T._filtrer(s, o, (("HOUSSE",), None))
+    assert set(tx.categorie(s3)) == {"HOUSSE"}
+    assert T._cles_flottes(parts, ()) is None                    # aucune flotte choisie : tout

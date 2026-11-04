@@ -82,34 +82,14 @@ def _mois_label(m) -> str:
 CLASSES_LIBELLES = {"J": "J · Business", "W": "W · Premium", "Y": "Y · Économie"}
 
 
-def _choix(colonne, label: str, options: list, cle: str, tout: str, libelles: dict | None = None) -> list:
-    """Filtre en boutons : « tout » sélectionné par défaut ; un clic choisit une valeur (plusieurs possibles) ;
-    cliquer sur « tout », ou tout désélectionner, revient à tout afficher. Renvoie les valeurs retenues."""
-    k = K + cle
-
-    def maj():
-        v, avant = list(st.session_state.get(k) or []), st.session_state.get(k + "__avant", [tout])
-        if tout in v and tout not in avant:      # clic sur « tout » : on repart de tout
-            v = [tout]
-        elif tout in v and len(v) > 1:           # clic sur une valeur : « tout » se désélectionne
-            v = [x for x in v if x != tout]
-        st.session_state[k] = v or [tout]
-        st.session_state[k + "__avant"] = st.session_state[k]
-
-    sel = colonne.pills(label, [tout] + list(options), selection_mode="multi", default=[tout], key=k, on_change=maj,
-                        format_func=lambda x: (libelles or {}).get(x, x), persist_state="page")
-    sel = [x for x in (sel or []) if x != tout]
-    return sel or list(options)
-
-
 def _filtres(cal: pd.DataFrame) -> tuple[list, list, list]:
     """Barre « Périmètre » : flotte, classe et élément (assise / dossier) à afficher."""
-    with st.container(key="s360barre_pe"):
+    with ui.barre_perimetre("pe"):
         a, b, c = st.columns([1.5, 1.2, 0.9], gap="medium")
         flottes = sorted(cal["Flotte"].dropna().unique())
-        f = _choix(a, "Flotte", flottes, "flottes_v2", "Toutes")
-        cl = _choix(b, "Classe", pe.CLASSES, "classes_v2", "Toutes", CLASSES_LIBELLES)
-        co = _choix(c, "Élément", pe.COMPOSANTS, "composants_v2", "Tous")
+        f = ui.choix_multiple(a, "Flotte", flottes, K + "flottes_v2", "Toutes")
+        cl = ui.choix_multiple(b, "Classe", pe.CLASSES, K + "classes_v2", "Toutes", CLASSES_LIBELLES)
+        co = ui.choix_multiple(c, "Assise / dossier", pe.COMPOSANTS, K + "composants_v2", "Tous")
     return f, cl, co
 
 

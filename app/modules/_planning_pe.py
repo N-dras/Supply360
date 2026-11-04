@@ -79,15 +79,38 @@ def _mois_label(m) -> str:
     return pd.Timestamp(m).strftime("%m/%y")
 
 
+CLASSES_LIBELLES = {"J": "J · Business", "W": "W · Premium", "Y": "Y · Économie"}
+
+
+def _choix(colonne, label: str, options: list, cle: str, tout: str, libelles: dict | None = None) -> list:
+    """Filtre en boutons : « tout » sélectionné par défaut ; un clic choisit une valeur (plusieurs possibles) ;
+    cliquer sur « tout », ou tout désélectionner, revient à tout afficher. Renvoie les valeurs retenues."""
+    k = K + cle
+
+    def maj():
+        v, avant = list(st.session_state.get(k) or []), st.session_state.get(k + "__avant", [tout])
+        if tout in v and tout not in avant:      # clic sur « tout » : on repart de tout
+            v = [tout]
+        elif tout in v and len(v) > 1:           # clic sur une valeur : « tout » se désélectionne
+            v = [x for x in v if x != tout]
+        st.session_state[k] = v or [tout]
+        st.session_state[k + "__avant"] = st.session_state[k]
+
+    sel = colonne.pills(label, [tout] + list(options), selection_mode="multi", default=[tout], key=k, on_change=maj,
+                        format_func=lambda x: (libelles or {}).get(x, x), persist_state="page")
+    sel = [x for x in (sel or []) if x != tout]
+    return sel or list(options)
+
+
 def _filtres(cal: pd.DataFrame) -> tuple[list, list, list]:
+    """Barre « Périmètre » : flotte, classe et élément (assise / dossier) à afficher."""
     with st.container(key="s360barre_pe"):
-        a, b, c = st.columns([1.3, 1, 1.1], vertical_alignment="center")
+        a, b, c = st.columns([1.5, 1.2, 0.9], gap="medium")
         flottes = sorted(cal["Flotte"].dropna().unique())
-        f = a.pills("Flotte", flottes, selection_mode="multi", default=flottes, key=K + "flottes", persist_state="page")
-        cl = b.pills("Classe", pe.CLASSES, selection_mode="multi", default=pe.CLASSES, key=K + "classes", persist_state="page")
-        co = c.pills("Élément", pe.COMPOSANTS, selection_mode="multi", default=pe.COMPOSANTS, key=K + "composants",
-                     persist_state="page")
-    return f or flottes, cl or pe.CLASSES, co or pe.COMPOSANTS
+        f = _choix(a, "Flotte", flottes, "flottes_v2", "Toutes")
+        cl = _choix(b, "Classe", pe.CLASSES, "classes_v2", "Toutes", CLASSES_LIBELLES)
+        co = _choix(c, "Élément", pe.COMPOSANTS, "composants_v2", "Tous")
+    return f, cl, co
 
 
 def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement") -> None:

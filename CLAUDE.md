@@ -69,7 +69,7 @@ supply360/
 │   │   ├── dossiers.py       # import de dossier : regroupement par chantier, choix du fichier le plus récent
 │   │   ├── textile.py        # calculs de l'onglet Textile cabine
 │   │   ├── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
-│   │   ├── pe.py             # Planning PE des mousses : fichier PE_MOUSSE, échéances, stock de sécurité, forecast 12/24/36 mois
+│   │   ├── pe.py             # Planning PE des mousses : fichier PE_MOUSSE, échéances, stock de sécurité, forecast 12/24/36 mois ; fournisseur manquant repris du Résultat (`completer_fournisseurs` : dernier fournisseur, à défaut CODE FOURNISSEUR)
 │   │   ├── pe2026.py         # PE mousses de l'année : Besoin Prod × stock × commandes par CCN, avions restants, avions faisables
 │   │   └── journal.py        # stlite : erreurs Python transmises au bandeau de diagnostic de la page
 │   └── modules/

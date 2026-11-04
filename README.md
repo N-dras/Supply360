@@ -215,7 +215,10 @@ Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mou
 - **Forecast des mousses** (12 / 24 / 36 mois) : mousses à remplacer (dont retard à rattraper), quantité et valeur
   à commander, livraisons à prévoir par mois, valeur par fournisseur, tableau par PN.
 - **Forecast par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
-- **Filtres** : flotte, classe, élément. **Exports** : planning complet ; **contrôles** des données.
+  Fournisseur d'une mousse : celui des commandes, à défaut le dernier fournisseur du Résultat, à défaut son
+  **CODE FOURNISSEUR** (« Code … ») ; les références sont comparées sans espaces, tirets ni points.
+- **Filtres** (barre « Flotte · Classe · Élément ») : « Toutes » par défaut ; un clic choisit une valeur, plusieurs
+  choix possibles ; « Toutes » remet à zéro. **Exports** : planning complet ; **contrôles** des données.
 
 Règles (paramètres dans « Paramètres » › Planning PE ; stock de sécurité réglable de 0 à 50 %) :
 - cycles : J / W / Y assise 36 mois, J dossier 72 mois, dossiers W / Y jamais ;

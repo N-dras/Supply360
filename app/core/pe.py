@@ -333,6 +333,26 @@ def catalogue_mousses(parts: pd.DataFrame) -> pd.DataFrame:
                          "CCN": np.nan})
 
 
+def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None, pns) -> pd.DataFrame:
+    """Mousses sans fournisseur (PN introuvable dans la table stock, ou sans nom) : fournisseur lu directement dans
+    l'État du stock (« Résultat ») : DERNIER FOURNISSEUR, à défaut CODE FOURNISSEUR (« Code … »). Les PN sont comparés
+    sans espaces, tirets ni points (« 12-345.A » = « 12345A »). Ne change ni le stock ni le prix."""
+    pns = list(dict.fromkeys(pns))
+    art = art.reindex(art.index.union(pd.Index(pns), sort=False)) if len(pns) else art
+    if stock_lignes is None or not len(stock_lignes) or "PN" not in stock_lignes:
+        return art
+    cle = lambda s: pd.Series(s, dtype=object).astype(str).str.upper().str.replace(r"[^A-Z0-9]", "", regex=True)  # noqa: E731
+    src = stock_lignes.assign(_k=cle(stock_lignes["PN"]).to_numpy())
+    nom = src["DERNIER_FOURNISSEUR"] if "DERNIER_FOURNISSEUR" in src else pd.Series(np.nan, index=src.index)
+    code = src["CODE_FOURNISSEUR"] if "CODE_FOURNISSEUR" in src else pd.Series(np.nan, index=src.index)
+    vide = lambda s: s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])  # noqa: E731
+    libelle = nom.where(~vide(nom), ("Code " + code.astype(str)).where(~vide(code)))
+    connus = src.assign(_f=libelle.to_numpy()).dropna(subset=["_f"]).drop_duplicates("_k").set_index("_k")["_f"]
+    manque = art["Fournisseur"].isna() | (art["Fournisseur"] == FOURNISSEUR_ABSENT)
+    art.loc[manque, "Fournisseur"] = cle(art.index[manque]).map(connus).to_numpy()
+    return art
+
+
 def articles(pbi: pd.DataFrame) -> pd.DataFrame:
     """Stock, prix et fournisseur par PN (index), depuis la table stock du Textile (voir textile.construire_tables)."""
     from core.prevision import fournisseur_prevision  # même règle que la Prévision : nom, à défaut code fournisseur

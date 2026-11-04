@@ -3,6 +3,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -117,3 +118,16 @@ def test_controles(planning):
 def test_fichier_pe_reconnu_dans_un_dossier():
     data = (FIX / "pe_mousse_29092026.xlsx").read_bytes()
     assert sio.detecter_source(data, "export.xlsx") == "pe" and sio.reconnaitre_fichier("PE_MOUSSE_29092026_F.xlsx") == "pe"
+
+
+def test_fournisseur_manquant_repris_du_resultat():
+    """Forecast : fournisseur absent → DERNIER FOURNISSEUR, sinon CODE FOURNISSEUR du Résultat (PN comparés sans séparateurs)."""
+    art = pd.DataFrame({"Stock": [5, 2], "Prix": [10, 20], "Fournisseur": ["Alpha", pe.FOURNISSEUR_ABSENT]}, index=["P1", "P2"])
+    lignes = pd.DataFrame({"PN": ["P2", "P-3 A", "P4"], "DERNIER_FOURNISSEUR": [np.nan, np.nan, "Delta"],
+                           "CODE_FOURNISSEUR": ["F002", "F003", None]})
+    r = pe.completer_fournisseurs(art, lignes, ["P1", "P2", "P3A", "P4", "P5"])
+    assert r.loc["P1", "Fournisseur"] == "Alpha"                       # déjà connu : inchangé
+    assert r.loc["P2", "Fournisseur"] == "Code F002"                   # code fournisseur du Résultat
+    assert r.loc["P3A", "Fournisseur"] == "Code F003"                  # « P-3 A » = « P3A »
+    assert r.loc["P4", "Fournisseur"] == "Delta" and pd.isna(r.loc["P5", "Fournisseur"])
+    assert r.loc["P2", "Stock"] == 2 and pd.isna(r.loc["P3A", "Stock"])  # stock et prix inchangés

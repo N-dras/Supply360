@@ -119,11 +119,14 @@ def _planning_pe(stock: bytes | None, cmd: bytes | None, fichier_pe: tuple, piec
     parts = _pieces(*pieces) if pieces else pd.DataFrame(columns=pv.RAW_COLS)
     cmd_l = cache.commandes(cmd)[0] if cmd else None
     cat = pe.catalogue_mousses(parts) if len(parts) else None
-    if stock and cat is not None and len(cat):
-        pbi, o = tx.construire_tables(cache.etat_stock(stock)[0], cmd_l, cat, today, True)
+    stock_lignes = cache.etat_stock(stock)[0] if stock else None
+    if stock_lignes is not None and cat is not None and len(cat):
+        pbi, o = tx.construire_tables(stock_lignes, cmd_l, cat, today, True)
     else:
         pbi, o = pd.DataFrame(columns=["PNR", "QTE SUR ÉTAGÈRE"]), None
-    return pe.planning_pe(lignes, date_ref or today, parts, pe.articles(pbi), o, today, params)
+    # Fournisseur manquant : repris du Résultat (dernier fournisseur, à défaut CODE FOURNISSEUR)
+    art = pe.completer_fournisseurs(pe.articles(pbi), stock_lignes, cat["PN"] if cat is not None else [])
+    return pe.planning_pe(lignes, date_ref or today, parts, art, o, today, params)
 
 
 # --------------------------------------------------------------------------

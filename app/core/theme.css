@@ -633,13 +633,27 @@ table.s360-filtrable thead th:not(.fixe) { position: sticky; }
   background: var(--navy) !important; color: #fff !important; }
 [class*="st-key-s360sub_"] button[aria-checked="true"] * { background: transparent !important; }
 /* Filtres en pastilles (catégorie textile, Planning PE) */
-[class*="st-key-s360pills_"] button, .st-key-s360barre_pe [data-testid="stButtonGroup"] button { border-radius: 99px !important; font-weight: 700; }
-[class*="st-key-s360pills_"] button[aria-checked="true"], [class*="st-key-s360pills_"] button[kind$="Active"],
-.st-key-s360barre_pe [data-testid="stButtonGroup"] button[aria-checked="true"] {
+[class*="st-key-s360pills_"] button { border-radius: 99px !important; font-weight: 700; }
+[class*="st-key-s360pills_"] button:is([aria-checked="true"], [aria-pressed="true"], [data-selected="true"], [kind$="Active"]) {
   background: var(--navy) !important; color: #fff !important; border-color: var(--navy) !important;
 }
-.st-key-s360barre_pe { padding: .9rem 1.1rem 1rem; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-.st-key-s360barre_pe [data-testid="stWidgetLabel"] p { font-weight: 700; color: var(--navy); }
+/* Barre « Périmètre » du Planning PE (flotte, classe, élément) : groupes de boutons bien visibles, grandes zones de
+   clic, choix en bleu marine ; « Toutes » / « Tous » sélectionné par défaut. */
+.st-key-s360barre_pe { padding: 1rem 1.2rem 1.05rem; background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); }
+.st-key-s360barre_pe [data-testid="stColumn"] + [data-testid="stColumn"] { border-left: 1px solid var(--line-2); padding-left: 1.1rem; }
+.st-key-s360barre_pe [data-testid="stWidgetLabel"] p { margin-bottom: .35rem; font-size: .76rem; font-weight: 800; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted); }
+.st-key-s360barre_pe [data-testid="stButtonGroup"] > div { gap: .4rem; flex-wrap: wrap; }
+.st-key-s360barre_pe [data-testid="stButtonGroup"] button { min-height: 2.45rem; padding: 0 1rem; border-radius: 10px !important;
+  border: 1px solid var(--line) !important; background: #F8FAFC !important; color: var(--text) !important; cursor: pointer;
+  transition: background .12s, border-color .12s; }
+.st-key-s360barre_pe [data-testid="stButtonGroup"] button p { font-size: .95rem; font-weight: 700; color: inherit !important; }
+.st-key-s360barre_pe [data-testid="stButtonGroup"] button:hover { background: #EEF3FA !important; border-color: #C9D3E3 !important; }
+.st-key-s360barre_pe [data-testid="stButtonGroup"] button:is([aria-checked="true"], [aria-pressed="true"], [data-selected="true"], [kind$="Active"]) {
+  background: var(--navy) !important; border-color: var(--navy) !important; color: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 33, 87, .25); }
+.st-key-s360barre_pe [data-testid="stButtonGroup"] button:is([aria-checked="true"], [aria-pressed="true"], [data-selected="true"], [kind$="Active"]) * { color: #fff !important; }
 
 @media (max-width: 900px) { .s360-hero h1 { font-size: 1.7rem; } }
 @media (max-width: 560px) { .s360-kpi.large { grid-column: auto; } }

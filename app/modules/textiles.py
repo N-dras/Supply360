@@ -34,7 +34,7 @@ COLONNES_ATTENDUES = {
               ("Dernier PU (achat) Euros", "valorisation", False), ("DATE DERNIERE CONSO", "2001 = jamais consommé", False),
               ("CODE FOURNISSEUR, DERNIER FOURNISSEUR", "fournisseur des PN sans commande", False),
               ("LT observé moyen sur 2 ans, B/O, RP, EOQ", "", False)],
-    "commandes": [("PN", "", True), ("Commande", "", True), ("Fournisseur, Code fournisseur", "nom retrouvé par le code", False),
+    "commandes": [("PN", "", True), ("Commande", "", True), ("Code fournisseur, Fournisseur", "fournisseur identifié par son code", False),
                   ("Date d'émission de la commande", "", False), ("Date de livraison demandée / promise", "2001, 2030+ : sans date ; 2049 : BFE", False),
                   ("Quantité restant à livrer", "", False)],
     "references": [("pn", "feuille « PN Catalog »", True), ("equipment", "CEINTURE, HOUSSE, MOUSSE, RIDEAUX", True),
@@ -604,14 +604,25 @@ def _fournisseurs(s, o, today, cat):
     _vue_fournisseur(o)
 
 
+def _nom_fournisseur(lignes) -> None:
+    """Sous la liste des codes : nom du fournisseur tel qu'écrit dans les commandes (le plus fréquent)."""
+    if lignes is None or not len(lignes) or "Nom fournisseur" not in lignes:
+        return
+    noms = lignes["Nom fournisseur"].dropna()
+    noms = noms[~noms.astype(str).str.startswith("Code ")]
+    if len(noms) and noms.mode().iloc[0] != lignes["Fournisseur"].iloc[0]:
+        st.caption(f"Nom dans les commandes : **{noms.mode().iloc[0]}**")
+
+
 @st.fragment
 def _vue_fournisseur(o):
     fours = list(o["Fournisseur"].dropna().value_counts().index)
     if not fours:
         return
     with ui.section(f"{TAB_ID}_vf", "Vue par fournisseur"):
-        f = st.selectbox("Fournisseur", fours, key=K + "fournisseur", persist_state="page", label_visibility="collapsed")
+        f = st.selectbox("Code fournisseur", fours, key=K + "fournisseur", persist_state="page", label_visibility="collapsed")
         d = o[o["Fournisseur"] == f]
+        _nom_fournisseur(d)
         late = d[d["Statut commande"] == "En retard"]
         ui.kpi_grid([
             ui.kpi_card("Lignes", charts.entier(len(d))),
@@ -715,7 +726,9 @@ La prévision couvre la période **{periode}** (réglable dans Paramètres › H
 7. **Jamais de commande proposée** pour les pièces dormantes (aucune sortie depuis 3 ans), inactives (ni stock, ni
    sortie, ni commande), obsolètes ou supprimées (classe code 3, 8 ou 9). La quantité qui aurait été commandée est
    affichée à part.
-8. **Fournisseur proposé** : celui des commandes habituelles de la pièce ; à défaut, celui de l'État du stock.
+8. **Fournisseur proposé** : celui des commandes habituelles de la pièce ; à défaut, celui de l'État du stock. Il est
+   désigné par son **code fournisseur** (son nom seulement s'il n'a pas de code) : un même fournisseur écrit de deux
+   façons n'apparaît qu'une fois.
 """
 
 
@@ -843,6 +856,7 @@ def _vue_fournisseur_prev(s, o, fours):
         d = cand.sort_values("Qté à commander maintenant", ascending=False)
         a_cmd = d[d["Qté à commander maintenant"] > 0]
         lignes = o[o["Fournisseur"] == f] if len(o) else o
+        _nom_fournisseur(lignes)
         ec = lignes.dropna(subset=["Ecart promis vs demandé (j)"]) if len(lignes) else lignes
         ec = ec[ec["Statut commande"] != "En attente BFE"] if len(ec) else ec
         ui.kpi_grid([

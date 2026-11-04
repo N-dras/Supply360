@@ -126,7 +126,7 @@ def _planning_pe(stock: bytes | None, cmd: bytes | None, fichier_pe: tuple, piec
     else:
         pbi, o = pd.DataFrame(columns=["PNR", "QTE SUR ÉTAGÈRE"]), None
     parts = pv.rattacher_pieces(parts, pbi) if len(pbi) else parts  # même CCN, PN écrit autrement : même pièce
-    # Fournisseur manquant : repris du Résultat (dernier fournisseur, à défaut CODE FOURNISSEUR)
+    # Fournisseur manquant : repris du Résultat (CODE FOURNISSEUR, à défaut dernier fournisseur)
     ccn_par_pn = parts.assign(_c=parts["ccn"].replace("", np.nan)).dropna(subset=["_c"]).drop_duplicates("pn").set_index("pn")["_c"] \
         if len(parts) and "ccn" in parts else None
     art = pe.completer_fournisseurs(pe.articles(pbi), stock_lignes, cat["PN"] if cat is not None else [], ccn_par_pn)

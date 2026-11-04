@@ -572,7 +572,7 @@ def lire_etat_stock(data: bytes):
         "QTY_CDE": nombre(df[c_cde], 0) if c_cde else pd.Series(0.0, index=df.index),
         "GESTION": nombre(df[c_gestion]) if c_gestion else np.nan,
         "CODE_AGENT": texte(df[c_agent]) if c_agent else np.nan,
-        "CODE_FOURNISSEUR": texte(df[c_fourn]) if c_fourn else np.nan,
+        "CODE_FOURNISSEUR": _code(df[c_fourn]) if c_fourn else np.nan,
         "DERNIER_FOURNISSEUR": texte(df[c_dernier]) if c_dernier else np.nan,
         "Description_stock": df[c_desc] if c_desc else np.nan,
         "CCN": _code(df[c_ccn]) if c_ccn else np.nan,

@@ -447,19 +447,21 @@ FOURNISSEUR_ABSENT = "Fournisseur non renseigné"
 
 
 def fournisseur_prevision(pbi: pd.DataFrame) -> pd.Series:
-    """Fournisseur d'un PN pour la prévision : nom, ou à défaut code fournisseur.
+    """Fournisseur d'un PN, identifié par son CODE fournisseur (à défaut son nom) : un même fournisseur n'apparaît
+    qu'une fois dans les listes, même s'il est écrit de plusieurs façons.
 
-    Ordre : fournisseur habituel des commandes (nom) → dernier fournisseur de l'État du stock →
-    code fournisseur (commandes, puis État du stock) → « Fournisseur non renseigné ».
+    Ordre : code habituel des commandes → CODE FOURNISSEUR de l'État du stock → nom habituel des commandes →
+    DERNIER FOURNISSEUR de l'État du stock → « Fournisseur non renseigné ».
     """
-    princ = pbi.get("Fournisseur principal", pd.Series(np.nan, index=pbi.index))
-    est_code = princ.astype(str).str.startswith("Code ")
-    nom = princ.where(princ.notna() & ~est_code)
-    nom = nom.fillna(pbi.get("DERNIER FOURNISSEUR", pd.Series(np.nan, index=pbi.index)))
-    nom = nom.fillna(princ.where(est_code))
-    code = pbi.get("CODE FOURNISSEUR", pd.Series(np.nan, index=pbi.index))
-    nom = nom.fillna(("Code " + code.astype(object)).where(code.notna()))
-    return nom.fillna(FOURNISSEUR_ABSENT)
+    vide = lambda s: s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])  # noqa: E731
+    col = lambda c: pbi[c].astype(object).where(~vide(pbi[c])) if c in pbi else pd.Series(np.nan, index=pbi.index, dtype=object)  # noqa: E731
+    princ = col("Fournisseur principal")
+    est_code = pbi["Fournisseur principal (code)"].eq(True) if "Fournisseur principal (code)" in pbi \
+        else pd.Series(False, index=pbi.index)
+    f = princ.where(est_code)
+    f = f.fillna(col("CODE FOURNISSEUR"))
+    f = f.fillna(princ).fillna(col("DERNIER FOURNISSEUR"))
+    return f.fillna(FOURNISSEUR_ABSENT).astype(object)
 
 
 def suivis(s: pd.DataFrame) -> pd.DataFrame:

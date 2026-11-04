@@ -683,5 +683,8 @@ table.s360-filtrable thead th:not(.fixe) { position: sticky; }
   box-shadow: 0 2px 6px rgba(0, 33, 87, .25); }
 [class*="st-key-s360perimetre_"] [data-testid="stButtonGroup"] button:is([aria-checked="true"], [aria-pressed="true"], [data-selected="true"], [kind$="Active"]) * { color: #fff !important; }
 
+/* Seconde ligne de la barre (ex. « Période de prévision », un seul choix) : séparée par un filet */
+[class*="st-key-s360periode_"] { border-top: 1px solid var(--line-2); padding-top: .85rem; margin-top: .15rem; }
+
 @media (max-width: 900px) { .s360-hero h1 { font-size: 1.7rem; } }
 @media (max-width: 560px) { .s360-kpi.large { grid-column: auto; } }

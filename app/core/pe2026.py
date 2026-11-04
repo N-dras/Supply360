@@ -15,6 +15,7 @@ import pandas as pd
 
 from core import io as sio
 from core import pe
+from core import transforms as tf
 
 FICHIER_BESOIN = "Besoin Prod mousses"
 
@@ -172,6 +173,8 @@ def ccn_commandes(cmd: pd.DataFrame | None, stock: pd.DataFrame, bp: pd.DataFram
     if cmd is None or cmd.empty:
         return pd.DataFrame(columns=["CCN", "PN", "Commande", "Fournisseur", "PSD_effective", "Qty_restant"])
     c = cmd[cmd["Qty_restant"] > 0].copy()
+    if "Code_fournisseur_cmd" in cmd and len(c):  # fournisseur = code fournisseur (code du PN à défaut), sinon le nom
+        c["Fournisseur"] = tf.fournisseur_par_code(cmd).loc[c.index]
     par_pn = pd.concat([stock.dropna(subset=["CCN"]).drop_duplicates("PN").set_index("PN")["CCN"],
                         bp.dropna(subset=["PN"]).drop_duplicates("PN").set_index("PN")["CCN"]])
     par_pn = par_pn[~par_pn.index.duplicated()]

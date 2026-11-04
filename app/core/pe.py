@@ -336,7 +336,7 @@ def catalogue_mousses(parts: pd.DataFrame) -> pd.DataFrame:
 
 def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None, pns, ccn_par_pn=None) -> pd.DataFrame:
     """Mousses sans fournisseur (PN introuvable dans la table stock, ou sans nom) : fournisseur lu directement dans
-    l'État du stock (« Résultat ») : DERNIER FOURNISSEUR, à défaut CODE FOURNISSEUR (« Code … »). Recherche par PN
+    l'État du stock (« Résultat ») : CODE FOURNISSEUR, à défaut DERNIER FOURNISSEUR. Recherche par PN
     (comparé sans espaces, tirets ni points : « 12-345.A » = « 12345A »), puis par CCN (`ccn_par_pn` : CCN de chaque
     PN, ex. textile_all_parts). Ne change ni le stock ni le prix."""
     pns = list(dict.fromkeys(pns))
@@ -348,7 +348,7 @@ def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None,
     nom = src["DERNIER_FOURNISSEUR"] if "DERNIER_FOURNISSEUR" in src else pd.Series(np.nan, index=src.index)
     code = src["CODE_FOURNISSEUR"] if "CODE_FOURNISSEUR" in src else pd.Series(np.nan, index=src.index)
     vide = lambda s: s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])  # noqa: E731
-    libelle = nom.where(~vide(nom), ("Code " + code.astype(str)).where(~vide(code)))
+    libelle = code.astype(object).where(~vide(code), nom.where(~vide(nom)))  # code fournisseur, à défaut le nom
     avec = src.assign(_f=libelle.to_numpy()).dropna(subset=["_f"])
     connus = avec.drop_duplicates("_k").set_index("_k")["_f"]
     manque = art["Fournisseur"].isna() | (art["Fournisseur"] == FOURNISSEUR_ABSENT)
@@ -365,7 +365,7 @@ def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None,
 
 def articles(pbi: pd.DataFrame) -> pd.DataFrame:
     """Stock, prix et fournisseur par PN (index), depuis la table stock du Textile (voir textile.construire_tables)."""
-    from core.prevision import fournisseur_prevision  # même règle que la Prévision : nom, à défaut code fournisseur
+    from core.prevision import fournisseur_prevision  # même règle que la Prévision : code fournisseur, à défaut le nom
     if pbi.empty:
         return pd.DataFrame(columns=["Stock", "Prix", "Fournisseur"])
     a = pd.DataFrame({"Stock": pd.to_numeric(pbi["QTE SUR ÉTAGÈRE"], errors="coerce").to_numpy(),

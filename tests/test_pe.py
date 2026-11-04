@@ -98,7 +98,7 @@ def test_forecast_mois_par_mois(planning):
     assert s0["À avancer (commandes en cours)"] == 150 and s0["À avancer avant"] == oct_
     s = planning["synth"].set_index("PN")
     assert s.loc["FM-1004", "À commander 12 mois"] == pytest.approx(planning["long"].query("PN == 'FM-1004'")["À livrer"].head(12).sum())
-    assert s.loc["FM-1004", "Fournisseur"] == "Fournisseur Tango" and s.loc["FM-1004", "Prix unitaire (€)"] == 45
+    assert s.loc["FM-1004", "Fournisseur"] == "F031" and s.loc["FM-1004", "Prix unitaire (€)"] == 45
     assert s.loc["FM-1004", "Valeur 12 mois (€)"] == s.loc["FM-1004", "À commander 12 mois"] * 45
 
 
@@ -121,14 +121,14 @@ def test_fichier_pe_reconnu_dans_un_dossier():
 
 
 def test_fournisseur_manquant_repris_du_resultat():
-    """Forecast : fournisseur absent → DERNIER FOURNISSEUR, sinon CODE FOURNISSEUR du Résultat (PN comparés sans séparateurs)."""
+    """Forecast : fournisseur absent → CODE FOURNISSEUR, sinon DERNIER FOURNISSEUR du Résultat (PN comparés sans séparateurs)."""
     art = pd.DataFrame({"Stock": [5, 2], "Prix": [10, 20], "Fournisseur": ["Alpha", pe.FOURNISSEUR_ABSENT]}, index=["P1", "P2"])
     lignes = pd.DataFrame({"PN": ["P2", "P-3 A", "P4"], "DERNIER_FOURNISSEUR": [np.nan, np.nan, "Delta"],
                            "CODE_FOURNISSEUR": ["F002", "F003", None]})
     r = pe.completer_fournisseurs(art, lignes, ["P1", "P2", "P3A", "P4", "P5"])
     assert r.loc["P1", "Fournisseur"] == "Alpha"                       # déjà connu : inchangé
-    assert r.loc["P2", "Fournisseur"] == "Code F002"                   # code fournisseur du Résultat
-    assert r.loc["P3A", "Fournisseur"] == "Code F003"                  # « P-3 A » = « P3A »
+    assert r.loc["P2", "Fournisseur"] == "F002"                   # code fournisseur du Résultat
+    assert r.loc["P3A", "Fournisseur"] == "F003"                  # « P-3 A » = « P3A »
     assert r.loc["P4", "Fournisseur"] == "Delta" and pd.isna(r.loc["P5", "Fournisseur"])
     assert r.loc["P2", "Stock"] == 2 and pd.isna(r.loc["P3A", "Stock"])  # stock et prix inchangés
 
@@ -138,4 +138,4 @@ def test_fournisseur_manquant_par_ccn():
     art = pd.DataFrame({"Stock": [1], "Prix": [5], "Fournisseur": [pe.FOURNISSEUR_ABSENT]}, index=["FM-XYZ"])
     lignes = pd.DataFrame({"PN": ["AUTRE-PN"], "CCN": ["7104"], "DERNIER_FOURNISSEUR": [np.nan], "CODE_FOURNISSEUR": ["F777"]})
     r = pe.completer_fournisseurs(art, lignes, ["FM-XYZ"], pd.Series({"FM-XYZ": "7104"}))
-    assert r.loc["FM-XYZ", "Fournisseur"] == "Code F777"
+    assert r.loc["FM-XYZ", "Fournisseur"] == "F777"

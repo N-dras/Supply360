@@ -79,24 +79,38 @@ def _mois_label(m) -> str:
     return pd.Timestamp(m).strftime("%m/%y")
 
 
+def _mois_clair(m) -> str:
+    """« nov. 2026 » : période écrite en clair."""
+    m = pd.Timestamp(m)
+    return f"{pe.MOIS_COURTS[m.month - 1]} {m.year}"
+
+
 CLASSES_LIBELLES = {"J": "J · Business", "W": "W · Premium", "Y": "Y · Économie"}
 
 
-def _filtres(cal: pd.DataFrame) -> tuple[list, list, list]:
-    """Barre « Périmètre » : flotte, classe et élément (assise / dossier) à afficher."""
+def _filtres(cal: pd.DataFrame, today: date | None = None) -> tuple[list, list, list, int | None]:
+    """Barre « Périmètre » : flotte, classe et assise / dossier ; avec `today` (sous-onglet Prévision), une
+    seconde ligne « Période de prévision » (12 / 24 / 36 mois, période écrite en clair), mêmes boutons."""
     with ui.barre_perimetre("pe"):
         a, b, c = st.columns([1.5, 1.2, 0.9], gap="medium")
         flottes = sorted(cal["Flotte"].dropna().unique())
         f = ui.choix_multiple(a, "Flotte", flottes, K + "flottes_v2", "Toutes")
         cl = ui.choix_multiple(b, "Classe", pe.CLASSES, K + "classes_v2", "Toutes", CLASSES_LIBELLES)
         co = ui.choix_multiple(c, "Assise / dossier", pe.COMPOSANTS, K + "composants_v2", "Tous")
-    return f, cl, co
+        h = None
+        if today is not None:
+            debut = pd.Timestamp(today).to_period("M").start_time
+            libelles = {n: f"{n} mois  ·  {_mois_clair(debut)} → {_mois_clair(debut + pd.DateOffset(months=n - 1))}"
+                        for n in pe.HORIZONS}
+            with st.container(key="s360periode_pe"):
+                h = ui.choix_unique(st, "Période de prévision", list(pe.HORIZONS), K + "periode", 12, libelles)
+    return f, cl, co, h
 
 
 def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement") -> None:
     """`partie` : « avancement » (KPI, calendrier par avion) ou « forecast » (mousses à commander, fournisseurs)."""
     cal = res["cal"]
-    flottes, classes, composants = _filtres(cal)
+    flottes, classes, composants, horizon = _filtres(cal, today if partie != "avancement" else None)
     c = cal[cal["Flotte"].isin(flottes) & cal["Classe"].isin(classes) & cal["Composant"].isin(composants)]
     if partie == "avancement":
         _avancement(c, res["date_ref"], today)
@@ -111,7 +125,7 @@ def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement"
     ev = ev[ev["Flotte"].isin(flottes) & ev["Classe"].isin(classes) & ev["Composant"].isin(composants)]
     pns = set(ev["PN"])
     synth, long = res["synth"][res["synth"]["PN"].isin(pns)], res["long"][res["long"]["PN"].isin(pns)]
-    horizon = _forecast(ev, synth, long, today)
+    _forecast(ev, synth, long, today, horizon)
     _forecast_fournisseur(ev, synth, long, today, horizon)
     _exports_controles(res, c, ev, synth, long, horizon)
 
@@ -217,23 +231,14 @@ def _detail_avions(c: pd.DataFrame):
         ui.tableau(t, column_config=CFG, width=1250, height=440)
 
 
-def _horizon() -> int:
-    h = st.segmented_control("Horizon", [f"{h} mois" for h in pe.HORIZONS], default="12 mois", key=K + "horizon",
-                             required=True, persist_state="page", label_visibility="collapsed")
-    return int((h or "12 mois").split()[0])
-
-
-def _forecast(ev, synth, long, today) -> int:
+def _forecast(ev, synth, long, today, h: int) -> None:
     """Prévision des mousses à commander : chiffres clés, quand (par mois), puis le détail par PN."""
     debut = pd.Timestamp(today).to_period("M").start_time
     with ui.section("pe_mousses_pe_forecast", "Prévision des mousses à commander", carte=False,
                     info="À commander = mousses à remplacer + stock de sécurité − stock − commandes déjà passées. "
                          "Les commandes en cours sont toujours déduites."):
-        a, _ = st.columns([1, 2])
-        with a:
-            h = _horizon()
         fin = debut + pd.DateOffset(months=h)
-        periode = f"{_mois_label(debut)} → {_mois_label(fin - pd.DateOffset(months=1))}"
+        periode = f"{_mois_clair(debut)} → {_mois_clair(fin - pd.DateOffset(months=1))}"
         e = ev[ev["Mois"] < fin]
         lg = long[long["Mois"] < fin]
         besoin, rattrapage = e["Qté"].sum(), e.loc[e["Rattrapage du retard"], "Qté"].sum()
@@ -279,7 +284,6 @@ def _forecast(ev, synth, long, today) -> int:
                 "Stock de sécurité": "Stock de sécurité", "Besoin": "À remplacer", "À commander": "À commander", "Valeur (€)": "Valeur (€)",
                 "À avancer (commandes en cours)": "À avancer", "À avancer avant": "Avant", "Rupture sans commande": "Rupture sans commande"}
         ui.tableau(t[[c for c in cols if c in t]].rename(columns=cols), column_config=CFG, height=min(38 + 35 * len(t), 420))
-    return h
 
 
 @st.fragment
@@ -291,7 +295,7 @@ def _forecast_fournisseur(ev, synth, long, today, h):
     if v.empty:
         return
     with ui.section("pe_mousses_pe_fournisseur", "Par fournisseur",
-                    f"Commande sur {h} mois, à partager avec chaque fournisseur"):
+                    f"{_mois_clair(mois[0])} → {_mois_clair(mois[-1])}, à partager avec chaque fournisseur"):
         # Vue d'ensemble : tous les fournisseurs, par année
         qte_an = pe.par_annee(lg, mois, "Fournisseur").reindex(v.index)
         val_an = pe.par_annee(lg, mois, "Fournisseur", "Valeur à livrer (€)").reindex(v.index)

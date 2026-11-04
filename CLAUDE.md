@@ -69,7 +69,7 @@ supply360/
 │   │   ├── dossiers.py       # import de dossier : regroupement par chantier, choix du fichier le plus récent
 │   │   ├── textile.py        # calculs de l'onglet Textile cabine
 │   │   ├── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
-│   │   ├── pe.py             # Planning PE des mousses : fichier PE_MOUSSE, échéances, stock de sécurité, forecast 12/24/36 mois ; fournisseur manquant repris du Résultat (`completer_fournisseurs` : dernier fournisseur, à défaut CODE FOURNISSEUR)
+│   │   ├── pe.py             # Planning PE des mousses : fichier PE_MOUSSE, échéances, stock de sécurité, forecast 12/24/36 mois ; fournisseur manquant repris du Résultat (`completer_fournisseurs` : CODE FOURNISSEUR, à défaut dernier fournisseur)
 │   │   ├── pe2026.py         # PE mousses de l'année : Besoin Prod × stock × commandes par CCN, avions restants, avions faisables
 │   │   └── journal.py        # stlite : erreurs Python transmises au bandeau de diagnostic de la page
 │   └── modules/
@@ -230,7 +230,7 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
   traverse l'écran en 32 s.
 - **Peu de texte** : titre + une ligne de description ; les détails (colonnes attendues, règles de calcul, tableaux annexes) vont dans des `st.popover`.
 - **« ? » d'aide** (`components.aide`, `section(..., info=)`, `kpi_card(..., info=)`) : une précision courte au survol plutôt qu'un paragraphe affiché.
-- **Barre « Périmètre »** sous les sous-onglets (`components.barre_perimetre` + `choix_multiple`) : mêmes boutons partout (« Toutes » par défaut, plusieurs choix, « Toutes » remet à zéro). Textile : Flotte (via textile_all_parts) + Équipement ; PE mousses : Flotte, Classe, Assise / dossier ; Stock par chantier : Statut, Code Gestion, Tracking level. Vocabulaire PE : « classe » (les mousses d'une classe d'un avion, assise ou dossier), jamais « élément ».
+- **Barre « Périmètre »** sous les sous-onglets (`components.barre_perimetre` + `choix_multiple`) : mêmes boutons partout (« Toutes » par défaut, plusieurs choix, « Toutes » remet à zéro). Textile : Flotte (via textile_all_parts) + Équipement ; PE mousses : Flotte, Classe, Assise / dossier (+ « Période de prévision » 12 / 24 / 36 mois, choix unique `choix_unique`, seconde ligne `s360periode_*`, sur la Prévision) ; Stock par chantier : Statut, Code Gestion, Tracking level. Vocabulaire PE : « classe » (les mousses d'une classe d'un avion, assise ou dossier), jamais « élément ».
 - **Périodes en clair** : jamais « horizon » ou « 12 derniers mois » seuls ; écrire la période (« nov. 2026 → oct. 2029 »).
 - **Règles de calcul en mots simples** : phrases courtes, un exemple chiffré, et pour les statuts un tableau « Statut | Ce que ça veut dire | Que faire ». Pas de formule brute (`max(0, …)`) ni de nom de colonne technique sans explication.
 
@@ -250,6 +250,7 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
 - **TDD (Taux De Disponibilité)** : disponibilité des équipements par rapport à la demande de production.
 - **TL0** = consommable, **TL1** = réparable (repair, TAT).
 - **Commandes fournisseurs** : elles ne sont pas forcément liées à un chantier (besoins imprévus). Les classer du pire au meilleur statut.
+- **Fournisseur = code fournisseur** (Textile, PE) : dans toutes les listes, regroupements et tableaux, un fournisseur est désigné par son **code** (`transforms.fournisseur_par_code`, `prevision.fournisseur_prevision` : code des commandes → code du PN → CODE FOURNISSEUR du stock → nom à défaut), jamais par son nom : un même fournisseur écrit de plusieurs façons n'apparaît qu'une fois. Le nom (« Nom fournisseur ») n'est qu'un rappel dans le détail.
 - **Croisement par CCN** : une même pièce peut porter des PN différents d'un fichier à l'autre (commandes SAP, références textile, textile_all_parts, État du stock). Textile cabine et PE mousses reconnaissent une pièce par son PN, à défaut par son **CCN** (`textile.cle_ccn`) : catalogue textile, rattachement des lignes de commande au PN du stock de même CCN (`textile.rattacher_commandes`, « PN commandé » gardé), pièces par avion (`prevision.rattacher_pieces`). Le CCN est affiché à côté du PN dans les tableaux.
 - **Surplus / stock dormant** : équipements en stock sans consommation depuis 3 ans et plus (textile : 24 mois glissants et 3 dernières années civiles). Dernière conso en 2001 = date fictive, PN **jamais consommé** (compté à part, pas en surstock). Classe code 3 / 8 / 9 = obsolète / en cours de suppression / supprimé : ni surstock, ni rupture, jamais de commande recommandée.
 - **Enjeu cabine** : pas d'immobilisation avion pour une pièce cabine. L'enjeu est la **décommercialisation de sièges** et l'expérience client.

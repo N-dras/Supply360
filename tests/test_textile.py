@@ -185,17 +185,27 @@ def test_prevision_besoin_et_statuts(prevision):
 def test_prevision_par_fournisseur(prevision):
     pbi, res = prevision
     f = pv.par_fournisseur(pbi, res["plan"]).set_index("Fournisseur")
-    assert "Fournisseur Bravo" in f.index          # PN sans commande : dernier fournisseur de l'État du stock
+    assert "F002" in f.index                       # PN sans commande : code fournisseur de l'État du stock
+    assert not any(str(x).startswith("Fournisseur ") for x in f.index)  # uniquement des codes : aucun doublon nom / code
     assert f["PN à commander"].sum() == ((pbi["Qté à commander maintenant"] > 0) & pbi["Dans un groupe avion"]
                                          & (pbi["Statut activité"] == "Actif")).sum()
     assert res["plan"]["Fournisseur"].notna().all()
 
 
 def test_fournisseur_prevision_ordre():
-    d = pd.DataFrame({"Fournisseur principal": ["Alpha", "Code F9", np.nan, np.nan, np.nan],
-                      "DERNIER FOURNISSEUR": [np.nan, "Bravo", "Charlie", np.nan, np.nan],
-                      "CODE FOURNISSEUR": ["F1", "F9", "F3", "F4", np.nan]})
-    assert pv.fournisseur_prevision(d).tolist() == ["Alpha", "Bravo", "Charlie", "Code F4", pv.FOURNISSEUR_ABSENT]
+    """Code des commandes → CODE FOURNISSEUR du stock → nom des commandes → DERNIER FOURNISSEUR → non renseigné."""
+    d = pd.DataFrame({"Fournisseur principal": ["F1", "Alpha", "Bravo", np.nan, np.nan, np.nan],
+                      "Fournisseur principal (code)": [True, False, False, False, False, False],
+                      "DERNIER FOURNISSEUR": ["Nom 1", "Nom A", np.nan, "Charlie", np.nan, np.nan],
+                      "CODE FOURNISSEUR": ["F9", "F2", np.nan, np.nan, "F4", np.nan]})
+    assert pv.fournisseur_prevision(d).tolist() == ["F1", "F2", "Bravo", "Charlie", "F4", pv.FOURNISSEUR_ABSENT]
+
+
+def test_commandes_fournisseur_par_code():
+    """Un même code écrit sous deux noms = un seul fournisseur ; ligne sans code : code du même PN, sinon le nom."""
+    lignes = pd.DataFrame({"PN": ["A", "A", "B", "C"], "Code_fournisseur_cmd": ["F1", np.nan, "F1", np.nan],
+                           "Fournisseur": ["ALPHA SAS", "Alpha", "ALPHA", "Delta"]})
+    assert tf.fournisseur_par_code(lignes).tolist() == ["F1", "F1", "F1", "Delta"]
 
 
 # --------------------------------------------------------------------------

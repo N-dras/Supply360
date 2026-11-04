@@ -224,6 +224,16 @@ def choix_multiple(colonne, label: str, options: list, cle: str, tout: str = "To
     return sel or list(options)
 
 
+def choix_unique(colonne, label: str, options: list, cle: str, defaut=None, libelles: dict | None = None,
+                 aide: str | None = None):
+    """Groupe de boutons d'une barre « Périmètre », un seul choix (ex. période de prévision) : même allure que
+    choix_multiple ; on ne peut pas tout désélectionner. Renvoie la valeur choisie."""
+    defaut = options[0] if defaut is None else defaut
+    v = colonne.pills(label, list(options), selection_mode="single", default=defaut, required=True, key=cle,
+                      format_func=lambda x: (libelles or {}).get(x, x), persist_state="page", help=aide)
+    return defaut if v is None else v
+
+
 def tableau(df, column_config=None, height=None, cle: str = "", statut: str | None = None, couleurs: dict | None = None,
             **_ignore) -> None:
     """Tableau standard de l'app : même rendu et mêmes filtres que `tableau_html` (tri et filtre au clic sur un

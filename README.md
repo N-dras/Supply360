@@ -160,8 +160,7 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
 - les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés (statut « Obsolète / supprimé : pas de commande » pour ces derniers) ;
 - vue **par fournisseur** : PN à commander, valeur maintenant et sur l'horizon, détail d'un fournisseur
   (stock / en commande / à commander par PN, **écart promis − demandé par ligne de commande**).
-  Fournisseur d'un PN : celui de ses commandes, à défaut le dernier fournisseur de l'État du stock, puis
-  le code fournisseur.
+  Fournisseur d'un PN : désigné par son **code fournisseur** (voir « Fournisseur = code fournisseur » plus bas).
 
 Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « Paramètres » › Prévision.
 Le planning des PE mousses est dans l'onglet **PE mousses**.
@@ -223,11 +222,12 @@ assise ou dossier (survolez le « ? » à côté du titre).
 - **Avancement** : conformité PE, classes en retard, dans le délai toléré, à faire sous 3 mois, visites à venir ;
   statut par flotte et classe ; classes à remplacer mois par mois.
 - **Calendrier** : une ligne par avion, le nombre de classes à remplacer par mois (24 mois) ; détail par avion.
-- **Prévision** (12 / 24 / 36 mois, période écrite en clair) : mousses à remplacer (dont retard), à commander, valeur,
+- **Prévision** (période choisie dans la barre « Périmètre » : 12 / 24 / 36 mois, écrite en clair, ex.
+  « 24 mois · nov. 2026 → oct. 2028 ») : mousses à remplacer (dont retard), à commander, valeur,
   déjà disponibles ; « mois par mois » (à remplacer / à recevoir) ; tableau par PN avec CCN.
 - **Par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
-  Fournisseur d'une mousse : celui des commandes, à défaut le dernier fournisseur du Résultat, à défaut son
-  **CODE FOURNISSEUR** (« Code … ») ; les références sont comparées sans espaces, tirets ni points.
+  Fournisseur d'une mousse : code fournisseur des commandes, à défaut le **CODE FOURNISSEUR** du Résultat (par PN,
+  puis par CCN) ; les références sont comparées sans espaces, tirets ni points.
 - **Filtres** (barre « Flotte · Classe · Assise / dossier ») : « Toutes » par défaut ; un clic choisit une valeur,
   plusieurs choix possibles ; « Toutes » remet à zéro. **Exports** : planning complet ; **contrôles** des données.
 
@@ -256,11 +256,17 @@ couleurs, graphe complet même s'il défile à l'écran), à partager par mail o
 
 Survol d'une colonne, d'une barre ou d'une case : infobulle avec toutes ses valeurs.
 
-### Fournisseur manquant (tous les onglets)
+### Fournisseur = code fournisseur (Textile cabine, PE mousses)
 
-Quand la colonne `Fournisseur` est vide dans les Commandes (SAP), le nom est retrouvé grâce au
-`Code fournisseur` (autres lignes du même code), puis grâce aux autres lignes du même PN ; à défaut, le
-code lui-même est affiché (« Code F123 »).
+Un même fournisseur peut être écrit de plusieurs façons (« ALPHA SAS », « Alpha ») ou n'avoir qu'un code sur
+certaines lignes : il est donc désigné par son **code fournisseur** dans toutes les listes, graphes et tableaux
+(choix d'un fournisseur, regroupements, filtres de colonne). Ordre : code de la ligne de commande, sinon code des
+autres commandes du même PN, sinon `CODE FOURNISSEUR` de l'État du stock ; le nom n'est utilisé que si aucun code
+n'existe. Dans le détail d'un fournisseur, son nom tel qu'écrit dans les commandes est rappelé sous la liste.
+
+Stock par chantier garde ses deux colonnes `Fournisseur` et `Code fournisseur`. Quand la colonne `Fournisseur` est
+vide dans les Commandes (SAP), le nom est retrouvé grâce au `Code fournisseur` (autres lignes du même code), puis
+grâce aux autres lignes du même PN ; à défaut, le code lui-même est affiché (« Code F123 »).
 
 ### 🏭 Fournisseurs · 🔔 Alertes
 

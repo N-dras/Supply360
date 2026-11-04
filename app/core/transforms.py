@@ -101,6 +101,28 @@ def completer_fournisseurs(lignes: pd.DataFrame) -> pd.Series:
     return nom.astype(object)
 
 
+def vide(s: pd.Series) -> pd.Series:
+    """Valeur absente : NaN, chaîne vide, « nan » / « None »."""
+    return s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])
+
+
+def code_ou_nom(code, nom) -> pd.Series:
+    """Fournisseur d'une ligne : son CODE fournisseur, à défaut son nom. Le code identifie le fournisseur sans
+    doublon (un même fournisseur peut être écrit de plusieurs façons, ou n'avoir qu'un code sur certaines lignes)."""
+    code = pd.Series(code, dtype=object)
+    nom = pd.Series(nom, dtype=object, index=code.index) if not isinstance(nom, pd.Series) else nom.astype(object)
+    code = code.where(~vide(code)).astype(str).str.strip().where(~vide(code))
+    return code.where(code.notna(), nom.where(~vide(nom))).astype(object)
+
+
+def fournisseur_par_code(lignes: pd.DataFrame) -> pd.Series:
+    """Fournisseur de chaque ligne de commande, identifié par son code : code de la ligne, sinon code le plus
+    fréquent du même PN, sinon le nom (déjà complété par completer_fournisseurs)."""
+    code = lignes["Code_fournisseur_cmd"].where(~vide(lignes["Code_fournisseur_cmd"]))
+    code = code.fillna(lignes["PN"].map(_plus_frequent(lignes["PN"], code)))
+    return code_ou_nom(code, lignes["Fournisseur"])
+
+
 def _premier_prioritaire(df: pd.DataFrame, cle: str, col: str, prioritaires) -> pd.Series:
     """Par groupe : première valeur figurant dans `prioritaires`, sinon première non vide."""
     rang = (~df[col].isin(prioritaires)).astype(int)

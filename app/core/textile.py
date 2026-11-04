@@ -74,7 +74,9 @@ def preparer_commandes(lignes: pd.DataFrame) -> pd.DataFrame:
         "Code acheteur": lignes["Code_acheteur"],
         "CCN": lignes["CCN_cmd"],
         "Code fournisseur": lignes["Code_fournisseur_cmd"],
-        "Fournisseur": lignes["Fournisseur"],
+        # Fournisseur = code fournisseur (à défaut le nom) : une seule entrée par fournisseur dans les listes
+        "Fournisseur": tf.fournisseur_par_code(lignes) if len(lignes) else lignes["Fournisseur"],
+        "Nom fournisseur": lignes["Fournisseur"],
         "Date emission commande": lignes["Date_emission"],
         "Date livraison demandee": lignes["Date_demandee"],
         "Date livraison promise": lignes["PSD"],
@@ -107,14 +109,18 @@ def ajouter_metriques_commandes(o: pd.DataFrame, today) -> pd.DataFrame:
     return o
 
 
-def fournisseur_principal(o: pd.DataFrame) -> pd.Series:
-    """Fournisseur le plus fréquent de chaque PN (index = PNR)."""
+def fournisseur_principal(o: pd.DataFrame) -> pd.DataFrame:
+    """Fournisseur (code) le plus fréquent de chaque PN (index = PNR) ; « Fournisseur principal (code) » : vrai si
+    c'est un code fournisseur (faux : le PN n'a que des noms dans les commandes)."""
+    cols = ["Fournisseur principal", "Fournisseur principal (code)"]
     d = o.dropna(subset=["Fournisseur"])
     if d.empty:
-        return pd.Series(dtype=object, name="Fournisseur principal")
+        return pd.DataFrame(columns=cols)
     n = d.groupby(["PNR", "Fournisseur"]).size().reset_index(name="n")
-    n = n.sort_values(["PNR", "n"], ascending=[True, False], kind="stable").drop_duplicates("PNR")
-    return n.set_index("PNR")["Fournisseur"].rename("Fournisseur principal")
+    n = n.sort_values(["PNR", "n"], ascending=[True, False], kind="stable").drop_duplicates("PNR").set_index("PNR")
+    avec_code = d["Code fournisseur"].notna().groupby(d["PNR"]).any() if "Code fournisseur" in d \
+        else pd.Series(False, index=n.index)
+    return pd.DataFrame({cols[0]: n["Fournisseur"], cols[1]: avec_code.reindex(n.index, fill_value=False).astype(bool)})
 
 
 def delais_fournisseurs(o: pd.DataFrame, min_lignes=3) -> pd.DataFrame:
@@ -251,6 +257,7 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
         pbi = pbi.merge(fournisseur_principal(o), left_on="PNR", right_index=True, how="left")
     else:
         pbi["Fournisseur principal"] = np.nan
+        pbi["Fournisseur principal (code)"] = False
     pbi["Nb lignes commande"] = pbi.get("Nb lignes commande", pd.Series(0, index=pbi.index)).fillna(0).astype(int)
     pbi = ajouter_consommation(pbi)
 
@@ -485,9 +492,8 @@ def etat_stocks(s: pd.DataFrame, seuil_mois: float = 1.0, couverture_haute_mois:
                         couverture <= couverture_haute_mois],
                        ["Obsolète / supprimé", "Jamais consommé", DORMANT, "Sans conso", "Rupture", "Critique", "Bas", "Correct"],
                        "Couverture élevée")
-    fournisseur = s["Fournisseur principal"] if "Fournisseur principal" in s else pd.Series(np.nan, index=s.index)
-    if "DERNIER FOURNISSEUR" in s:
-        fournisseur = fournisseur.fillna(s["DERNIER FOURNISSEUR"])
+    from core.prevision import FOURNISSEUR_ABSENT, fournisseur_prevision  # fournisseur = code fournisseur, à défaut le nom
+    fournisseur = fournisseur_prevision(s).replace(FOURNISSEUR_ABSENT, np.nan)
     libelle_classe = classe.map(lambda c: f"{int(c)} · {CLASSES_FIN_DE_VIE[int(c)]}" if c in CLASSES_FIN_DE_VIE
                                 else (str(int(c)) if pd.notna(c) else np.nan))
     out = pd.DataFrame({

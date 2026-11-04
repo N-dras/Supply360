@@ -141,7 +141,7 @@ def _bloc_import():
         puces = b.container()
         reglages = c.popover("Paramètres", width="stretch")
         bilan = st.container()
-        with ui.zone_repliable(K + "manuel", "Import manuel (Parcourir) et colonnes attendues"):
+        with ui.zone_repliable(K + "manuel", "Import manuel", interrupteur=c, aide="Choisir les fichiers à la main (Parcourir) et voir les colonnes attendues"):
             zone_dossier = st.container()
             c1, c2, c3 = st.columns(3)
             with c1:

@@ -325,34 +325,39 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-lien { display: inline-flex; align-items: center; gap: .4rem; margin: .1rem 0 -.2rem; padding: .35rem .9rem; border-radius: 8px;
   background: #EEF3FB; color: var(--navy) !important; font-size: .875rem; font-weight: 700; text-decoration: none !important; }
 .s360-lien:hover { background: #E2EAF7; }
-/* Bloc d'import compact : dossiers, fichiers, paramètres sur une ligne */
-[class*="st-key-s360sec_"][class*="_import"] { padding: 1rem 1.3rem 1rem; }
-[class*="st-key-s360sec_"][class*="_import"] [data-testid="stHorizontalBlock"] { align-items: center; }
+/* Bloc d'import compact : dossiers, fichiers, paramètres et « Import manuel » sur une ligne */
+[class*="st-key-s360sec_"][class*="_import"] { padding: .7rem 1rem; gap: .5rem !important; }
+[class*="st-key-s360sec_"][class*="_import"] [data-testid="stHorizontalBlock"] { align-items: center; gap: .8rem; }
+[class*="st-key-s360sec_"][class*="_import"] [data-testid="stPopover"] button { min-height: 2.2rem; }
+[class*="st-key-s360sec_"][class*="_import"] [data-testid="stCheckbox"] { margin-top: .15rem; }
+[class*="st-key-s360sec_"][class*="_import"] [data-testid="stCheckbox"] label p { font-size: .86rem; color: var(--muted); }
 /* Dossier mémorisé : boutons et fenêtre de choix du chantier (JavaScript de build.py) */
-.s360-dossiers { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
-.s360-dossier-btn { display: inline-flex; align-items: center; gap: .45rem; font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer;
-  border: 1px solid var(--navy); border-radius: 8px; padding: .55rem 1rem; color: #fff; background: var(--navy); }
+.s360-dossiers { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; }
+.s360-dossier-btn { display: inline-flex; align-items: center; gap: .4rem; font: inherit; font-weight: 700; font-size: .88rem; cursor: pointer;
+  border: 1px solid var(--navy); border-radius: 8px; padding: .45rem .85rem; color: #fff; background: var(--navy); }
 .s360-dossier-btn:hover { background: var(--navy-2); border-color: var(--navy-2); }
-.s360-dossier-btn .s360-ic { pointer-events: none; }
+.s360-dossier-btn .s360-ic { pointer-events: none; width: 1rem; height: 1rem; }
 /* Bouton principal + « Changer » collés */
 .s360-dossier-grp { display: inline-flex; align-items: stretch; border-radius: 8px; box-shadow: 0 1px 2px rgba(16, 24, 40, .08); }
 .s360-dossier-grp .s360-dossier-btn { border-radius: 8px 0 0 8px; }
-.s360-dossier-btn.autre { color: var(--navy); background: #fff; border-color: var(--line); border-left: 0; font-size: .82rem; padding: .45rem .75rem; }
+.s360-dossier-btn.autre { color: var(--navy); background: #fff; border-color: var(--line); border-left: 0; font-size: .78rem; padding: .4rem .6rem; }
 .s360-dossier-grp .s360-dossier-btn.autre { border-radius: 0 8px 8px 0; }
 .s360-dossier-btn.autre:hover { background: var(--hover); }
-/* État des imports : une pastille par fichier attendu */
-.s360-puces { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; }
-.s360-puce { display: inline-flex; align-items: center; gap: .5rem; max-width: 100%; padding: .35rem .75rem .35rem .45rem; border-radius: 8px;
-  background: #F5F7FA; border: 1px solid var(--line); color: var(--muted); font-size: .8rem; line-height: 1.25; }
-.s360-puce > .s360-ic { width: 1.3rem; height: 1.3rem; padding: .22rem; border-radius: 50%; background: #C9D3E3; color: #fff; stroke-width: 3; }
-.s360-puce span { display: grid; min-width: 0; }
-.s360-puce b { color: var(--text); font-weight: 700; font-size: .84rem; white-space: nowrap; }
-.s360-puce em { font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 15rem; }
-.s360-puce.ok { background: #F2F8F5; border-color: #D5ECDF; }
+/* État des imports : une pastille par fichier attendu, sur une ligne (nom du fichier au survol) */
+.s360-puces { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; }
+.s360-puce { position: relative; display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .65rem .3rem .35rem; border-radius: 99px;
+  background: #F5F7FA; border: 1px dashed #C9D3E3; color: var(--muted); font-size: .8rem; line-height: 1.2; cursor: default; }
+.s360-puce > .s360-ic { width: 1.1rem; height: 1.1rem; padding: .18rem; border-radius: 50%; background: #C9D3E3; color: #fff; stroke-width: 3; }
+.s360-puce b { color: var(--muted); font-weight: 700; font-size: .82rem; white-space: nowrap; }
+.s360-puce em { font-style: normal; font-size: .76rem; white-space: nowrap; }
+.s360-puce.ok { background: #F2F8F5; border: 1px solid #D5ECDF; }
+.s360-puce.ok b { color: var(--text); }
 .s360-puce.ok > .s360-ic { background: var(--ok); }
-.s360-puce.ko { background: #FFFBEF; border-color: #F1E1A8; }
+.s360-puce.ko { background: #FFFBEF; border: 1px solid #F1E1A8; }
+.s360-puce.ko b { color: var(--text); }
 .s360-puce.ko > .s360-ic { background: var(--warn); }
 .s360-puce.ko em { color: #8A6400; }
+.s360-puce[data-tip]:hover::after { top: calc(100% + 6px); left: 0; }
 
 /* ---------------------------------------------------------------- fenêtre « chantier », notes, zones repliables */
 #s360-fenetre { position: fixed; inset: 0; z-index: 1000002; display: grid; place-items: center; padding: 1rem;

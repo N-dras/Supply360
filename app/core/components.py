@@ -531,11 +531,11 @@ def boutons_dossiers(dossier: str, cible: str, mode: str = "fichiers", commandes
 
 
 @contextmanager
-def zone_repliable(cle: str, libelle: str):
+def zone_repliable(cle: str, libelle: str, interrupteur=None, aide: str | None = None):
     """Zone repliée derrière un interrupteur. Contrairement à `st.expander` (dont le contenu replié n'est pas
     dans la page), les widgets restent présents, masqués en CSS : les boutons « 📂 Ouvrir » peuvent y déposer
-    des fichiers même quand la zone est fermée."""
-    ouvert = st.toggle(libelle, key=cle, persist_state="page")
+    des fichiers même quand la zone est fermée. `interrupteur` : colonne où placer l'interrupteur (bloc compact)."""
+    ouvert = (interrupteur or st).toggle(libelle, key=cle, persist_state="page", help=aide)
     with st.container(key=f"s360pli_{'ouvert' if ouvert else 'ferme'}_{cle}"):
         yield
 
@@ -545,14 +545,14 @@ def etat_fichiers(fichiers: list[tuple[str, str, bool]]) -> None:
     puces = []
     for libelle, cle, obligatoire in fichiers:
         garde = st.session_state.get(f"{cle}__data")
-        if garde:
-            puces.append(f'<span class="s360-puce ok" title="{escape(garde[0])}">{ic("check")}<span><b>{escape(libelle)}</b>'
-                         f'<em>{escape(garde[0])}</em></span></span>')
+        if garde:  # nom du fichier au survol : la pastille tient sur une ligne
+            puces.append(f'<span class="s360-puce ok" data-tip="{escape(garde[0])}">{ic("check")}<b>{escape(libelle)}</b></span>')
+        elif obligatoire:
+            puces.append(f'<span class="s360-puce ko" data-tip="Obligatoire : à importer">{ic("plus")}<b>{escape(libelle)}</b>'
+                         '<em>à importer</em></span>')
         else:
-            ton = "ko" if obligatoire else ""
-            puces.append(f'<span class="s360-puce {ton}">{ic("plus")}<span><b>{escape(libelle)}</b>'
-                         f'<em>{"à importer" if obligatoire else "facultatif"}</em></span></span>')
-    st.markdown(f'<div class="s360-puces">{"".join(puces)}</div>', unsafe_allow_html=True)
+            puces.append(f'<span class="s360-puce" data-tip="Facultatif : enrichit l\'analyse">{ic("plus")}<b>{escape(libelle)}</b></span>')
+    st.markdown(f'<div class="s360-puces">{"".join(puces)}</div>', unsafe_allow_html=True)  # pas st.html : il retire le SVG
 
 
 def import_commandes(colonnes) -> tuple[str, bytes] | None:

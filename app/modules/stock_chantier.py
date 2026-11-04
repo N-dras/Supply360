@@ -191,7 +191,7 @@ def _bloc_import():
             gestions = st.multiselect("Codes Gestion du périmètre", GESTIONS_PROPOSEES, default=GESTIONS_DEFAUT, key=K + "gestions",
                                       placeholder="Choisir les codes Gestion", persist_state="page")
         bilan = st.container()
-        with ui.zone_repliable(K + "manuel", "Import manuel (Parcourir) et colonnes attendues"):
+        with ui.zone_repliable(K + "manuel", "Import manuel", interrupteur=c, aide="Choisir les fichiers à la main (Parcourir) et voir les colonnes attendues"):
             zone_dossier = st.container()
             c1, c2, c3 = st.columns(3)
             with c1:

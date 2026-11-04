@@ -203,8 +203,9 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
   encadré de contexte (`contexte(...)` : chantier, début et J-x, date des données…).
 - **Bloc d'import compact** (`section(..., "")`) : boutons « Ouvrir <dossier> », pastilles d'état des fichiers,
   popover « Paramètres » ; import manuel replié.
-- **Sections** (`section`) : titre bleu marine, sous-titre, compteur, bouton **Exporter (Excel)** à droite
-  (`export=(fonction, nom, clé)`) ; `carte=False` pour un bloc sans fond (tuiles).
+- **Sections** (`section`) : titre bleu marine, **sous-titre de quelques mots** (le détail va dans `info=`, un « ? »),
+  compteur, bouton **Exporter (Excel)** à droite (`export=(fonction, nom, clé)`) — **un seul par sous-onglet**, sur le
+  premier bloc ; `carte=False` pour un bloc sans fond (tuiles).
 - **Tuiles KPI** (`kpi_card`) : liseré et icône à la couleur du ton, chiffre coloré ; `kpi_repartition` = grande
   tuile avec barre de répartition et légende chiffrée ; `valeurs` = bandeau de chiffres.
 - **Badges de statut** (`badge`) : pastille de couleur + libellé. Chantiers : **Terminé / En cours / À venir**.
@@ -226,7 +227,7 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
   traverse l'écran en 32 s.
 - **Peu de texte** : titre + une ligne de description ; les détails (colonnes attendues, règles de calcul, tableaux annexes) vont dans des `st.popover`.
 - **« ? » d'aide** (`components.aide`, `section(..., info=)`, `kpi_card(..., info=)`) : une précision courte au survol plutôt qu'un paragraphe affiché.
-- **Barre « Périmètre »** sous les sous-onglets (`components.barre_perimetre` + `choix_multiple`) : mêmes boutons partout (« Toutes » par défaut, plusieurs choix, « Toutes » remet à zéro). Textile : Flotte (via textile_all_parts) + Équipement ; PE mousses : Flotte, Classe, Assise / dossier. Vocabulaire PE : « classe » (les mousses d'une classe d'un avion, assise ou dossier), jamais « élément ».
+- **Barre « Périmètre »** sous les sous-onglets (`components.barre_perimetre` + `choix_multiple`) : mêmes boutons partout (« Toutes » par défaut, plusieurs choix, « Toutes » remet à zéro). Textile : Flotte (via textile_all_parts) + Équipement ; PE mousses : Flotte, Classe, Assise / dossier ; Stock par chantier : Statut, Code Gestion, Tracking level. Vocabulaire PE : « classe » (les mousses d'une classe d'un avion, assise ou dossier), jamais « élément ».
 - **Périodes en clair** : jamais « horizon » ou « 12 derniers mois » seuls ; écrire la période (« nov. 2026 → oct. 2029 »).
 - **Règles de calcul en mots simples** : phrases courtes, un exemple chiffré, et pour les statuts un tableau « Statut | Ce que ça veut dire | Que faire ». Pas de formule brute (`max(0, …)`) ni de nom de colonne technique sans explication.
 

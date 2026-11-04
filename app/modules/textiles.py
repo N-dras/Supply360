@@ -357,10 +357,9 @@ def _relances_html(rel: pd.DataFrame, cle: str, colonnes: dict | None = None, ha
 def _synthese(s, o, today, cat):
     r = tx.synthese(s, o)
     rel = tx.relances(o) if len(o) else o
-    resume = (f"{len(rel)} relance(s) fournisseur : {r['en_retard']} en retard, {r['sans_date']} sans date promise, "
-              f"{r['bfe']} en attente de BFE" if len(rel) else "Aucune relance fournisseur à lancer")
-    with ui.section(f"{TAB_ID}_syn", "Synthèse", f"{'Toutes catégories' if cat == TOUTES else cat.capitalize()} · {resume}",
-                    export=_export_btn("export__btn"), carte=False):
+    resume = f"{len(rel)} relance(s) fournisseur à lancer" if len(rel) else "Aucune relance fournisseur à lancer"
+    with ui.section(f"{TAB_ID}_syn", "Synthèse", resume, export=_export_btn("export__btn"), carte=False,
+                    info=f"{r['en_retard']} en retard, {r['sans_date']} sans date promise, {r['bfe']} en attente de BFE." if len(rel) else ""):
         ui.kpi_grid([
             ui.kpi_card("PN suivis", charts.entier(r["pn"]), f"{len(tx.categories(s))} catégorie(s)", "navy", "layers"),
             ui.kpi_card("Valeur du stock", charts.euros(r["valeur_stock"]), "sur étagère", "teal", "package"),
@@ -369,14 +368,13 @@ def _synthese(s, o, today, cat):
             ui.kpi_card("Stock dormant", charts.euros(r["valeur_dormant"]), f"{r['dormants']} PN sans conso depuis 3 ans", "warn", "moon"),
         ])
 
-    with ui.section(f"{TAB_ID}_rel", "Relances fournisseurs", "Du plus urgent au moins urgent", tag=str(len(rel)),
-                    export=_export_btn("export_rel__btn")):
+    with ui.section(f"{TAB_ID}_rel", "Relances fournisseurs", "La plus urgente en premier", tag=str(len(rel))):
         if len(rel):
             _relances_html(rel, "relances")
         else:
             ui.callout("Aucune relance à lancer.", "ok", "check-circle")
 
-    with ui.section(f"{TAB_ID}_cat", "Catégories", "Répartition du stock, des commandes et de l'activité par catégorie"):
+    with ui.section(f"{TAB_ID}_cat", "Catégories", "Stock, commandes et activité par catégorie"):
         a, b = st.columns(2, gap="medium")
         cats = tx.categories(s)
         noms = [c.capitalize() for c in cats]
@@ -482,8 +480,8 @@ consommé, puis Surstock, puis Sans conso, puis le niveau de stock (Rupture → 
 
 @st.fragment
 def _etat_stocks_table(etat):
-    with ui.section(f"{TAB_ID}_stock_pn", "Stock par PN", "Du plus urgent au moins urgent · cliquez sur un titre de colonne pour trier ou filtrer",
-                    tag=str(len(etat)), export=_export_btn("export_stock_pn__btn")):
+    with ui.section(f"{TAB_ID}_stock_pn", "Stock par PN", "Du plus urgent au moins urgent",
+                    tag=str(len(etat))):
         d = etat
         ui.tableau_html(d, statut="Statut", couleurs=tx.STOCK_STATUT_COULEURS,
                         num=["Stock", "En commande", "Conso 12 mois", "Conso / mois", "Couverture (mois)", "Couverture avec commandes (mois)"],
@@ -525,7 +523,7 @@ def _commandes(s, o, today, cat):
         ui.callout(f"Importez le fichier <b>{sio.FICHIER_COMMANDES}</b> pour voir les commandes.", "info", "📦")
         return
     r = tx.synthese(s, o)
-    with ui.section(f"{TAB_ID}_cmd", "Commandes", "Statut de chaque ligne de commande : voir « Règles de calcul »"):
+    with ui.section(f"{TAB_ID}_cmd", "Commandes", "Statut de chaque ligne de commande", export=_export_btn("export_cmd__btn")):
         ui.kpi_grid([
             ui.kpi_card("Lignes de commande", charts.entier(r["lignes"])),
             ui.kpi_card("En retard", charts.entier(r["en_retard"]), "", "ko"),
@@ -562,7 +560,7 @@ def _commandes(s, o, today, cat):
 
 @st.fragment
 def _lignes(o):
-    with ui.section(f"{TAB_ID}_lignes", "Toutes les lignes", "Cliquez sur un titre de colonne pour trier ou filtrer"):
+    with ui.section(f"{TAB_ID}_lignes", "Toutes les lignes"):
         d = o
         pn_cmd = {"PN commandé": "PN commandé"} if "PN commandé" in d and (d["PN commandé"] != d["PNR"]).any() else {}
         _relances_html(d, "lignes", _avec_stock({**COL_RELANCES, **pn_cmd, "Date emission commande": "Émise", "Classe de retard": "Classe de retard"}),
@@ -576,7 +574,7 @@ def _fournisseurs(s, o, today, cat):
     if o.empty:
         ui.callout(f"Importez le fichier <b>{sio.FICHIER_COMMANDES}</b> pour voir les fournisseurs.", "info", "🏭")
         return
-    with ui.section(f"{TAB_ID}_four", "Fournisseurs", "Qui livre le plus, qui est en retard, combien de temps ils mettent"):
+    with ui.section(f"{TAB_ID}_four", "Fournisseurs", "Volumes, retards et délais", export=_export_btn("export_four__btn")):
         # Barres horizontales : les noms des fournisseurs se lisent en entier (pas d'étiquettes inclinées)
         vc = o["Fournisseur"].value_counts().head(10)
         part = (vc / max(len(o.dropna(subset=["Fournisseur"])), 1) * 100)
@@ -646,7 +644,7 @@ def _consommation(s, o, today, cat):
     c_av = s["Conso 12 mois précédents"].fillna(0) if "Conso 12 mois précédents" in s else pd.Series(0.0, index=s.index)
     pu = pd.to_numeric(s.get("Dernier PU (achat) Euros", pd.Series(0.0, index=s.index)), errors="coerce").fillna(0)
     evol = (c12.sum() / c_av.sum() - 1) * 100 if c_av.sum() > 0 else None
-    with ui.section(f"{TAB_ID}_conso", "Consommation", "Pièces sorties du stock, d'après l'État du stock", carte=False):
+    with ui.section(f"{TAB_ID}_conso", "Consommation", "Pièces sorties du stock", carte=False, export=_export_btn("export_conso__btn")):
         ui.kpi_grid([
             ui.kpi_card("Sorties sur 12 mois", charts.entier(c12.sum()), recent, "navy", "trend"),
             ui.kpi_card("Valeur sortie", charts.euros((c12 * pu).sum()), "au dernier prix d'achat", "teal", "euro"),
@@ -746,8 +744,9 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
     v_total = s["Valeur commandes recommandées (€)"].sum()
     plus_tard = s[(s["Commandes recommandées sur l'horizon (qté)"] > s["Qté à commander maintenant"])]
     with ui.section(f"{TAB_ID}_prev", "Prévision de commandes",
-                    f"Garder assez de pièces pour équiper {params.buffer_ratio:.0%} des avions de chaque groupe · "
-                    f"période de {params.horizon_months} mois : {periode}", carte=False):
+                    f"{periode} ({params.horizon_months} mois)", carte=False, export=_export_btn("export_prev__btn"),
+                    info=f"Objectif : garder de quoi équiper {params.buffer_ratio:.0%} des avions de chaque groupe d'avions "
+                         "(réglable dans Paramètres › Prévision)."):
         ui.kpi_grid([
             ui.kpi_card("À commander maintenant", charts.euros(v_now), f"{len(now)} PN, chez {now['Fournisseur'].nunique()} fournisseur(s)",
                         "ko", "cart"),
@@ -759,16 +758,13 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
             ui.kpi_card("Jamais commandés", charts.entier(s["Statut prévision"].isin(["Dormant / inactif : pas de commande", pv.OBSOLETE]).sum()),
                         "PN dormants, inactifs ou obsolètes", "violet", "x"),
         ])
-        c1, c2, c3 = st.columns([1, 1, 1])
+        c1, c2, _ = st.columns([1, 1, 1])
         with c1.popover("Comment c'est calculé", width="stretch"):
             st.markdown(EXPLICATION.replace("{periode}", periode))
         with c2.popover("Autres tableaux", width="stretch"):
             _tableaux_prevision(s, plan, gs, res)
-        with c3:
-            cle_export = st.session_state[K + "cle_export"]
-            ui.telecharger(lambda: _export(*cle_export), sio.nom_export(TAB_ID), K + "export_prev__btn")
 
-    with ui.section(f"{TAB_ID}_prev_now", "À commander maintenant", "Commandes à passer ce mois-ci, la plus grosse valeur en premier",
+    with ui.section(f"{TAB_ID}_prev_now", "À commander maintenant", "La plus grosse valeur en premier",
                     tag=str(len(now))):
         if len(now):
             d = now.sort_values("Valeur à commander maintenant (€)", ascending=False)
@@ -778,7 +774,7 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
             ui.callout("Rien à commander maintenant.", "ok", "check-circle")
 
     fours = pv.par_fournisseur(s, plan)
-    with ui.section(f"{TAB_ID}_prev_four", "Par fournisseur", f"Ce qu'il faut commander chez chacun, maintenant et d'ici {periode.split(' → ')[1]}",
+    with ui.section(f"{TAB_ID}_prev_four", "Par fournisseur", f"Maintenant et d'ici {periode.split(' → ')[1]}",
                     tag=str(len(fours))):
         top = fours[fours["Valeur sur l'horizon (€)"] > 0].head(12)
         ui.graphe(charts.barres(list(top["Fournisseur"]), {"Maintenant": top["Valeur maintenant (€)"].to_numpy(),

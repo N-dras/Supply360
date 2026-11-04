@@ -135,8 +135,9 @@ def _avancement(c: pd.DataFrame, date_ref, today):
     visites = c.loc[c["Prochaine visite"] <= auj + pd.DateOffset(months=3), "Immatriculation"].nunique()
     conformite = (1 - retard / n) * 100 if n else 100
     with ui.section("pe_mousses_pe_avancement", "Avancement de la PE mousses",
-                    f"{nb_avions} avions, {n} classes suivies · âges au {pd.Timestamp(date_ref):%d/%m/%Y} · statut au {auj:%d/%m/%Y}",
-                    info=CLASSE_INFO, carte=False):
+                    f"{nb_avions} avions · {n} classes suivies",
+                    info=f"{CLASSE_INFO} Âges au {pd.Timestamp(date_ref):%d/%m/%Y} (fichier PE mousses), statut au {auj:%d/%m/%Y}.",
+                    carte=False):
         if retard:
             ui.callout(f"<b>{retard} classes en retard</b> sur <b>{avions_retard} avions</b> : à rattraper en priorité "
                        "(prévues dès ce mois-ci dans la Prévision).", "ko", "🔴")
@@ -180,8 +181,8 @@ def _avancement(c: pd.DataFrame, date_ref, today):
 def _calendrier(c: pd.DataFrame, today):
     auj = pd.Timestamp(today)
     with ui.section("pe_mousses_pe_calendrier", "Calendrier des remplacements",
-                    "Une ligne par avion, une colonne par mois : nombre de classes à remplacer (survolez une case pour voir lesquelles)",
-                    info="« À rattraper » : échéance déjà dépassée. Sinon, le mois de la prochaine visite datée de l'avion, "
+                    "Classes à remplacer, par avion et par mois",
+                    info="Survolez une case pour voir les classes concernées. « À rattraper » : échéance déjà dépassée. Sinon, le mois de la prochaine visite datée de l'avion, "
                          "à défaut celui de l'échéance PE."):
         debut = auj.to_period("M").start_time
         mois = pd.date_range(debut, periods=24, freq="MS")
@@ -252,7 +253,8 @@ def _forecast(ev, synth, long, today) -> int:
                        f"({len(avancer)} PN) : relancez le fournisseur plutôt que de recommander (colonne « À avancer » du tableau par PN).",
                        "warn", "📌")
     mois = pd.date_range(debut, periods=h, freq="MS")
-    with ui.section("pe_mousses_pe_quand", "Mois par mois", f"{periode} · le 1er mois inclut les remplacements en retard", carte=False):
+    with ui.section("pe_mousses_pe_quand", "Mois par mois", periode, carte=False,
+                    info="Le premier mois inclut les remplacements en retard."):
         g1, g2 = st.columns(2, gap="medium")
         with g1:
             x = e.assign(E=_element(e["Classe"], e["Composant"])).groupby(["Mois", "E"])["Qté"].sum().unstack(fill_value=0)
@@ -266,7 +268,7 @@ def _forecast(ev, synth, long, today) -> int:
             ui.graphe(charts.barres(mois, {"À recevoir": liv}, {"À recevoir": COLORS["ko"]}, temporel=True, hauteur=240,
                                     titre="Mousses à recevoir des fournisseurs"),
                       "Quantités à commander, au mois où elles doivent arriver (tous fournisseurs)")
-    with ui.section("pe_mousses_pe_pn", "Par PN", f"{periode} · la plus grosse valeur à commander en premier",
+    with ui.section("pe_mousses_pe_pn", "Par PN", "La plus grosse valeur à commander en premier",
                     info="Stock de sécurité : de quoi équiper 10 % des avions de chaque flotte (réglable dans Paramètres). "
                          "« À avancer » : mousses déjà commandées mais promises après le mois où elles sont nécessaires."):
         t = synth.assign(**{"Besoin": synth[f"Besoin {h} mois"], "À commander": synth[f"À commander {h} mois"],
@@ -289,7 +291,7 @@ def _forecast_fournisseur(ev, synth, long, today, h):
     if v.empty:
         return
     with ui.section("pe_mousses_pe_fournisseur", "Par fournisseur",
-                    f"Ce qu'il faut commander à chacun sur {h} mois, par année et par mois : à partager avec le fournisseur"):
+                    f"Commande sur {h} mois, à partager avec chaque fournisseur"):
         # Vue d'ensemble : tous les fournisseurs, par année
         qte_an = pe.par_annee(lg, mois, "Fournisseur").reindex(v.index)
         val_an = pe.par_annee(lg, mois, "Fournisseur", "Valeur à livrer (€)").reindex(v.index)

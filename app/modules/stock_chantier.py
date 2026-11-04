@@ -260,21 +260,23 @@ def render() -> None:
         ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "x")
         return
 
+    m_scope = _perimetre(m_scope)
     s = tf.synthese_geav(m_scope)
     nom = sio.nom_export(TAB_ID)
 
     # ---- Synthèse ----
-    resume = (f"{s['n_commander']} référence(s) à commander ({s['qty_a_commander']} unités) et {s['n_relance']} relance(s) "
-              f"fournisseur avant le {date_chantier:%d/%m/%Y}" if s["n_commander"] or s["n_relance"]
-              else "Besoin couvert : aucune commande ni relance à lancer")
-    with ui.section(f"{TAB_ID}_synthese", "Synthèse", resume, export=(export, nom, K + "export_haut__btn"), carte=False):
+    resume = (f"{s['n_commander']} à commander · {s['n_relance']} à relancer · avant le {date_chantier:%d/%m/%Y}"
+              if s["n_commander"] or s["n_relance"] else "Besoin couvert : rien à lancer")
+    with ui.section(f"{TAB_ID}_synthese", "Synthèse", resume, export=(export, nom, K + "export_haut__btn"), carte=False,
+                    info=f"{s['qty_a_commander']} unités à commander au total. Les relances concernent les commandes "
+                         "en cours sans date, ou livrées après le début du chantier."):
         compte = m_scope["ACTION_CODE"].value_counts()
         ordre = ["commander", "relancer_urgent", "relancer", "inconnu", "en_cours", "ok"]
         u = s["n_relance_urgente"]
         ui.kpi_grid([
             ui.kpi_repartition("Périmètre du chantier", s["n_total"], "références",
                                [(tf.ACTION_LABELS[c], int(compte.get(c, 0)), tf.ACTION_COULEURS[c]) for c in ordre],
-                               note=f"+ {len(m) - s['n_total']} hors périmètre Gestion"),
+                               note=f"+ {len(m) - s['n_total']} hors périmètre"),
             ui.kpi_card("À commander", s["n_commander"], f"{s['qty_a_commander']} unités au total", "ko", "cart"),
             ui.kpi_card("Relances fournisseur", s["n_relance"], f"dont {u} urgente{'s' if u > 1 else ''} (PSD après le début)",
                         "orange", "send"),
@@ -289,8 +291,8 @@ def render() -> None:
 
     # ---- Actions à lancer ----
     actions = tf.actions_a_lancer(m_scope)
-    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", f"Du plus urgent au moins urgent · à faire avant le {date_chantier:%d/%m/%Y}",
-                    tag=str(len(actions)), export=(export, nom, K + "export_actions__btn")):
+    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", f"À faire avant le {date_chantier:%d/%m/%Y}, la plus urgente en premier",
+                    tag=str(len(actions))):
         if actions.empty:
             ui.callout("Aucune action à lancer.", "ok", "check-circle")
         else:
@@ -302,8 +304,7 @@ def render() -> None:
 @st.fragment
 def _detail(m, m_scope, export, gestions):
     """Tableau filtrable du périmètre. Fragment : filtrer ne relance que ce bloc."""
-    with ui.section(f"{TAB_ID}_detail", "Détail du périmètre", f"Toutes les références des codes Gestion "
-                    f"{', '.join(str(g) for g in sorted(gestions))}", export=(export, sio.nom_export(TAB_ID), K + "export_bas__btn")):
+    with ui.section(f"{TAB_ID}_detail", "Détail du périmètre", f"Codes Gestion {', '.join(str(g) for g in sorted(gestions))}"):
         vue = m_scope
         _afficher(vue.sort_values("Qty_a_commander", ascending=False, kind="stable"), "detail", hauteur="30rem")
         b2, b3, _ = st.columns([1.3, 1, 3])
@@ -313,6 +314,35 @@ def _detail(m, m_scope, export, gestions):
                        column_config=COLUMN_CONFIG, height=420, width=1100)
         with b3.popover("Règles de calcul", width="stretch"):
             _aide()
+
+
+TL_LIBELLES = {"0": "TL0 · consommable", "1": "TL1 · réparable"}
+
+
+def filtrer_perimetre(m_scope: pd.DataFrame, statuts: list, gestions: list, tls: list) -> pd.DataFrame:
+    """Références retenues par la barre « Périmètre » (listes vides = tout)."""
+    garde = pd.Series(True, index=m_scope.index)
+    if statuts:
+        garde &= m_scope["ACTION_CODE"].isin(statuts)
+    if gestions:
+        garde &= m_scope["GESTION"].map(lambda g: str(int(g)) if pd.notna(g) else "").isin(gestions)
+    if tls:
+        garde &= m_scope["TL"].astype(str).isin(tls)
+    return m_scope[garde]
+
+
+def _perimetre(m_scope: pd.DataFrame) -> pd.DataFrame:
+    """Barre « Périmètre » (même allure que Textile et PE mousses) : statut, code Gestion, tracking level."""
+    statuts = [c for c in tf.ACTION_ORDRE if c in set(m_scope["ACTION_CODE"])]
+    gestions = sorted({str(int(g)) for g in m_scope["GESTION"].dropna()}, key=int)
+    tls = sorted({str(v) for v in m_scope["TL"].dropna()} & set(TL_LIBELLES)) if "TL" in m_scope else []
+    with ui.barre_perimetre(TAB_ID):
+        a, b, c = st.columns([2.2, 1.4, 1.1], gap="medium")
+        sel_s = ui.choix_multiple(a, "Statut", statuts, K + "p_statut", "Tous", tf.ACTION_LABELS)
+        sel_g = ui.choix_multiple(b, "Code Gestion", gestions, K + "p_gestion", "Tous")
+        sel_t = ui.choix_multiple(c, "Tracking level", tls, K + "p_tl", "Tous", TL_LIBELLES) if tls else []
+    return filtrer_perimetre(m_scope, sel_s if len(sel_s) < len(statuts) else [], sel_g if len(sel_g) < len(gestions) else [],
+                             sel_t if tls and len(sel_t) < len(tls) else [])
 
 
 def _aide() -> None:

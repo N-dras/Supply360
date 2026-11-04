@@ -408,7 +408,7 @@ def tableau_html(df: pd.DataFrame, statut: str | None = None, couleurs: dict | N
         colonnes_html.append(sortie)
     marques = df[marque[0]].fillna(False).astype(bool).tolist() if marque and marque[0] in df.columns else [False] * len(df)
     if marque and statut in cols:  # étiquette rouge sous le badge de statut
-        j, tag = cols.index(statut), f'<br><span class="s360-tag rouge">{ic("flag")}{escape(marque[1])}</span>'
+        j, tag = cols.index(statut), f'<br><span class="s360-tag rouge drapeau">{escape(marque[1])}</span>'  # drapeau : CSS
         colonnes_html[j] = [h.replace("</td>", tag + "</td>") if m else h for h, m in zip(colonnes_html[j], marques)]
     statuts = [escape(str(v)) for v in df[statut].tolist()] if statut and statut in df.columns else None
     lignes = [f"<tr{f' data-statut={chr(34)}{statuts[k]}{chr(34)}' if statuts else ''}{' class=' + chr(34) + 'marque' + chr(34) if marques[k] else ''}>"

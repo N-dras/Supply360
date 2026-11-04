@@ -537,6 +537,9 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-tableau .long { display: block; white-space: normal; min-width: 20rem; max-width: 30rem; line-height: 1.4; }
 .s360-tableau .tard { color: var(--ko); font-weight: 700; }
 .s360-tableau td .s360-tag { margin-top: .3rem; }
+/* Étiquette « Classe 8/9 » des tableaux : drapeau dessiné en CSS (le tableau passe par st.html, qui retire le SVG) */
+.s360-tag.drapeau::before { content: ""; display: inline-block; width: .8rem; height: .8rem; margin-right: .3rem; vertical-align: -.1rem;
+  background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'/%3E%3Cpath d='M4 22v-7'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z'/%3E%3Cpath d='M4 22v-7'/%3E%3C/svg%3E") center / contain no-repeat; }
 .s360-tableau td .s360-tag + br { display: none; }
 .s360-tableau .progres { display: inline-block; width: 4.5rem; height: .45rem; border-radius: 99px; background: #EEF2F6;
   vertical-align: middle; margin-right: .4rem; overflow: hidden; }

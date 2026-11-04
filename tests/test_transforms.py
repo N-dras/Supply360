@@ -468,3 +468,12 @@ def test_dossier_textile_resultat_all_textile_et_pe():
     dates = {"@1730900000000@/T/Résultat ALL TEXTILE 01102026.xlsx": "stock", "@1730000000000@/T/Résultat ALL TEXTILE 01112026.xlsx": "stock"}
     assert d.meilleur(list(dates)).endswith("01112026.xlsx")
     assert d.sans_marque("@1730000000000@/T/Résultat.xlsx") == "T/Résultat.xlsx" and d.date_modif("T/x.xlsx") == 0
+
+
+def test_perimetre_stock_chantier():
+    """Barre « Périmètre » du Stock par chantier : statut, code Gestion, tracking level (vide = tout)."""
+    from modules import stock_chantier as sc
+    m = pd.DataFrame({"ACTION_CODE": ["commander", "ok", "relancer"], "GESTION": [245.0, 246.0, np.nan], "TL": ["0", "1", "0"]})
+    assert len(sc.filtrer_perimetre(m, [], [], [])) == 3
+    assert list(sc.filtrer_perimetre(m, ["commander", "ok"], ["245"], [])["ACTION_CODE"]) == ["commander"]
+    assert list(sc.filtrer_perimetre(m, [], [], ["0"])["ACTION_CODE"]) == ["commander", "relancer"]

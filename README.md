@@ -90,8 +90,10 @@ périmètre (par défaut 245, 246, 247, 400, 401, 230).
 | État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `QTE SAR` (→ SAR), `Purchase Req.` (→ PR), `GESTION`, `CODE AGT APPRO` (→ Code agent), `CODE FOURNISSEUR`, `DERNIER FOURNISSEUR`, `CCN`, `CLASS CODE`, `TRACKING LEVEL` |
 | Commandes (SAP) — feuille « Toutes les commandes » de préférence | `PN` | `Commande`, `Gestion`, `Code fournisseur`, `Fournisseur`, `Date de livraison promise`, `Date de livraison demandée`, `Class code`, `CCN` |
 
-**Résultat** : synthèse, actions à lancer (classe 8/9 en tête), répartition des actions, tableau
-filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx`.
+**Résultat** : barre **Statut · Code Gestion · Tracking level** (même allure que les autres onglets : « Tous » par
+défaut, un clic choisit une valeur, plusieurs choix possibles), synthèse, actions à lancer (classe 8/9 en tête, avec
+un drapeau), tableau filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx` (un seul bouton
+**Exporter (Excel)**, en haut de la synthèse).
 
 Colonnes des tableaux (et de l'export), dans cet ordre : Statut, PN, CCN, **RRS**, À commander, Besoin, Stock,
 En cmd, **SAR**, **PR**, N° commande, PSD, Fournisseur, Code fournisseur, Action, **Code agent**, Gestion, TL,
@@ -307,7 +309,8 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
   filtres** remet tout à zéro. Les grands tableaux s'affichent par 200 lignes (**Afficher plus**) ; filtres, recherche
   et tri portent toujours sur toutes les lignes.
 - **Règles de calcul** : chaque sous-onglet a un bouton « Règles de calcul » qui explique, avec un exemple, ce que
-  veut dire chaque statut et que faire.
+  veut dire chaque statut et que faire. Les précisions secondaires sont dans un petit « ? » : survolez-le.
+- **Exporter (Excel)** : un seul bouton par sous-onglet, en haut à droite du premier bloc.
 - **Exports Excel** : bouton **Exporter** → le fichier est fabriqué à ce moment-là, puis téléchargé automatiquement
   (il n'est plus fabriqué à chaque affichage d'onglet, ce qui ralentissait et chargeait la mémoire).
 - Mémoire : les gros fichiers (État du stock, Commandes) sont lus en ne gardant que les colonnes utiles ; les fichiers

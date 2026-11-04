@@ -276,11 +276,11 @@ def _jauges_blocs(blocs: pd.DataFrame, titre: str) -> str:
 def _synthese(res: dict, today: date):
     m, blocs, annee = res["m"], res["blocs"], res["annee"]
     a_pr = m[m["Écart"] > 0]
-    resume = (f"{len(a_pr)} PR à émettre pour {charts.entier(a_pr['À demander (PR)'].sum())} mousses "
-              f"({charts.euros(a_pr['Valeur à commander (€)'].sum())}) : {(a_pr['Action'] == p26.ACTIONS[0]).sum()} CCN sans commande, "
-              f"{(a_pr['Action'] == p26.ACTIONS[1]).sum()} avec des commandes insuffisantes" if len(a_pr)
-              else "Stock et commandes couvrent le besoin de l'année")
-    with ui.section(f"{TAB_ID}_synthese", f"Synthèse de la PE mousses {annee}", resume, export=_export(res), carte=False):
+    resume = (f"{len(a_pr)} PR à émettre · {charts.euros(a_pr['Valeur à commander (€)'].sum())}" if len(a_pr)
+              else "Besoin de l'année couvert")
+    detail = (f"{charts.entier(a_pr['À demander (PR)'].sum())} mousses à demander : {(a_pr['Action'] == p26.ACTIONS[0]).sum()} CCN sans "
+              f"commande, {(a_pr['Action'] == p26.ACTIONS[1]).sum()} avec des commandes insuffisantes." if len(a_pr) else "")
+    with ui.section(f"{TAB_ID}_synthese", f"Synthèse de la PE mousses {annee}", resume, export=_export(res), carte=False, info=detail):
         ui.kpi_grid(_kpis_avions(blocs, annee))
         ui.valeurs([
             ("Valeur du stock", charts.euros(m["Valeur stock (€)"].sum()), "mousses sur étagère"),
@@ -289,7 +289,8 @@ def _synthese(res: dict, today: date):
             (f"Valeur du besoin {annee}", charts.euros(m["Valeur du besoin (€)"].sum()), "avions restants"),
             ("CCN à coter", charts.entier(m["À coter"].sum()), "sans prix : coût sous-estimé"),
         ])
-    with ui.section(f"{TAB_ID}_avions_ccn", "Avions et CCN", f"Ce que permettent le stock et les commandes en cours · {m['CCN'].nunique()} CCN"):
+    with ui.section(f"{TAB_ID}_avions_ccn", "Avions et CCN", f"{m['CCN'].nunique()} CCN suivis",
+                    info="Ce que permettent le stock et les commandes en cours."):
         a, b = st.columns([1, 1.5], gap="medium")
         with a:
             n = m["Action"].value_counts()
@@ -299,8 +300,7 @@ def _synthese(res: dict, today: date):
             ui.graphe(_jauges_blocs(blocs, "Avions par type et par classe, sur l'objectif"),
                       "Une ligne = une classe d'un type d'avion ; survolez une ligne pour le CCN limitant")
     act = m[m["Priorité"] <= 2]
-    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", "PR à émettre, du plus urgent au moins urgent", tag=str(len(act)),
-                    export=_export(res, "export_actions")):
+    with ui.section(f"{TAB_ID}_actions", "Actions à lancer", "PR à émettre, la plus urgente en premier", tag=str(len(act))):
         if act.empty:
             ui.callout("Aucune PR à émettre : stock et commandes couvrent le besoin de l'année.", "ok", "check-circle")
         else:
@@ -380,9 +380,9 @@ def _table_restants(b: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 def _faisables(res: dict, today: date):
     blocs, d, b, annee = res["blocs"], res["detail"], res["b"], res["annee"]
-    with ui.section(f"{TAB_ID}_faisables", f"Avions faisables {annee}",
-                    "Un avion d'une classe est complet quand tous ses CCN sont disponibles ; le stock d'un CCN commun est "
-                    "réparti entre les types d'avion"):
+    with ui.section(f"{TAB_ID}_faisables", f"Avions faisables {annee}", "Avions complets avec le stock et les commandes",
+                    info="Un avion d'une classe est complet quand tous ses CCN sont disponibles. Le stock d'un CCN commun "
+                         "est réparti entre les types d'avion."):
         ui.kpi_grid(_kpis_avions(blocs, annee))
         ui.graphe(_jauges_blocs(blocs, "Avancement par type d'avion et par classe (nombre d'avions de chaque classe)"))
         t = blocs.assign(Bloc=[p26.nom_bloc(x, y) for x, y in zip(blocs["Type avion"], blocs["Classe"])])
@@ -409,9 +409,9 @@ def _detail_type(d: pd.DataFrame, blocs: pd.DataFrame):
     types = sorted(blocs["Type avion"].unique())
     if not types:
         return
-    with ui.section(f"{TAB_ID}_detail_type", "Détail par type d'avion",
-                    "Avions de l'objectif couverts par chaque CCN : par le stock (vert), à réception des commandes (bleu), "
-                    "manquants (orange : à coter, rouge : à approvisionner) ; trait = objectif de la classe"):
+    with ui.section(f"{TAB_ID}_detail_type", "Détail par type d'avion", "Avions couverts par chaque CCN",
+                    info="Vert : couverts par le stock · bleu : à réception des commandes · orange : à coter · "
+                         "rouge : à approvisionner. Le trait marque l'objectif de la classe."):
         a, b = st.columns([1.2, 2], vertical_alignment="center")
         typ = a.selectbox("Type d'avion", types, key=K + "type", persist_state="page", label_visibility="collapsed")
         x = d[d["Type avion"] == typ].sort_values(["Classe", "Avions (stock)"])
@@ -454,7 +454,7 @@ def _detail_type(d: pd.DataFrame, blocs: pd.DataFrame):
 def _ccn(res: dict, today: date):
     m, annee = res["m"], res["annee"]
     with ui.section(f"{TAB_ID}_ccn", "CCN et commandes",
-                    f"Besoin {annee} face au stock et aux commandes en cours, par CCN : quantités à demander (PR)"):
+                    f"Besoin {annee} face au stock et aux commandes, par CCN"):
         ui.kpi_grid([
             ui.kpi_card("CCN suivis", charts.entier(len(m)), "dans le Besoin Prod", "navy", "layers"),
             ui.kpi_card("Stock", charts.entier(m["Stock"].sum()), "mousses sur étagère", "ok", "package"),

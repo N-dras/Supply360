@@ -117,11 +117,21 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 Seul l'État du stock est indispensable ; les autres fichiers complètent l'analyse. La Prévision
 demande en plus le fichier Pièces par avion.
 
+**Croisement par CCN** : une même pièce peut avoir un PN différent d'un fichier à l'autre. Elle est reconnue par son PN,
+à défaut par son **CCN** : une ligne de commande écrite avec un autre PN est rattachée au PN du stock de même CCN (le PN
+de la commande reste visible dans « PN commandé »). Le CCN est affiché à côté du PN dans les tableaux.
+
+**Barre « Flotte · Équipement »** sous les sous-onglets : Flotte (types d'avion du fichier Pièces par avion : pièces
+montées sur ces avions, par PN ou CCN) et Équipement (Ceinture, Housse, Mousse, Rideaux). « Toutes » par défaut, un
+clic choisit une valeur, plusieurs choix possibles. S'applique à tous les sous-onglets et à l'export.
+
 **Sous-onglets** : Synthèse (relances fournisseurs, valeur et activité du stock par catégorie),
-**Stock** (état des stocks de tout le textile, voir ci-dessous), Commandes (statuts, livraisons, profondeur des retards, toutes les lignes avec la qté sur étagère),
-Fournisseurs (Pareto, retards, délais promis, BFE, vue par fournisseur avec la qté sur étagère),
-Consommation (par année, 12/18/24 mois, top PN, par PN), Prévision (commandes à passer, par fournisseur). Un filtre par catégorie s'applique à toutes
-les vues. Export `Supply360_textiles_AAAAMMJJ.xlsx` (avec les feuilles de prévision si elle est calculée).
+**Stock** (état des stocks, voir ci-dessous), Commandes (statuts, livraisons, profondeur des retards, toutes les lignes),
+Fournisseurs (lignes en cours, retards, délais promis, BFE, vue par fournisseur),
+**Consommation** (sorties sur 12 mois avec la période écrite, valeur sortie, tendance par rapport aux 12 mois d'avant,
+sorties par année et par équipement, les 10 PN qui sortent le plus, sorties par année d'un PN),
+**Prévision** (période écrite en clair ; à commander maintenant, plus tard, total ; tableau des commandes à passer ;
+par fournisseur). Export `Supply360_textiles_AAAAMMJJ.xlsx` (avec les feuilles de prévision si elle est calculée).
 
 **Stock** : pour chaque PN, la **couverture** = stock sur étagère ÷ consommation mensuelle (12 derniers mois).
 Statuts, par ordre de priorité : **Obsolète / supprimé** (CLASS CODE de l'État du stock = 3 obsolète, 8 en cours de
@@ -131,17 +141,15 @@ mais aucune consommation depuis 3 ans, sur 24 mois glissants et les 3 dernières
 en cours), **Sans conso** (aucune consommation sur 12 mois mais consommé dans les 3 ans, ou ni stock ni conso),
 **Rupture** (consommé sur 12 mois, stock à 0), **Critique** (moins de 1 mois de stock, seuil réglable), **Bas** (moins de
 3 mois), **Correct** (jusqu'à 24 mois), **Couverture élevée** (au-delà : le PN est consommé, ce n'est pas du surstock).
-On y trouve : les tuiles (ruptures, critiques, couverture médiane, valeur du surstock dormant, valeur obsolète /
-supprimée), le **TOP 10 des PN consommés à stock nul ou presque**, le niveau de stock par catégorie, le **TOP 10 des PN
-dormants** par valeur immobilisée (avec la date de dernière conso et les commandes encore ouvertes), la valeur du stock
-par statut et le tableau de tous les PN avec CCN et classe code (filtres par statut, recherche par PN, CCN ou
-description). Règles et seuil dans le popover « Règles de calcul et seuil ». Feuille « État des stocks » dans l'export.
+On y trouve : les tuiles (répartition, ruptures, critiques, valeur du surstock dormant, valeur obsolète / supprimée),
+le niveau de stock par catégorie et la valeur du stock par statut côte à côte, puis le tableau de tous les PN avec CCN
+et classe code. Règles et seuil dans le popover « Règles de calcul et seuil ». Feuille « État des stocks » dans l'export.
 
 **Règles** : retard = date promise − date demandée au-delà de 10 jours de tolérance ; date promise 2001,
 2030 ou plus (ou vide) = sans date promise ; 2049 = en attente de BFE. PN **dormant** = du stock mais
 aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni commande.
 
-**Prévision de commandes** (détail dans « Comment le besoin est calculé ») :
+**Prévision de commandes** (détail dans « Comment c'est calculé ») :
 
 - **stock minimum** d'un PN = quantité par avion × objectif d'avance (10 % des avions du groupe, au
   moins 1), additionné sur les groupes d'avions qui l'utilisent ;
@@ -206,19 +214,20 @@ Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mou
   à plusieurs types d'avion est **réparti** (l'avion suivant va au type le moins avancé) : le total ne compte jamais
   deux fois le même stock. Les colonnes MRI, PSD et capa du Besoin Prod ne sont pas utilisées.
 
-**Avancement PE et Forecast** — à partir du fichier mensuel PE_MOUSSE déposé tel quel dans le dossier Textile (date des
-âges lue dans son nom) et de textile_all_parts :
+**Avancement PE et Prévision** — à partir du fichier mensuel PE_MOUSSE déposé tel quel dans le dossier Textile (date des
+âges lue dans son nom) et de textile_all_parts. Une **classe** = les mousses d'une classe (J, W ou Y) d'un avion,
+assise ou dossier (survolez le « ? » à côté du titre).
 
-- **Avancement** : conformité PE, éléments en retard, dans le délai toléré, à faire sous 3 mois, visites à venir ;
-  avancement par flotte × élément (J assise, J dossier, W assise, Y assise) ; remplacements à faire par mois.
-- **Calendrier** : une ligne par avion, le nombre d'éléments à remplacer par mois (24 mois) ; détail par avion.
-- **Forecast des mousses** (12 / 24 / 36 mois) : mousses à remplacer (dont retard à rattraper), quantité et valeur
-  à commander, livraisons à prévoir par mois, valeur par fournisseur, tableau par PN.
-- **Forecast par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
+- **Avancement** : conformité PE, classes en retard, dans le délai toléré, à faire sous 3 mois, visites à venir ;
+  statut par flotte et classe ; classes à remplacer mois par mois.
+- **Calendrier** : une ligne par avion, le nombre de classes à remplacer par mois (24 mois) ; détail par avion.
+- **Prévision** (12 / 24 / 36 mois, période écrite en clair) : mousses à remplacer (dont retard), à commander, valeur,
+  déjà disponibles ; « mois par mois » (à remplacer / à recevoir) ; tableau par PN avec CCN.
+- **Par fournisseur** : commande globale et livraisons mois par mois par PN, export Excel à lui envoyer.
   Fournisseur d'une mousse : celui des commandes, à défaut le dernier fournisseur du Résultat, à défaut son
   **CODE FOURNISSEUR** (« Code … ») ; les références sont comparées sans espaces, tirets ni points.
-- **Filtres** (barre « Flotte · Classe · Élément ») : « Toutes » par défaut ; un clic choisit une valeur, plusieurs
-  choix possibles ; « Toutes » remet à zéro. **Exports** : planning complet ; **contrôles** des données.
+- **Filtres** (barre « Flotte · Classe · Assise / dossier ») : « Toutes » par défaut ; un clic choisit une valeur,
+  plusieurs choix possibles ; « Toutes » remet à zéro. **Exports** : planning complet ; **contrôles** des données.
 
 Règles (paramètres dans « Paramètres » › Planning PE ; stock de sécurité réglable de 0 à 50 %) :
 - cycles : J / W / Y assise 36 mois, J dossier 72 mois, dossiers W / Y jamais ;

@@ -576,33 +576,31 @@ def _fournisseurs(s, o, today, cat):
     if o.empty:
         ui.callout(f"Importez le fichier <b>{sio.FICHIER_COMMANDES}</b> pour voir les fournisseurs.", "info", "🏭")
         return
-    with ui.section(f"{TAB_ID}_four", "Fournisseurs"):
-        a, b = st.columns(2, gap="large")
-        with a:
-            vc = o["Fournisseur"].value_counts().head(12)
-            cum = (o["Fournisseur"].value_counts().cumsum() / len(o.dropna(subset=["Fournisseur"])) * 100).head(12)
-            ui.graphe(charts.barres(vc.index, {"Lignes de commande": vc.values}, {"Lignes de commande": COLORS["navy_2"]},
-                                    ligne={"% cumulé": cum.values}, fmt_ligne=charts.pourcent, titre="Volume de lignes (Pareto)"))
-        with b:
-            late = o[o["Statut commande"] == "En retard"]
-            if late.empty:
-                ui.graphe(charts.vide("Aucune commande en retard"))
-            else:
-                g = late.groupby("Fournisseur").agg(n=("PNR", "size"), j=("Jours de retard", "mean")).sort_values("n", ascending=False).head(12)
-                ui.graphe(charts.barres(g.index, {"Lignes en retard": g["n"]}, {"Lignes en retard": COLORS["ko"]},
-                                        ligne={"Retard moyen (j)": g["j"]}, fmt_ligne=lambda v: f"{v:.0f} j",
-                                        titre="Fournisseurs avec le plus de retards"))
-        a, b = st.columns(2, gap="large")
-        with a:
-            dl = tx.delais_fournisseurs(o).head(12)
-            ui.graphe(charts.barres_h([(r["Fournisseur"], r["Délai moyen promis (j)"], f"{r['Délai moyen promis (j)']:.0f} j")
-                                       for _, r in dl.iterrows()], titre="Délai moyen promis (émission → livraison)")
-                      if len(dl) else charts.vide("Pas assez de lignes avec délai (3 minimum par fournisseur)"))
-        with b:
-            bfe = o[o["Statut commande"] == "En attente BFE"]
-            vb = bfe["Fournisseur"].value_counts().head(12)
-            ui.graphe(charts.barres_h(list(vb.items()), couleur=COLORS["violet"], titre="Lignes en attente de BFE")
-                      if len(vb) else charts.vide("Aucune commande en attente de BFE"))
+    with ui.section(f"{TAB_ID}_four", "Fournisseurs", "Qui livre le plus, qui est en retard, combien de temps ils mettent"):
+        # Barres horizontales : les noms des fournisseurs se lisent en entier (pas d'étiquettes inclinées)
+        vc = o["Fournisseur"].value_counts().head(10)
+        part = (vc / max(len(o.dropna(subset=["Fournisseur"])), 1) * 100)
+        late = o[o["Statut commande"] == "En retard"]
+        g = late.groupby("Fournisseur").agg(n=("PNR", "size"), j=("Jours de retard", "mean")).sort_values("n", ascending=False).head(10)
+        dl = tx.delais_fournisseurs(o).head(10)
+        bfe = o[o["Statut commande"] == "En attente BFE"]["Fournisseur"].value_counts().head(10)
+        graphes = [
+            charts.barres_h([(f, n, f"{n} ligne{'s' if n > 1 else ''} · {p_:.0f} %") for (f, n), p_ in zip(vc.items(), part)],
+                            titre="Lignes de commande en cours", max_lignes=10),
+            charts.barres_h([(f, r["n"], f"{int(r['n'])} ligne{'s' if r['n'] > 1 else ''} · {r['j']:.0f} j en moyenne") for f, r in g.iterrows()],
+                            couleur=COLORS["ko"], titre="Fournisseurs avec le plus de retards", max_lignes=10)
+            if len(g) else charts.vide("Aucune commande en retard"),
+        ]
+        if len(dl):  # carte affichée seulement s'il y a assez de lignes datées
+            graphes.append(charts.barres_h([(r["Fournisseur"], r["Délai moyen promis (j)"], f"{r['Délai moyen promis (j)']:.0f} j")
+                                            for _, r in dl.iterrows()], titre="Délai moyen promis (commande → livraison)"))
+        if len(bfe):
+            graphes.append(charts.barres_h(list(bfe.items()), couleur=COLORS["violet"], titre="Lignes en attente de BFE"))
+        for i in range(0, len(graphes), 2):
+            cols = st.columns(2, gap="medium")
+            for col, h in zip(cols, graphes[i:i + 2]):
+                with col:
+                    ui.graphe(h)
         ch = tx.chaleur_livraisons(o, today)
         ui.graphe(charts.chaleur(ch, "Livraisons promises par fournisseur et par mois"))
     _vue_fournisseur(o)

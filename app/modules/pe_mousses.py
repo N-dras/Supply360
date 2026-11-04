@@ -342,16 +342,18 @@ def _controles(res: dict):
     m, rat = res["m"], res["rattachement"]
     a, _ = st.columns([1, 3])
     with a, st.popover("Contrôles des données", width="stretch"):
+        st.caption("Points à vérifier dans les fichiers importés.")
         absents = m[~m["Dans l'État du stock"]]
-        st.markdown(f"- **{len(absents)}** CCN du Besoin Prod absents de l'État du stock (stock compté à 0)"
-                    + (f" : {', '.join(absents['CCN'].head(20))}" if len(absents) else ""))
-        st.markdown(f"- **{int(m['À coter'].sum())}** CCN sans prix (ni Dernier PU de l'État du stock, ni prix du devis) : à coter.")
+        st.markdown(f"- **{len(absents)}** CCN du Besoin Prod introuvables dans l'État du stock : leur stock est compté à 0"
+                    + (f" ({', '.join(absents['CCN'].head(20))})" if len(absents) else "") + ".")
+        st.markdown(f"- **{int(m['À coter'].sum())}** CCN sans aucun prix (ni dans l'État du stock, ni dans un devis) : "
+                    "à faire coter, sinon le coût à commander est sous-estimé.")
         partages = m[m["Nb types"] > 1]
-        st.markdown(f"- **{len(partages)}** CCN communs à plusieurs types d'avion : leur stock est réparti entre les types.")
+        st.markdown(f"- **{len(partages)}** CCN servent à plusieurs types d'avion : leur stock est partagé entre ces types.")
         if len(rat):
             amb = int(rat["Ambigu"].sum())
-            st.markdown(f"- **{len(rat)}** avions rattachés à un type d'avion par leurs CCN de mousses"
-                        + (f", dont **{amb}** ex æquo entre deux types (premier retenu)." if amb else "."))
+            st.markdown(f"- **{len(rat)}** avions dont le type est déduit de leurs mousses"
+                        + (f" ; pour **{amb}** d'entre eux, deux types étaient possibles : le premier est retenu." if amb else "."))
             ui.tableau(rat.drop(columns=["cle"]), height=220)
 
 
@@ -379,16 +381,17 @@ def _faisables(res: dict, today: date):
         cols = ["Type avion", "Flotte", "Classe", "Objectif", "Complets maintenant", "Complets à réception", "À coter", "À approvisionner",
                 "Taux (%)", "Nb CCN", "CCN couverts", "CCN communs", "CCN limitant", "PN à coter"]
         ui.tableau(t[cols], column_config=CFG, height="content" if len(t) <= 12 else 420)
-        with st.popover("ℹ️ Règles de calcul et avions restants", width="content"):
+        with st.popover("Règles de calcul et avions restants", width="content"):
             st.markdown(
-                "- **Objectif** = avions restant à traiter (voir tableau ci-dessous et ⚙️ Paramètres).\n"
-                "- **Complets maintenant** : avions équipables avec le stock ; un CCN commun à plusieurs types est réparti, "
-                "l'avion suivant allant toujours au type le moins avancé.\n"
-                "- **Complets à réception** : en plus, une fois les commandes en cours livrées (stock + en commande).\n"
-                "- **À approvisionner** : le reste de l'objectif, impossible sans nouvelle commande. Avec un **CCN commun** "
-                "à plusieurs types, les commandes en cours peuvent suffire pour un type seul mais pas pour tous : le reste "
-                "est alors à approvisionner (voir « CCN communs » et le détail par type).\n"
-                "- Le stock est partagé entre classes et types : ces chiffres montrent ce que permet le stock, pas une affectation.")
+                "- **Objectif** : le nombre d'avions qui restent à équiper cette année (tableau ci-dessous, modifiable dans "
+                "Paramètres).\n"
+                "- **Complets maintenant** : combien d'avions on peut équiper entièrement avec le stock actuel. Quand une "
+                "mousse sert à plusieurs types d'avion, elle est donnée à tour de rôle au type le moins avancé.\n"
+                "- **Complets à réception** : la même chose, une fois les commandes en cours livrées.\n"
+                "- **À approvisionner** : les avions de l'objectif qu'on ne pourra pas équiper sans nouvelle commande. "
+                "Exemple : objectif 12, complets à réception 9 → 3 avions à approvisionner.\n"
+                "- Le stock est commun à toutes les classes et à tous les types : ces chiffres montrent ce que le stock "
+                "permet, ce n'est pas une réservation.")
             ui.tableau(_table_restants(b), width=1100, height=360)
     _detail_type(d, blocs)
 
@@ -459,17 +462,8 @@ def _ccn(res: dict, today: date):
 
 @st.fragment
 def _liste_ccn(m: pd.DataFrame):
-    a, b, c = st.columns([1.2, 2, 1], vertical_alignment="center")
-    q = a.text_input("Recherche", placeholder="CCN, PN, fournisseur", key=K + "q", label_visibility="collapsed")
-    actions = b.multiselect("Action", p26.ACTIONS, key=K + "actions", placeholder="Toutes les actions", label_visibility="collapsed")
-    coter = c.toggle("À coter seulement", key=K + "coter")
+    coter = st.toggle("À coter seulement (CCN sans prix)", key=K + "coter")
     x = m
-    if q:
-        cle = q.strip().upper()
-        x = x[x["CCN"].str.upper().str.contains(cle, regex=False) | x["PN"].str.upper().str.contains(cle, regex=False)
-              | x["Fournisseur"].fillna("").str.upper().str.contains(cle, regex=False)]
-    if actions:
-        x = x[x["Action"].isin(actions)]
     if coter:
         x = x[x["À coter"]]
     ui.graphe(_graphe_couverture(x))

@@ -150,32 +150,36 @@ def _export(cle_tables: tuple, cat: str, cle_prev: tuple | None) -> bytes:
 def _parametres(parts) -> tuple[pv.Params, tuple]:
     """Paramètres du sous-onglet Prévision (buffer, délais, composants, politique d'entretien)."""
     d = pv.Params()
-    st.caption("Utilisés par le sous-onglet **Prévision** (stock minimum d'avance). Le Planning PE des mousses est dans "
-               "l'onglet **PE mousses**.")
+    st.caption("Réglages du sous-onglet **Prévision** (stock d'avance à garder). Le planning de remplacement des mousses "
+               "est dans l'onglet **PE mousses**.")
     if True:
         a, b = st.columns(2)
         ratio = a.slider("Avions d'avance (% du groupe)", 2, 40, int(d.buffer_ratio * 100), key=K + "ratio", persist_state="page",
                          help="10 % : 10 avions → 1, 50 avions → 5.")
         bmin = b.number_input("Minimum d'avions d'avance par groupe", 1, 10, d.buffer_min, key=K + "bmin", persist_state="page")
         hz = a.slider("Horizon de prévision (mois)", 12, 60, d.horizon_months, key=K + "hz", persist_state="page")
-        never = b.checkbox("Buffer aussi pour les composants sans PE (cycle 0)", value=d.buffer_on_never, key=K + "never",
-                           persist_state="page")
+        never = b.checkbox("Stock d'avance aussi pour les pièces jamais remplacées (cycle 0)", value=d.buffer_on_never,
+                           key=K + "never", persist_state="page",
+                           help="Coché : toutes les pièces ont un stock d'avance. Décoché : seulement celles qui ont un cycle de remplacement.")
         lt_def = a.number_input("Délai par défaut (jours)", 1, 730, d.lt_default, key=K + "ltdef", persist_state="page",
                                 help="Quand ni le fournisseur ni le PN n'ont de délai.")
         lt_basis = b.selectbox("Délai du fournisseur basé sur", ["observe", "promis"], key=K + "ltbasis", persist_state="page",
                                format_func={"observe": "LT observé (historique 2 ans)", "promis": "Délais promis actuels"}.get)
-        bfe = a.number_input("Délai supposé si attente de BFE (mois)", 1, 36, d.bfe_delay_months, key=K + "bfe", persist_state="page")
-        comp = b.selectbox("Composant si aucun mot-clé", ["Assise", "Dossier"], key=K + "comp", persist_state="page")
-        kw_dos = a.text_input("Mots-clés Dossier (prioritaires)", d.dossier_kw, key=K + "kwdos", persist_state="page")
-        kw_ass = b.text_input("Mots-clés Assise", d.assise_kw, key=K + "kwass", persist_state="page")
+        bfe = a.number_input("Délai supposé si attente de BFE (mois)", 1, 36, d.bfe_delay_months, key=K + "bfe", persist_state="page",
+                              help="Commandes datées 2049 (en attente de matière première) : délai de livraison supposé.")
+        comp = b.selectbox("Assise ou dossier, si la description ne le dit pas", ["Assise", "Dossier"], key=K + "comp", persist_state="page")
+        kw_dos = a.text_input("Mots qui désignent un dossier", d.dossier_kw, key=K + "kwdos", persist_state="page",
+                             help="Cherchés dans la description de la pièce, séparés par des virgules. Ils passent avant ceux de l'assise.")
+        kw_ass = b.text_input("Mots qui désignent une assise", d.assise_kw, key=K + "kwass", persist_state="page",
+                             help="Cherchés dans la description de la pièce, séparés par des virgules.")
         p = pv.Params(buffer_ratio=ratio / 100, buffer_min=int(bmin), buffer_on_never=bool(never), horizon_months=int(hz),
                       lt_default=int(lt_def), lt_basis=lt_basis, bfe_delay_months=int(bfe), assise_kw=kw_ass, dossier_kw=kw_dos,
                       default_component=comp)
         regles = None
         if parts is not None:
             # Grille de champs (et non st.data_editor : indisponible sous stlite, il dépend de pyarrow).
-            st.markdown("**Cycle PE pour la prévision (ans)** · 0 = jamais remplacé · pris en compte si "
-                        "« Buffer aussi pour les composants sans PE » est décoché")
+            st.markdown("**Cycle de remplacement (en années)** · 0 = jamais remplacé. Sert seulement si la case "
+                        "« Stock d'avance aussi pour les pièces jamais remplacées » est décochée.")
             base = pv.regles_pe_defaut(parts)
             cols = st.columns(3)
             cycles = []
@@ -402,7 +406,7 @@ def _stock(s, o, today, cat):
         with st.popover("Règles de calcul et seuil"):
             st.number_input("Seuil « stock presque nul » (mois de consommation)", 0.5, 6.0, 1.0, 0.5, format="%.1f", key=K + "seuil_stock",
                             persist_state="page", help="En dessous de ce nombre de mois de consommation, le PN est « Critique ».")
-            st.markdown(REGLES_STOCK)
+            st.markdown(regles_stock(seuil))
     top = tx.top_ruptures(etat)
     with ui.section(f"{TAB_ID}_stock_top", "PN consommés à stock nul ou presque",
                     f"Les plus consommés parmi les PN en rupture ou à moins de {seuil:g} mois de stock : à commander ou à relancer en priorité",
@@ -441,32 +445,38 @@ def _stock(s, o, today, cat):
     _etat_stocks_table(etat)
 
 
-REGLES_STOCK = """
-Statuts, dans cet ordre de priorité :
+def regles_stock(seuil: float) -> str:
+    """Règles du sous-onglet Stock, en mots simples (popover « Règles de calcul et seuil »)."""
+    s = f"{seuil:g}".replace(".", ",")
+    return f"""
+**Couverture** = combien de mois le stock peut tenir au rythme actuel.
+Exemple : 30 pièces en stock et 10 sorties par mois → **3 mois** de couverture.
+Le rythme est la consommation des 12 derniers mois divisée par 12.
 
-- **Obsolète / supprimé** : classe code 3 (obsolète), 8 (en cours de suppression) ou 9 (supprimé). Compté à part, ni en
-  surstock ni en rupture, jamais proposé à la commande.
-- **Jamais consommé** : dernière conso en 2001 (date fictive de l'État du stock). Compté à part, pas en surstock.
-- **Surstock (dormant)** : du stock sur étagère mais aucune consommation depuis 3 ans (24 mois glissants et 3 dernières
-  années civiles), même avec une commande en cours.
-- **Sans conso** : aucune consommation sur 12 mois mais consommé dans les 3 ans, ou ni stock ni consommation.
-- **Rupture** : consommé sur 12 mois, stock à 0 · **Critique** : sous le seuil ci-dessus · **Bas** : moins de 3 mois ·
-  **Correct** : jusqu'à 24 mois · **Couverture élevée** : au-delà de 24 mois. Le PN est consommé : ce n'est pas du surstock.
+**Ce que veut dire chaque statut**
+
+| Statut | Ce que ça veut dire | Que faire |
+|---|---|---|
+| **Rupture** | La pièce sort encore, mais il n'y en a plus en stock | Commander ou relancer en urgence |
+| **Critique** | Moins de {s} mois de stock (seuil réglable ci-dessus) | Commander vite |
+| **Bas** | Moins de 3 mois de stock | Prévoir une commande |
+| **Correct** | Entre 3 et 24 mois de stock | Rien à faire |
+| **Couverture élevée** | Plus de 24 mois de stock, mais la pièce sort encore | Ne pas recommander pour l'instant |
+| **Surstock (dormant)** | Du stock, mais **aucune sortie depuis 3 ans** | Écouler, transférer ou réformer |
+| **Obsolète / supprimé** | Classe code 3, 8 ou 9 : la pièce n'est plus réapprovisionnée | Écouler le stock restant |
+| **Jamais consommé** | Aucune sortie enregistrée (date « 2001 » dans le fichier) | Vérifier si la pièce sert encore |
+| **Sans conso** | Aucune sortie depuis 1 an, mais une sortie il y a moins de 3 ans | Surveiller |
+
+Une pièce ne reçoit qu'un statut. Si plusieurs conviennent, l'ordre est : Obsolète / supprimé, puis Jamais
+consommé, puis Surstock, puis Sans conso, puis le niveau de stock (Rupture → Couverture élevée).
 """
 
 
 @st.fragment
 def _etat_stocks_table(etat):
-    with ui.section(f"{TAB_ID}_stock_pn", "Stock par PN", "Du plus urgent au moins urgent ; filtrer par statut ou rechercher un PN",
+    with ui.section(f"{TAB_ID}_stock_pn", "Stock par PN", "Du plus urgent au moins urgent · cliquez sur un titre de colonne pour trier ou filtrer",
                     tag=str(len(etat)), export=_export_btn("export_stock_pn__btn")):
-        q = st.text_input("Rechercher", placeholder="PN, CCN ou description", key=K + "q_stock", persist_state="page",
-                          label_visibility="collapsed")
         d = etat
-        if q:
-            qq = q.strip().upper()
-            d = d[d["PN"].astype(str).str.contains(qq.replace(" ", ""), na=False, regex=False)
-                  | d["CCN"].astype(str).str.upper().str.contains(qq, na=False, regex=False)
-                  | d["Description"].astype(str).str.upper().str.contains(qq, na=False, regex=False)]
         ui.tableau_html(d, statut="Statut", couleurs=tx.STOCK_STATUT_COULEURS,
                         num=["Stock", "En commande", "Conso 12 mois", "Conso / mois", "Couverture (mois)", "Couverture avec commandes (mois)"],
                         euros=["Valeur stock (€)"], pn=["PN"], fixes=2, filtres=True, cle=f"{TAB_ID}_stock_pn", hauteur="32rem",
@@ -487,12 +497,27 @@ def _pn_dormants(s):
 # --------------------------------------------------------------------------
 # Commandes
 # --------------------------------------------------------------------------
+REGLES_COMMANDES = f"""
+Chaque ligne de commande est comparée à la date que vous aviez **demandée** au fournisseur.
+
+| Statut | Ce que ça veut dire | Que faire |
+|---|---|---|
+| **En retard** | Le fournisseur promet une livraison plus de {tx.LATE_BUFFER_DAYS} jours après la date demandée | Relancer le fournisseur |
+| **Sans date promise** | Le fournisseur n'a pas donné de date (vide, 2001, ou 2030 et après dans le fichier) | Demander une date |
+| **En attente BFE** | Date « 2049 » : la commande attend la matière première (BFE) | Suivre |
+| **À l'heure** | Date promise au plus {tx.LATE_BUFFER_DAYS} jours après la date demandée | Rien à faire |
+
+**Jours de retard** = date promise − date demandée − {tx.LATE_BUFFER_DAYS} jours de tolérance.
+Exemple : demandée le 1er mars, promise le 31 mars → 30 jours d'écart → **20 jours de retard**.
+"""
+
+
 def _commandes(s, o, today, cat):
     if o.empty:
         ui.callout(f"Importez le fichier <b>{sio.FICHIER_COMMANDES}</b> pour voir les commandes.", "info", "📦")
         return
     r = tx.synthese(s, o)
-    with ui.section(f"{TAB_ID}_cmd", "Commandes", "Retard = date promise − date demandée, au-delà de 10 jours de tolérance"):
+    with ui.section(f"{TAB_ID}_cmd", "Commandes", "Statut de chaque ligne de commande : voir « Règles de calcul »"):
         ui.kpi_grid([
             ui.kpi_card("Lignes de commande", charts.entier(r["lignes"])),
             ui.kpi_card("En retard", charts.entier(r["en_retard"]), "", "ko"),
@@ -500,6 +525,8 @@ def _commandes(s, o, today, cat):
             ui.kpi_card("En attente BFE", charts.entier(r["bfe"]), "date 2049", "violet"),
             ui.kpi_card("Fournisseurs", charts.entier(r["fournisseurs"]), "", "info"),
         ])
+        with st.popover("Règles de calcul"):
+            st.markdown(REGLES_COMMANDES)
         a, b = st.columns(2, gap="large")
         with a:
             ui.graphe(charts.parts(tx.statut_commandes_par_categorie(o), tx.ORDER_STATUS_COLORS, "Statut des commandes par catégorie"))
@@ -527,20 +554,8 @@ def _commandes(s, o, today, cat):
 
 @st.fragment
 def _lignes(o):
-    with ui.section(f"{TAB_ID}_lignes", "Toutes les lignes"):
-        f1, f2 = st.columns([1, 2])
-        q = f1.text_input("Rechercher", placeholder="PN, commande ou fournisseur", key=K + "q", persist_state="page",
-                          label_visibility="collapsed")
-        statut = f2.multiselect("Statut", tx.ORDER_STATUS_ORDER, key=K + "statut", placeholder="Tous les statuts",
-                                label_visibility="collapsed", persist_state="page")
+    with ui.section(f"{TAB_ID}_lignes", "Toutes les lignes", "Cliquez sur un titre de colonne pour trier ou filtrer"):
         d = o
-        if q:
-            qq = q.strip().upper()
-            d = d[d["PNR"].str.contains(qq.replace(" ", ""), na=False, regex=False)
-                  | d["Commande"].astype(str).str.upper().str.contains(qq, na=False, regex=False)
-                  | d["Fournisseur"].astype(str).str.upper().str.contains(qq, na=False, regex=False)]
-        if statut:
-            d = d[d["Statut commande"].isin(statut)]
         _relances_html(d, "lignes", _avec_stock({**COL_RELANCES, "Date emission commande": "Émise", "Classe de retard": "Classe de retard"}),
                        "30rem")
 
@@ -650,19 +665,23 @@ def _conso_pn(s, annees):
 # Prévision de commandes
 # --------------------------------------------------------------------------
 EXPLICATION = """
-1. **Groupe d'avions** (ex. A320 Group 1) : pour chaque PN, la quantité nécessaire par avion et le nombre d'avions du groupe.
-2. **Objectif d'avance** : pouvoir équiper à tout moment un pourcentage des avions du groupe (paramètre, 10 % par défaut,
-   minimum 1). Exemple : 10 avions → 1, 50 avions → 5.
-3. **Stock minimum du PN** = quantité par avion × objectif d'avance, additionné sur tous les groupes qui utilisent le PN.
-4. **Besoin** = stock minimum − (stock étagère + quantités déjà en commande).
-5. **Commande** : au plus tard à la date de besoin moins le délai fournisseur. Si le délai ne permet pas de livrer à temps,
-   la commande part maintenant et le manque avant livraison est signalé.
-6. **Statuts** : « A commander » = déjà sous l'objectif ; « A planifier » = passera sous l'objectif avant la fin de
-   l'horizon ; « OK » = objectif couvert.
-7. **PN dormants, inactifs, obsolètes ou supprimés** (classe code 3, 8 ou 9) : aucune commande recommandée (la quantité
-   bloquée est indiquée à part).
-8. **Fournisseur** d'un PN : celui de ses commandes habituelles ; à défaut le dernier fournisseur de l'État du stock,
-   puis le code fournisseur.
+**L'idée** : toujours avoir assez de pièces pour équiper une partie des avions de chaque groupe (ex. « A320 Group 1 »).
+
+1. **Combien d'avions d'avance ?** 10 % des avions du groupe, au moins 1 (réglable dans Paramètres).
+   Exemple : un groupe de 50 avions → 5 avions d'avance.
+2. **Stock minimum d'une pièce** = nombre de pièces par avion × avions d'avance, pour chaque groupe qui l'utilise.
+   Exemple : 30 housses par avion × 5 avions = **150 housses** à garder.
+3. **Remplacements prévus (PE)** : les pièces qui seront remplacées sur les avions augmentent le besoin le mois prévu.
+4. **Ce qui manque** = stock minimum + remplacements prévus − (stock en rayon + commandes déjà passées).
+5. **Quand commander ?** Assez tôt pour que la pièce arrive avant le manque, en tenant compte du délai du fournisseur.
+   Si c'est déjà trop tard, la commande est à passer tout de suite, et la quantité qui manquera en attendant la
+   livraison est indiquée.
+6. **Statuts** : **A commander** = déjà sous le minimum ; **A planifier** = passera sous le minimum plus tard ;
+   **OK** = rien à faire.
+7. **Jamais de commande proposée** pour les pièces dormantes (aucune sortie depuis 3 ans), inactives (ni stock, ni
+   sortie, ni commande), obsolètes ou supprimées (classe code 3, 8 ou 9). La quantité qui aurait été commandée est
+   affichée à part.
+8. **Fournisseur proposé** : celui des commandes habituelles de la pièce ; à défaut, celui de l'État du stock.
 """
 
 
@@ -753,7 +772,7 @@ def _tableaux_prevision(s, plan, gs, res):
         d = gs.sort_values(["equipment", "Ecart vs objectif (avions)"])
     else:
         d = res["gp"][res["gp"]["pn"].isin(s["PNR"])]
-    ui.tableau(d, column_config=CFG, width=1100, height=440)
+    ui.tableau(d, column_config=CFG, width=1100, height=440, statut="Statut", couleurs=pv.STATUS_COLORS)
 
 
 @st.fragment
@@ -795,7 +814,8 @@ def _vue_fournisseur_prev(s, o, fours):
         _ecarts_lignes(ec, lignes)
         t1, t2 = st.columns(2)
         with t1.popover(f"PN du fournisseur ({len(d)})", width="stretch"):
-            ui.tableau(d[[c for c in COL_PREV if c in d.columns]].rename(columns=COL_PREV), column_config=CFG, width=1100, height=420)
+            ui.tableau(d[[c for c in COL_PREV if c in d.columns]].rename(columns=COL_PREV), column_config=CFG, width=1100, height=420,
+                       statut="Statut", couleurs=pv.STATUS_COLORS)
         with t2.popover("Commandes en cours chez ce fournisseur", width="stretch"):
             if o.empty:
                 st.caption("Aucun fichier de commandes chargé.")

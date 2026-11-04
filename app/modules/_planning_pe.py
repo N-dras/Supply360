@@ -97,6 +97,8 @@ def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement"
     c = cal[cal["Flotte"].isin(flottes) & cal["Classe"].isin(classes) & cal["Composant"].isin(composants)]
     if partie == "avancement":
         _avancement(c, res["date_ref"], today)
+        with st.popover("Règles de calcul"):
+            st.markdown(REGLES_PE)
         _calendrier(c, today)
         return
     if not avec_pieces or res["ev"].empty:
@@ -205,14 +207,7 @@ def _calendrier(c: pd.DataFrame, today):
 @st.fragment
 def _detail_avions(c: pd.DataFrame):
     with st.popover(f"Détail par avion et par élément ({len(c)})", width="content"):
-        f1, f2 = st.columns([1, 2])
-        q = f1.text_input("Immatriculation", placeholder="Immatriculation", key=K + "q", label_visibility="collapsed")
-        statuts = f2.multiselect("Statut", pe.STATUTS, key=K + "statuts", placeholder="Tous les statuts", label_visibility="collapsed")
         d = c
-        if q:
-            d = d[d["Immatriculation"].str.contains(re.sub(r"[^A-Z0-9-]", "", q.upper()), regex=False)]
-        if statuts:
-            d = d[d["Statut"].astype(str).isin(statuts)]
         t = pd.DataFrame({
             "Statut": d["Statut"].astype(str).map(ICONES_STATUT), "Immatriculation": d["Immatriculation"], "Flotte": d["Flotte"],
             "Version": d["Version cabine"], "Classe": d["Classe"], "Élément": d["Composant"],
@@ -374,6 +369,32 @@ def _export_fournisseur(f, an, par_mois, ev, synth) -> bytes:
                                "Besoins par avion": avions})
 
 
+REGLES_PE = """
+**Échéance d'une mousse** = date du dernier remplacement + cycle de remplacement (Paramètres).
+Exemple : remplacée en janvier 2024, cycle de 36 mois → à remplacer en janvier 2027.
+Quand le fichier PE indique seulement « > 60 » mois, on prend 60 : l'échéance est la plus proche possible.
+
+**Ce que veut dire chaque statut (aujourd'hui)**
+
+| Statut | Ce que ça veut dire |
+|---|---|
+| **En retard** | Échéance dépassée de plus que le délai toléré (Paramètres) |
+| **Délai toléré** | Échéance dépassée, mais encore dans le délai toléré |
+| **À faire < 3 mois** | Échéance dans les 3 prochains mois |
+| **À faire < 12 mois** | Échéance dans l'année |
+| **OK** | Rien avant 12 mois |
+
+**Date prévue du remplacement** : la prochaine visite connue de l'avion ; sinon l'échéance (ce mois-ci si elle est
+dépassée). Ensuite, un remplacement à chaque cycle jusqu'à la fin de la période.
+
+**Stock de sécurité d'une mousse** : de quoi équiper 10 % des avions de chaque flotte qui l'utilisent (au moins 1
+avion ; réglable dans Paramètres). Exemple : 20 avions, 30 mousses par avion → 2 avions × 30 = **60 mousses**.
+
+**À livrer chaque mois** : la quantité qui manque pour que le stock (stock + commandes en cours − remplacements
+prévus) ne descende jamais sous le stock de sécurité.
+"""
+
+
 def _exports_controles(res, c, ev, synth, long, h):
     with ui.section("pe_mousses_pe_exports", "Exports et contrôles"):
         a, b = st.columns(2)
@@ -388,17 +409,21 @@ def _exports_controles(res, c, ev, synth, long, h):
             }
             ui.telecharger(lambda: sio.exporter_excel(feuilles), _nom_fichier("planning_PE"), K + "export_tout",
                            label="Exporter le planning PE complet (Excel)")
+        with b, st.popover("Règles de calcul", width="stretch"):
+            st.markdown(REGLES_PE)
         with b, st.popover("Contrôles des données", width="stretch"):
             nr, sans, absents = res["non_reconnues"], res["sans_pn"], res["pn_absents_stock"]
             age_min = int((~res["cal"]["Âge exact"]).sum())
-            st.markdown(f"- **{age_min}** éléments avec un âge minimum seulement (« > 60 », « > 108 » dans le fichier PE) : "
-                        "échéance calculée au plus tôt.")
-            st.markdown(f"- **{len(sans)}** éléments sans PN de mousse dans textile_all_parts (immat / classe / élément) : "
-                        "absents du forecast.")
+            st.caption("Points à vérifier dans les fichiers importés.")
+            st.markdown(f"- **{age_min}** éléments dont l'âge n'est connu qu'en minimum (« > 60 », « > 108 » dans le fichier PE) : "
+                        "leur échéance est calculée au plus tôt.")
+            st.markdown(f"- **{len(sans)}** éléments sans référence de mousse dans textile_all_parts (immat, classe ou élément "
+                        "introuvable) : ils ne sont pas dans le forecast.")
             if len(sans):
                 ui.tableau(sans.assign(Statut=sans["Statut"].astype(str)), height=200)
-            st.markdown(f"- **{len(nr)}** lignes MOUSSE de textile_all_parts non reconnues (ni FOAM BOTTOM / BOTT, ni FOAM BACK…) "
-                        "ou classe inconnue.")
+            st.markdown(f"- **{len(nr)}** lignes MOUSSE de textile_all_parts non reconnues (ni assise « FOAM BOTTOM / BOTT », "
+                        "ni dossier « FOAM BACK… ») ou de classe inconnue.")
             if len(nr):
                 ui.tableau(nr, height=200)
-            st.markdown(f"- **{len(absents)}** PN absents de l'État du stock (stock compté à 0)" + (f" : {', '.join(absents[:15])}" if absents else ""))
+            st.markdown(f"- **{len(absents)}** PN introuvables dans l'État du stock : leur stock est compté à 0"
+                        + (f" ({', '.join(absents[:15])})" if absents else "") + ".")

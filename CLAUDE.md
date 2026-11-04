@@ -208,9 +208,15 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
 - **Tuiles KPI** (`kpi_card`) : liseré et icône à la couleur du ton, chiffre coloré ; `kpi_repartition` = grande
   tuile avec barre de répartition et légende chiffrée ; `valeurs` = bandeau de chiffres.
 - **Badges de statut** (`badge`) : pastille de couleur + libellé. Chantiers : **Terminé / En cours / À venir**.
-- **Tableaux d'actions** (`tableau_html`) : statut en badge, quantités à traiter en rouge, zéros atténués, « — » pour
-  les vides, colonnes figées à gauche, groupes de colonnes, filtres en pastilles (filtrage dans la page, JavaScript de
-  build.py, sans recalcul) ; au-delà de 400 lignes, `st.dataframe`. Autres tableaux : `tableau` (`st.dataframe`).
+- **Tableaux : un seul composant pour TOUS les tableaux** (`tableau_html` ; `tableau` l'appelle, plus aucun
+  `st.dataframe`). Statut en badge, quantités à traiter en rouge, zéros atténués, « — » pour les vides, colonnes
+  figées à gauche, groupes de colonnes ; types (nombre, €, date, mois, progression) et bulles d'aide repris de
+  `column_config`. **Filtres identiques partout** (JavaScript de build.py, dans la page, sans recalcul) : clic sur un
+  en-tête = trier, filtrer par valeurs (texte) ou par bornes (nombres, dates) ; recherche dans tout le tableau ;
+  pastilles par statut ; compteur « x lignes sur y » ; « Effacer les filtres ». Valeurs brutes dans `data-v`.
+  **Pages de 200 lignes** : le reste attend dans `data-reste` (JSON), filtres et tri portent sur toutes les lignes,
+  « Afficher plus ». Affiché par `st.html` (pas `st.markdown` : l'analyseur Markdown fige la page sur un grand tableau).
+  Pas de champ de recherche ni de multisélection Python au-dessus d'un tableau : la barre du tableau suffit.
 - **Graphiques** (`core/charts.py`) : chacun dans sa **carte** (`graphe(html, sous)` : titre, une ligne
   d'explication, légende en bas), deux par ligne au plus, de même hauteur. Couleurs des palettes, **valeurs affichées**,
   pas de double axe. Affichage par `st.markdown` (car `st.html` supprime le SVG). **Infobulle au survol** : attribut
@@ -219,6 +225,7 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
 - **Écran de chargement** (build.py) : fond clair, grande carte (logo, Supply360, barre, étape, version), l'avion
   traverse l'écran en 32 s.
 - **Peu de texte** : titre + une ligne de description ; les détails (colonnes attendues, règles de calcul, tableaux annexes) vont dans des `st.popover`.
+- **Règles de calcul en mots simples** : phrases courtes, un exemple chiffré, et pour les statuts un tableau « Statut | Ce que ça veut dire | Que faire ». Pas de formule brute (`max(0, …)`) ni de nom de colonne technique sans explication.
 
 **Typographie et responsive :**
 

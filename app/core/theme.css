@@ -530,8 +530,61 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-tableau .cat { display: inline-flex; align-items: center; gap: .4rem; }
 .s360-tableau .cat i { width: .6rem; height: .6rem; border-radius: 3px; }
 .s360-tableau-note { margin: .4rem 0 0; color: var(--muted); font-size: .85rem; }
-/* Filtres d'un tableau HTML (pastilles) : filtrage dans la page, sans recalcul (JavaScript de build.py) */
-.s360-filtres { display: flex; gap: .45rem; flex-wrap: wrap; margin: 0 0 .8rem; }
+/* Barre d'outils de chaque tableau : recherche, pastilles par statut, compteur, « Effacer les filtres »
+   (tri et filtres dans la page, sans recalcul : JavaScript de build.py) */
+.s360-outils { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0 0 .7rem; }
+.s360-recherche { flex: 0 1 17rem; min-width: 11rem; height: 2.25rem; padding: 0 .8rem; border: 1px solid var(--line); border-radius: 8px;
+  font: inherit; font-size: .9rem; color: var(--text); background: #fff; }
+.s360-recherche:focus { outline: 2px solid #C9D8F0; border-color: var(--navy-2); }
+.s360-nb-lignes { margin-left: auto; color: var(--muted); font-size: .86rem; font-weight: 600; white-space: nowrap; }
+.s360-raz { border: 0; background: none; padding: .3rem .2rem; color: var(--navy-2); font: inherit; font-size: .86rem; font-weight: 700;
+  cursor: pointer; text-decoration: underline; }
+.s360-raz[hidden] { display: none; }
+/* En-têtes cliquables : tri / filtre (icône discrète, en couleur quand un filtre ou un tri est actif) */
+table.s360-filtrable thead tr:last-child th { cursor: pointer; user-select: none; padding-right: 1.7rem; }
+table.s360-filtrable thead tr:last-child th::after { content: ""; position: absolute; right: .55rem; top: 50%; width: .8rem; height: .8rem;
+  margin-top: -.4rem; opacity: .35; background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5h18l-7 8v6l-4 2v-8z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5h18l-7 8v6l-4 2v-8z'/%3E%3C/svg%3E") center / contain no-repeat; }
+table.s360-filtrable thead tr:last-child th:hover { background: #EEF3FA; color: var(--navy); }
+table.s360-filtrable thead tr:last-child th:hover::after { opacity: .8; }
+table.s360-filtrable thead th.filtre { background: #E8EFFA; color: var(--navy); }
+table.s360-filtrable thead th.filtre::after { opacity: 1; background: var(--navy-2); }
+table.s360-filtrable thead th.tri-asc::after, table.s360-filtrable thead th.tri-desc::after { opacity: 1; background: var(--navy-2);
+  -webkit-mask: none; mask: none; content: "▲"; background: none; color: var(--navy-2); font-size: .7rem; width: auto; height: auto; margin-top: -.45rem; }
+table.s360-filtrable thead th.tri-desc::after { content: "▼"; }
+table.s360-filtrable thead th:not(.fixe) { position: sticky; }
+/* Menu d'une colonne (clic sur un en-tête) */
+#s360-menu-col { position: fixed; z-index: 1000060; width: 18rem; max-width: calc(100vw - 16px); padding: .8rem; background: #fff;
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(16, 33, 64, .18); font-size: .9rem; color: var(--text);
+  font-family: var(--font); }
+#s360-menu-col :is(button, input, label, span, b, em, p) { font-family: var(--font); }
+#s360-menu-col .titre { margin: 0 0 .55rem; color: var(--navy); font-weight: 800; }
+#s360-menu-col .tri { display: grid; gap: .3rem; margin-bottom: .6rem; }
+#s360-menu-col button { font: inherit; cursor: pointer; }
+#s360-menu-col .tri button { text-align: left; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: #F8FAFC; font-weight: 600; }
+#s360-menu-col .tri button:hover { background: #EEF3FA; border-color: #C9D3E3; }
+#s360-menu-col input[type=search], #s360-menu-col input[type=number], #s360-menu-col input[type=date] { width: 100%; box-sizing: border-box;
+  height: 2.1rem; padding: 0 .6rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+#s360-menu-col .liste { max-height: 14rem; overflow: auto; margin-top: .45rem; border: 1px solid var(--line-2); border-radius: 8px; padding: .25rem .35rem; }
+#s360-menu-col .case { display: flex; align-items: center; gap: .45rem; padding: .25rem .2rem; cursor: pointer; }
+#s360-menu-col .case span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#s360-menu-col .case em { color: var(--faint); font-style: normal; font-size: .8rem; }
+#s360-menu-col .liste .tout { border-bottom: 1px solid var(--line-2); margin-bottom: .2rem; }
+#s360-menu-col .plus { margin: .3rem .2rem; color: var(--muted); font-size: .8rem; }
+#s360-menu-col .bornes { display: grid; gap: .45rem; margin-bottom: .4rem; }
+#s360-menu-col .bornes label { display: grid; gap: .2rem; color: var(--muted); font-size: .84rem; font-weight: 600; }
+#s360-menu-col .actions { display: flex; justify-content: space-between; gap: .5rem; margin-top: .7rem; }
+#s360-menu-col .actions button { padding: .45rem .8rem; border-radius: 8px; border: 1px solid var(--line); background: #fff; font-weight: 700; }
+#s360-menu-col .actions .ok { background: var(--navy); border-color: var(--navy); color: #fff; }
+/* « Afficher plus » sous un grand tableau (pages de 200 lignes) */
+.s360-plus { display: flex; align-items: center; gap: .8rem; margin: .6rem 0 0; color: var(--muted); font-size: .86rem; }
+.s360-plus[hidden] { display: none; }
+.s360-plus button { padding: .45rem .9rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--navy);
+  font: inherit; font-weight: 700; cursor: pointer; }
+.s360-plus button:hover { background: #EEF3FA; border-color: #C9D3E3; }
+/* Pastilles par statut */
+.s360-filtres { display: flex; gap: .45rem; flex-wrap: wrap; margin: 0; }
 .s360-filtres button { display: inline-flex; align-items: center; gap: .45rem; padding: .38rem .8rem; border-radius: 99px; cursor: pointer;
   border: 1px solid var(--line); background: #fff; font: inherit; font-weight: 600; font-size: .88rem; color: var(--muted); }
 .s360-filtres button i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--c, var(--faint)); }

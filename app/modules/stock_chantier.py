@@ -108,7 +108,7 @@ def tableau(m: pd.DataFrame) -> pd.DataFrame:
     return v[list(COLONNES_TABLEAU)].rename(columns=COLONNES_TABLEAU)
 
 
-def _afficher(m: pd.DataFrame, cle: str, filtres: bool = False, hauteur: str = "34rem") -> None:
+def _afficher(m: pd.DataFrame, cle: str, filtres: bool = True, hauteur: str = "34rem") -> None:
     """Tableau de références : statut en badge, classe 8/9 signalée, colonnes regroupées (Pièce, Quantités…)."""
     ui.tableau_html(tableau(m).assign(_risque=m["RISK_CLASS"].to_numpy()), statut="Statut", couleurs=COULEURS_STATUT,
                     num=["Besoin", "Stock", "En cmd", "SAR", "PR", "Gestion", "Class code"], fort=["À commander"],
@@ -304,15 +304,7 @@ def _detail(m, m_scope, export, gestions):
     """Tableau filtrable du périmètre. Fragment : filtrer ne relance que ce bloc."""
     with ui.section(f"{TAB_ID}_detail", "Détail du périmètre", f"Toutes les références des codes Gestion "
                     f"{', '.join(str(g) for g in sorted(gestions))}", export=(export, sio.nom_export(TAB_ID), K + "export_bas__btn")):
-        f1, f2 = st.columns([1, 1.6])
-        recherche = f1.text_input("Rechercher un PN", key=K + "recherche", placeholder="PN…", persist_state="page")
-        filtre = f2.multiselect("Filtrer par statut", options=tf.ACTION_ORDRE, format_func=lambda c: tf.ACTION_LABELS[c],
-                                key=K + "filtre_action", placeholder="Tous les statuts", persist_state="page")
         vue = m_scope
-        if recherche:
-            vue = vue[vue["PN"].str.contains(recherche.strip().upper().replace(" ", ""), na=False, regex=False)]
-        if filtre:
-            vue = vue[vue["ACTION_CODE"].isin(filtre)]
         _afficher(vue.sort_values("Qty_a_commander", ascending=False, kind="stable"), "detail", hauteur="30rem")
         b2, b3, _ = st.columns([1.3, 1, 3])
         with b2.popover(f"Toutes les références ({len(m)})", width="stretch"):
@@ -324,24 +316,32 @@ def _detail(m, m_scope, export, gestions):
 
 
 def _aide() -> None:
+    L = tf.ACTION_LABELS
     st.markdown(f"""
-**Croisement** par PN (majuscules, sans espaces). La gestion du fichier Commandes fait foi ; la PSD retenue est
-la plus proche (à défaut, date de livraison demandée). Les besoins d'un même PN sont **additionnés**, même
-s'ils viennent de plusieurs TRFX / RRS (colonnes TRFX et RRS : « A | B »). Contact des actions : **Code agent**
-(CODE AGT APPRO de l'État du stock).
+**Comment le calcul est fait, pièce par pièce (PN)**
 
-- **Déficit** = max(0, besoin − stock) · **À commander** = max(0, déficit − en commande)
+- Si une pièce est demandée plusieurs fois pour le chantier (plusieurs TRFX ou RRS), les quantités sont **additionnées**.
+- **Manque** = besoin − stock. Exemple : besoin 10, stock 4 → manque 6.
+- **À commander** = manque − quantité déjà en commande. Exemple : manque 6, 2 en commande → **4 à commander**.
+  Jamais en dessous de 0.
+- **Date de livraison retenue (PSD)** : la plus proche des commandes en cours ; à défaut, la date demandée.
+- **Contact** : le code agent (CODE AGT APPRO de l'État du stock).
 
-| Statut | Condition (la première vérifiée l'emporte) |
-|---|---|
-| {tf.ACTION_LABELS['inconnu']} | PN absent de l'État du stock |
-| {tf.ACTION_LABELS['hors_perimetre']} | code Gestion hors périmètre |
-| {tf.ACTION_LABELS['commander']} | à commander > 0 |
-| {tf.ACTION_LABELS['ok']} | déficit nul |
-| {tf.ACTION_LABELS['relancer']} | déficit couvert, PSD absente ou {tf.ANNEE_PSD_NON_FOURNIE} |
-| {tf.ACTION_LABELS['relancer_urgent']} | PSD après le début du chantier |
-| {tf.ACTION_LABELS['en_cours']} | PSD avant le début du chantier |
+**Ce que veut dire chaque statut**
 
-Classe 8/9 : étiquette « Classe 8/9 » et mention « PRIORITÉ » dans l'action, en tête des actions. Fournisseur manquant : retrouvé par le code fournisseur.
+| Statut | Ce que ça veut dire | Que faire |
+|---|---|---|
+| **{L['commander']}** | Le stock et les commandes en cours ne suffisent pas | Passer la commande |
+| **{L['relancer_urgent']}** | Les commandes suffisent, mais la livraison est prévue **après** le début du chantier | Relancer le fournisseur pour avancer la date |
+| **{L['relancer']}** | Les commandes suffisent, mais le fournisseur n'a pas donné de date (vide ou {tf.ANNEE_PSD_NON_FOURNIE}) | Demander une date au fournisseur |
+| **{L['inconnu']}** | La pièce n'existe pas dans l'État du stock | Vérifier la référence |
+| **{L['en_cours']}** | Les commandes suffisent et arrivent **avant** le début du chantier | Suivre la livraison |
+| **{L['hors_perimetre']}** | Code Gestion non retenu dans les Paramètres | Rien |
+| **{L['ok']}** | Le stock suffit déjà | Rien |
+
+Une pièce en **classe 8 ou 9** (en cours de suppression ou supprimée) porte l'étiquette « Classe 8/9 » et passe en
+tête des actions. Si le nom du fournisseur manque, il est retrouvé grâce à son code.
 """)
+
+
 

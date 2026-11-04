@@ -1025,16 +1025,242 @@ document.addEventListener("click", (e) => {
 });
 </script>
 <script>
-// Filtres des tableaux HTML (components.tableau_html) : pastilles par statut au-dessus du tableau. Le filtrage se fait
-// dans la page (lignes masquées), sans recalcul Python ; un nouvel affichage du tableau repart sur « Tous ».
-document.addEventListener("click", (e) => {
-  const b = e.target.closest(".s360-filtres button");
-  if (!b) return;
-  const zone = b.closest(".s360-filtres");
-  zone.querySelectorAll("button").forEach((x) => x.classList.toggle("actif", x === b));
-  const table = document.getElementById(zone.dataset.table);
-  if (table) table.querySelectorAll("tbody tr").forEach((l) => { l.hidden = !!b.dataset.f && l.dataset.statut !== b.dataset.f; });
-});
+// Tableaux (components.tableau_html, utilisé par TOUS les tableaux de l'app) : tri et filtres dans la page, sans
+// recalcul Python. Clic sur un en-tête : trier, filtrer par valeurs (texte) ou par bornes (nombres, dates).
+// Recherche dans tout le tableau, pastilles par statut, compteur « x lignes sur y » et « Effacer les filtres ».
+// Un nouvel affichage du tableau par Streamlit repart sans filtre.
+(function () {
+  const etats = new WeakMap();
+  const etat = (t) => { let e = etats.get(t); if (!e) { e = { f: {}, tri: null, q: "", statut: "" }; etats.set(t, e); } return e; };
+  const entetes = (t) => [...t.tHead.rows[t.tHead.rows.length - 1].cells];
+  const typeDe = (t, i) => entetes(t)[i].dataset.type || "txt";
+  const texte = (td) => { const s = td.textContent.replace(/\\s+/g, " ").trim(); return s === "—" ? "" : s; };
+  const valeur = (td, type) => {
+    if (type === "txt") return texte(td);
+    const v = td.dataset.v;
+    if (v === undefined || v === "") return null;
+    return type === "date" || type === "mois" ? v : +v;
+  };
+  const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  const passe = (v, f) => {
+    if (f.type === "txt") {
+      if (f.valeurs && !f.valeurs.has(v)) return false;
+      if (f.contient && !norm(v).includes(norm(f.contient))) return false;
+      return true;
+    }
+    if (f.vides === false && v === null) return false;
+    if (v === null) return !(f.min !== "" || f.max !== "" || f.nonZero);
+    if (f.nonZero && v === 0) return false;
+    if (f.min !== "" && f.min !== undefined && v < (f.type === "num" || f.type === "euros" || f.type === "progres" ? +f.min : f.min)) return false;
+    if (f.max !== "" && f.max !== undefined && v > (f.type === "num" || f.type === "euros" || f.type === "progres" ? +f.max : f.max)) return false;
+    return true;
+  };
+  const outils = (t) => document.querySelector(`.s360-outils[data-table="${t.id}"]`);
+  const actif = (f) => f && (f.type === "txt" ? (f.valeurs || f.contient) : (f.min !== "" || f.max !== "" || f.nonZero || f.vides === false));
+  const PAGE = 200;
+  // Toutes les lignes du tableau (affichées ou non) : les premières sont dans le tableau, les autres dans data-reste
+  // (JSON, components.tableau_html), transformées en lignes au premier besoin (filtre, tri, « Afficher plus »).
+  const toutes = (t) => {
+    const e = etat(t);
+    if (!e.toutes) {
+      const lignes = [...t.tBodies[0].rows];
+      if (t.dataset.reste) {
+        const corps = document.createElement("tbody");
+        try { corps.innerHTML = JSON.parse(t.dataset.reste).join(""); } catch (_) { /* reste illisible : lignes affichées seulement */ }
+        lignes.push(...corps.rows);
+        t.removeAttribute("data-reste");
+      }
+      e.toutes = lignes; e.ordre = lignes.slice(); e.vues = lignes; e.limite = PAGE;
+    }
+    return e.toutes;
+  };
+  const afficher = (t) => {
+    const e = etat(t), total = e.toutes.length, n = e.vues.length;
+    t.tBodies[0].replaceChildren(...e.vues.slice(0, e.limite));
+    const o = outils(t);
+    if (o) {
+      o.querySelector(".s360-nb-lignes").textContent = (n === total ? `${total} ligne${total > 1 ? "s" : ""}` : `${n} ligne${n > 1 ? "s" : ""} sur ${total}`)
+        + (n > e.limite ? ` · ${e.limite} affichées` : "");
+      o.querySelector(".s360-raz").hidden = !(n !== total || e.tri);
+    }
+    const plus = document.querySelector(`.s360-plus[data-table="${t.id}"]`);
+    if (plus) {
+      plus.hidden = n <= e.limite;
+      plus.querySelector("button").textContent = `Afficher ${Math.min(PAGE, n - e.limite)} lignes de plus`;
+      plus.querySelector("span").textContent = `${Math.max(0, n - e.limite)} lignes non affichées`;
+    }
+  };
+  const appliquer = (t) => {
+    const e = etat(t), q = norm(e.q.trim());
+    const filtres = Object.entries(e.f).filter(([, f]) => actif(f));
+    e.vues = toutes(t).filter((r) => {
+      if (e.statut && r.dataset.statut !== e.statut) return false;
+      if (q && !(r._q || (r._q = norm(r.textContent))).includes(q)) return false;  // texte de la ligne, calculé une fois
+      for (const [i, f] of filtres) if (!passe(valeur(r.cells[i], f.type), f)) return false;
+      return true;
+    });
+    e.limite = PAGE;
+    entetes(t).forEach((th, i) => {
+      th.classList.toggle("filtre", !!actif(e.f[i]));
+      th.classList.toggle("tri-asc", !!(e.tri && e.tri.i === i && e.tri.sens > 0));
+      th.classList.toggle("tri-desc", !!(e.tri && e.tri.i === i && e.tri.sens < 0));
+    });
+    afficher(t);
+  };
+  const trier = (t, i, sens) => {
+    const e = etat(t), type = typeDe(t, i);
+    toutes(t);
+    e.tri = sens ? { i, sens } : null;
+    e.toutes = sens ? [...e.ordre].sort((a, b) => {
+      const x = valeur(a.cells[i], type), y = valeur(b.cells[i], type);
+      const vx = x === null || x === "", vy = y === null || y === "";
+      if (vx || vy) return vx === vy ? 0 : vx ? 1 : -1;  // vides toujours en bas
+      return (type === "txt" ? String(x).localeCompare(String(y), "fr", { numeric: true }) : x < y ? -1 : x > y ? 1 : 0) * sens;
+    }) : e.ordre.slice();
+    appliquer(t);
+  };
+  // « Afficher plus » : page suivante des lignes retenues
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest(".s360-plus button");
+    if (!b) return;
+    const t = document.getElementById(b.closest(".s360-plus").dataset.table);
+    if (!t) return;
+    toutes(t);
+    etat(t).limite += PAGE;
+    afficher(t);
+  });
+  // Barre d'outils : recherche et « Effacer les filtres » ajoutés ici (le HTML de Streamlit ne garde pas les champs)
+  const preparer = (o) => {
+    if (o.dataset.pret) return;
+    o.dataset.pret = "1";
+    const q = document.createElement("input");
+    q.type = "search"; q.className = "s360-recherche"; q.placeholder = "Rechercher dans le tableau…";
+    q.addEventListener("input", () => { const t = document.getElementById(o.dataset.table); if (t) { etat(t).q = q.value; appliquer(t); } });
+    o.prepend(q);
+    const raz = document.createElement("button");
+    raz.type = "button"; raz.className = "s360-raz"; raz.hidden = true; raz.textContent = "Effacer les filtres";
+    raz.addEventListener("click", () => {
+      const t = document.getElementById(o.dataset.table);
+      if (!t) return;
+      const e = etat(t);
+      e.f = {}; e.q = ""; e.statut = ""; q.value = "";
+      o.querySelectorAll(".s360-filtres button").forEach((b) => b.classList.toggle("actif", !b.dataset.f));
+      trier(t, 0, 0);
+    });
+    o.append(raz);
+    const t = document.getElementById(o.dataset.table);
+    if (t) entetes(t).forEach((th) => { th.tabIndex = 0; if (!th.title) th.title = "Cliquer pour trier ou filtrer"; });
+  };
+  const veilleur = new MutationObserver(() => document.querySelectorAll(".s360-outils:not([data-pret])").forEach(preparer));
+  veilleur.observe(document.documentElement, { childList: true, subtree: true });
+  // Pastilles de statut
+  document.addEventListener("click", (ev) => {
+    const b = ev.target.closest(".s360-filtres button");
+    if (!b) return;
+    const o = b.closest(".s360-outils"), t = o && document.getElementById(o.dataset.table);
+    if (!t) return;
+    o.querySelectorAll(".s360-filtres button").forEach((x) => x.classList.toggle("actif", x === b));
+    etat(t).statut = b.dataset.f || "";
+    appliquer(t);
+  });
+  // Menu d'une colonne
+  const fermer = () => document.getElementById("s360-menu-col")?.remove();
+  const ouvrir = (th) => {
+    const t = th.closest("table"), i = entetes(t).indexOf(th), type = th.dataset.type || "txt", e = etat(t);
+    fermer();
+    const f = e.f[i] || (e.f[i] = type === "txt" ? { type, valeurs: null, contient: "" } : { type, min: "", max: "", nonZero: false, vides: true });
+    const m = document.createElement("div");
+    m.id = "s360-menu-col";
+    const nom = th.textContent.trim();
+    const champ = type === "date" || type === "mois" ? "date" : "number";
+    m.innerHTML = `<div class="titre"></div>
+      <div class="tri"><button type="button" data-tri="1">${type === "txt" ? "Trier de A à Z" : type === "date" || type === "mois" ? "Plus ancien d'abord" : "Du plus petit au plus grand"}</button>
+      <button type="button" data-tri="-1">${type === "txt" ? "Trier de Z à A" : type === "date" || type === "mois" ? "Plus récent d'abord" : "Du plus grand au plus petit"}</button></div>` +
+      (type === "txt"
+        ? `<input type="search" class="contient" placeholder="Contient…"><div class="liste"></div>`
+        : `<div class="bornes"><label>${champ === "date" ? "Du" : "Au moins"} <input type="${champ}" class="min" step="any"></label>
+           <label>${champ === "date" ? "Au" : "Au plus"} <input type="${champ}" class="max" step="any"></label></div>` +
+          (champ === "number" ? `<label class="case"><input type="checkbox" class="nonzero"> Masquer les zéros</label>` : "") +
+          `<label class="case"><input type="checkbox" class="sansvide"> Masquer les cases vides</label>`) +
+      `<div class="actions"><button type="button" class="effacer">Effacer ce filtre</button><button type="button" class="ok">Fermer</button></div>`;
+    m.querySelector(".titre").textContent = nom;
+    document.body.append(m);
+    const maj = () => appliquer(t);
+    if (type === "txt") {
+      const comptes = new Map();
+      toutes(t).forEach((r) => { const v = valeur(r.cells[i], "txt"); comptes.set(v, (comptes.get(v) || 0) + 1); });
+      const valeurs = [...comptes.keys()].sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+      const liste = m.querySelector(".liste");
+      const dessiner = () => {
+        const filtre = norm(m.querySelector(".contient").value);
+        const vues = valeurs.filter((v) => !filtre || norm(v).includes(filtre)).slice(0, 300);
+        liste.innerHTML = `<label class="case tout"><input type="checkbox"> <b>Tout</b></label>` + vues.map((v, k) =>
+          `<label class="case"><input type="checkbox" data-k="${k}"> <span></span> <em>${comptes.get(v)}</em></label>`).join("") +
+          (valeurs.length > 300 && vues.length === 300 ? `<p class="plus">Tapez pour affiner (${valeurs.length} valeurs)</p>` : "");
+        liste.querySelectorAll("label.case:not(.tout)").forEach((l, k) => {
+          l.querySelector("span").textContent = vues[k] || "(vide)";
+          l.querySelector("input").checked = !f.valeurs || f.valeurs.has(vues[k]);
+        });
+        const tout = liste.querySelector(".tout input");
+        tout.checked = !f.valeurs;
+        tout.addEventListener("change", () => { f.valeurs = tout.checked ? null : new Set(); dessiner(); maj(); });
+        liste.querySelectorAll("input[data-k]").forEach((c) => c.addEventListener("change", () => {
+          if (!f.valeurs) f.valeurs = new Set(valeurs);
+          const v = vues[+c.dataset.k];
+          c.checked ? f.valeurs.add(v) : f.valeurs.delete(v);
+          if (f.valeurs.size === valeurs.length) f.valeurs = null;
+          tout.checked = !f.valeurs;
+          maj();
+        }));
+      };
+      const c = m.querySelector(".contient");
+      c.value = f.contient || "";
+      c.addEventListener("input", () => { f.contient = c.value; dessiner(); maj(); });
+      dessiner();
+      setTimeout(() => c.focus(), 0);
+    } else {
+      const lire = () => {
+        f.min = m.querySelector(".min").value; f.max = m.querySelector(".max").value;
+        const nz = m.querySelector(".nonzero"); f.nonZero = !!(nz && nz.checked);
+        f.vides = !m.querySelector(".sansvide").checked;
+        maj();
+      };
+      m.querySelector(".min").value = f.min || ""; m.querySelector(".max").value = f.max || "";
+      if (m.querySelector(".nonzero")) m.querySelector(".nonzero").checked = !!f.nonZero;
+      m.querySelector(".sansvide").checked = f.vides === false;
+      m.querySelectorAll("input").forEach((x) => x.addEventListener("input", lire));
+      m.querySelectorAll("input[type=checkbox]").forEach((x) => x.addEventListener("change", lire));
+    }
+    m.querySelectorAll("[data-tri]").forEach((b) => b.addEventListener("click", () => { trier(t, i, +b.dataset.tri); fermer(); }));
+    m.querySelector(".effacer").addEventListener("click", () => { delete e.f[i]; if (e.tri && e.tri.i === i) trier(t, i, 0); else maj(); fermer(); });
+    m.querySelector(".ok").addEventListener("click", fermer);
+    m._th = th;
+    placer(m);
+  };
+  // position : sous l'en-tête, dans l'écran (recalculée au défilement ; fermé si l'en-tête sort de l'écran)
+  const placer = (m) => {
+    const r = m._th.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+    if (!m._th.isConnected || r.bottom < 0 || r.top > window.innerHeight) return fermer();
+    m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    m.style.top = (r.bottom + h + 8 < window.innerHeight ? r.bottom + 4 : Math.max(8, r.top - h - 4)) + "px";
+  };
+  document.addEventListener("click", (ev) => {
+    const th = ev.target.closest("table.s360-filtrable thead tr:last-child th");
+    if (th && !ev.target.closest("#s360-ancien")) { ev.preventDefault(); ouvrir(th); return; }
+    // clic dans le menu (y compris sur une case que le menu vient de redessiner) : il reste ouvert
+    if (!ev.composedPath().some((n) => n.id === "s360-menu-col")) fermer();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") fermer();
+    const th = ev.target.closest && ev.target.closest("table.s360-filtrable thead tr:last-child th");
+    if (th && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); ouvrir(th); }
+  });
+  document.addEventListener("scroll", (ev) => {
+    const m = document.getElementById("s360-menu-col");
+    if (m && !(ev.target.closest && ev.target.closest("#s360-menu-col"))) placer(m);
+  }, true);
+  window.addEventListener("resize", () => { const m = document.getElementById("s360-menu-col"); if (m) placer(m); });
+})();
 </script>
 <script>
 // Agrandir un graphe : bouton « ⛶ » sur chaque graphe (core/charts.py). Le graphe est recopié dans une fenêtre plein

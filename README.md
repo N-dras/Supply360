@@ -282,6 +282,13 @@ données réelles. Voir `CLAUDE.md` pour l'architecture et les règles du projet
   mémoire de la page, jamais écrits sur le disque). Une seconde panne en moins de 2 minutes : bandeau **Relancer en
   gardant mes fichiers** / **Recharger la page** ;
   **Détails techniques › Copier** donne le diagnostic à transmettre à l'auteur.
+- **Tableaux** : tous les tableaux fonctionnent de la même façon. **Cliquez sur un titre de colonne** pour trier ou
+  filtrer (cases à cocher pour un texte, « au moins / au plus » pour un nombre, « du / au » pour une date) ; champ
+  **Rechercher dans le tableau** ; pastilles par statut ; le compteur indique « x lignes sur y » et **Effacer les
+  filtres** remet tout à zéro. Les grands tableaux s'affichent par 200 lignes (**Afficher plus**) ; filtres, recherche
+  et tri portent toujours sur toutes les lignes.
+- **Règles de calcul** : chaque sous-onglet a un bouton « Règles de calcul » qui explique, avec un exemple, ce que
+  veut dire chaque statut et que faire.
 - **Exports Excel** : bouton **Exporter** → le fichier est fabriqué à ce moment-là, puis téléchargé automatiquement
   (il n'est plus fabriqué à chaque affichage d'onglet, ce qui ralentissait et chargeait la mémoire).
 - Mémoire : les gros fichiers (État du stock, Commandes) sont lus en ne gardant que les colonnes utiles ; les fichiers

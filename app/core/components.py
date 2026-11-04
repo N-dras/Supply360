@@ -7,6 +7,8 @@ dessinent (`header`, `section`, `kpi_grid`…) appellent Streamlit.
 from contextlib import contextmanager, nullcontext
 from datetime import date
 from html import escape
+import json
+import uuid
 
 import numpy as np
 import pandas as pd
@@ -188,13 +190,19 @@ def empty_state(title: str, message: str, etapes: list[tuple[str, bool]] | None 
                 f'<div class="s360-steps">{steps}</div></div>', unsafe_allow_html=True)
 
 
-def tableau(df, **kwargs) -> None:
-    """st.dataframe avec « — » à la place des textes vides (au lieu de « None »)."""
-    texte = df.select_dtypes(include=["object", "string"]).columns
-    if len(texte):
-        df = df.copy()
-        df[texte] = df[texte].astype(object).where(df[texte].notna(), "—")
-    st.dataframe(df, hide_index=True, **kwargs)
+def tableau(df, column_config=None, height=None, cle: str = "", statut: str | None = None, couleurs: dict | None = None,
+            **_ignore) -> None:
+    """Tableau standard de l'app : même rendu et mêmes filtres que `tableau_html` (tri et filtre au clic sur un
+    en-tête, recherche, compteur). Les colonnes numériques, monétaires (« € ») et dates sont reconnues seules ;
+    `column_config` (formats de date, bulles d'aide, barres de progression) est repris."""
+    if isinstance(height, (int, float)):
+        hauteur = f"{max(8.0, height / 13):.0f}rem"
+    elif height == "content":
+        hauteur = "none"
+    else:
+        hauteur = "34rem"
+    tableau_html(df, colonne_config=column_config, hauteur=hauteur, cle=cle,
+                 statut=statut if statut in getattr(df, "columns", ()) else None, couleurs=couleurs)
 
 
 def graphe(html: str, sous: str = "") -> None:
@@ -241,69 +249,161 @@ def _euros(v) -> str:
     return f"{f / 1e6:.1f} M€".replace(".", ",") if abs(f) >= 1e6 else (f"{f / 1e3:.0f} k€" if abs(f) >= 1e4 else f"{f:,.0f} €".replace(",", " "))
 
 
+PAGE_TABLEAU = 200  # lignes affichées d'emblée (puis « Afficher plus »)
+
+
+def _types_colonnes(df: pd.DataFrame, colonne_config, num: set, euros: set) -> dict:
+    """{colonne: (type, format, aide)} : type = num | euros | date | mois | progres | txt (filtres et rendu)."""
+    cfg = colonne_config or {}
+    out = {}
+    for c in df.columns:
+        conf = cfg.get(c) if isinstance(cfg.get(c), dict) else {}
+        tc = conf.get("type_config") or {}
+        fmt, aide = str(tc.get("format") or ""), conf.get("help") or ""
+        serie = df[c]
+        if tc.get("type") == "progress":
+            typ = "progres"
+        elif c in euros or "€" in fmt or ("€" in str(c) and pd.api.types.is_numeric_dtype(serie)):
+            typ = "euros"
+        elif tc.get("type") == "date" or pd.api.types.is_datetime64_any_dtype(serie):
+            typ = "mois" if fmt.upper() in ("MM/YYYY", "MMM YYYY", "MMMM YYYY") else "date"
+        elif c in num or tc.get("type") == "number" or (pd.api.types.is_numeric_dtype(serie) and not pd.api.types.is_bool_dtype(serie)):
+            typ = "num"
+        else:
+            typ = "txt"
+            if serie.dtype == object and len(serie):  # colonne de dates stockées en objets (Timestamp, date)
+                ech = serie.dropna().head(20)
+                if len(ech) and all(isinstance(v, (pd.Timestamp, date)) for v in ech):
+                    typ = "mois" if fmt.upper() == "MM/YYYY" else "date"
+        out[c] = (typ, fmt, aide)
+    return out
+
+
+def _brut(v, typ: str) -> str:
+    """Valeur brute d'une cellule (attribut data-v) : tri et filtres dans la page."""
+    if v is None or (not isinstance(v, str) and pd.isna(v)):
+        return ""
+    if typ in ("date", "mois"):
+        try:
+            return f"{pd.Timestamp(v):%Y-%m-%d}"
+        except (TypeError, ValueError):
+            return ""
+    if typ in ("num", "euros", "progres"):
+        try:
+            return repr(float(v))
+        except (TypeError, ValueError):
+            return ""
+    return ""
+
+
 def tableau_html(df: pd.DataFrame, statut: str | None = None, couleurs: dict | None = None, num=(), fort=(), euros=(),
-                 longs=(), pn=(), groupes=None, fixes: int = 0, marque: tuple[str, str] | None = None, filtres: bool = False,
-                 cle: str = "", hauteur: str = "34rem", max_lignes: int = 400, colonne_config=None) -> None:
-    """Tableau HTML lisible : statut en badge coloré (`statut`, `couleurs` = {valeur: couleur}), nombres alignés, zéros
-    atténués, `fort` = quantités à traiter (rouge si > 0), `longs` = textes sur plusieurs lignes, `pn` = colonnes en
-    gras, `fixes` = colonnes figées à gauche, `groupes` = [(titre, nb colonnes)] au-dessus des en-têtes, `marque` =
-    (colonne booléenne, libellé) : étiquette rouge sous le statut. `filtres` : pastilles par statut au-dessus,
-    filtrage dans la page (sans recalcul, JavaScript de build.py). Au-delà de `max_lignes`, st.dataframe."""
-    if len(df) > max_lignes:
-        tableau(df.drop(columns=[c for c in [marque[0] if marque else None] if c and c in df.columns]),
-                column_config=colonne_config, height=440)
-        return
+                 longs=(), pn=(), groupes=None, fixes: int = 0, marque: tuple[str, str] | None = None, filtres: bool = True,
+                 cle: str = "", hauteur: str = "34rem", max_lignes: int = 20000, colonne_config=None) -> None:
+    """LE tableau de l'app (tous les tableaux passent par ici, `tableau` compris) : même allure et mêmes filtres partout.
+
+    Rendu : statut en badge coloré (`statut`, `couleurs` = {valeur: couleur}), nombres alignés, zéros atténués,
+    `fort` = quantités à traiter (rouge si > 0), `longs` = textes sur plusieurs lignes, `pn` = colonnes en gras,
+    `fixes` = colonnes figées à gauche, `groupes` = [(titre, nb colonnes)] au-dessus des en-têtes, `marque` =
+    (colonne booléenne, libellé) : étiquette rouge sous le statut. Dates et formats repris de `colonne_config`.
+    Filtres (JavaScript de build.py, dans la page, sans recalcul) : clic sur un en-tête = trier, filtrer par valeurs
+    (texte), par bornes (nombres, dates) ; recherche dans tout le tableau ; pastilles par statut (`filtres`) ;
+    compteur de lignes et « Effacer les filtres ». Au-delà de `max_lignes`, seules les premières lignes sont affichées."""
+    cle = cle or f"t{uuid.uuid4().hex[:10]}"
     couleurs = couleurs or {}
-    num, fort, euros, longs, pn = set(num) | set(fort) | set(euros), set(fort), set(euros), set(longs), set(pn)
+    total = len(df)
+    if total > max_lignes:
+        df = df.head(max_lignes)
+    num, fort, euros, longs, pn = set(num) | set(fort), set(fort), set(euros), set(longs), set(pn)
     cols = [c for c in df.columns if not (marque and c == marque[0])]
+    types = _types_colonnes(df[cols], colonne_config, num, euros)
+    euros = euros | {c for c, (ty, _, _) in types.items() if ty == "euros"}
     gauche, fixe_css = 0.0, []
-    for i in range(fixes):  # largeur des colonnes figées : d'après le texte le plus long (badge du statut compris)
+    for i in range(min(fixes, len(cols))):  # largeur des colonnes figées : d'après le texte le plus long (badge compris)
         textes = df[cols[i]].astype(str).str.len()
         w = min(22.0, max(6.0, 0.62 * max(int(textes.max() if len(textes) else 0), len(str(cols[i]))) + (3.2 if cols[i] == statut else 1.8)))
         fixe_css.append((f"left:{gauche}rem;min-width:{w}rem;max-width:{w}rem", i == fixes - 1))
         gauche += w
     def classe(i, c):
-        k = ["num"] if c in num else []
-        if i < fixes:
+        k = ["num"] if types[c][0] in ("num", "euros", "progres") else []
+        if i < len(fixe_css):
             k += ["fixe"] + (["dernier"] if fixe_css[i][1] else [])
         return " ".join(k)
     def style(i):
-        return f' style="{fixe_css[i][0]}"' if i < fixes else ""
-    tete = "".join(f'<th class="{classe(i, c)}{" cle" if c in fort else ""}"{style(i)}>{escape(str(c))}</th>' for i, c in enumerate(cols))
+        return f' style="{fixe_css[i][0]}"' if i < len(fixe_css) else ""
+    tete = "".join(
+        f'<th class="{classe(i, c)}{" cle" if c in fort else ""}"{style(i)} data-type="{"txt" if c == statut else types[c][0]}"'
+        f'{f" title={chr(34)}{escape(types[c][2])}{chr(34)}" if types[c][2] else ""}>{escape(str(c))}</th>'
+        for i, c in enumerate(cols))
     grp = ""
     if groupes:
         grp = '<tr class="grp">' + "".join(f'<th colspan="{n}">{escape(g)}</th>' for g, n in groupes) + "</tr>"
-    lignes = []
-    for rec in df.itertuples(index=False):
-        r = dict(zip(df.columns, rec))
-        cellules = []
-        for i, c in enumerate(cols):
-            v = r[c]
-            if c == statut:
-                txt = "" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v)
-                h = badge(txt, couleur=couleurs.get(txt, "#9AA5B1")) if txt else '<span class="vide">—</span>'
-                if marque and bool(r.get(marque[0])):
-                    h += f'<br><span class="s360-tag rouge">{ic("flag")}{escape(marque[1])}</span>'
-            elif c in longs:
-                h = f'<span class="long">{_cellule(v, c, fort, euros)}</span>'
-            elif c in pn:
-                h = f'<span class="pn">{_cellule(v, c, fort, euros)}</span>'
-            else:
-                h = _cellule(v, c, fort, euros)
-            cellules.append(f'<td class="{classe(i, c)}"{style(i)}>{h}</td>')
-        attrs = f' data-statut="{escape(str(r.get(statut, "")))}"' if statut else ""
-        if marque and bool(r.get(marque[0])):
-            attrs += ' class="marque"'
-        lignes.append(f"<tr{attrs}>{''.join(cellules)}</tr>")
-    barre = ""
-    if filtres and statut:
+    def cellule(i, c, v):
+        typ = types[c][0]
+        brut = _brut(v, typ)
+        dv = f' data-v="{brut}"' if brut else ""
+        if c == statut:
+            txt = "" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v)
+            h = badge(txt, couleur=couleurs.get(txt, "#9AA5B1")) if txt else '<span class="vide">—</span>'
+        elif typ == "mois" and brut:
+            h = f"{pd.Timestamp(v):%m/%Y}"
+        elif typ == "progres" and brut:
+            pct = max(0.0, min(100.0, float(v)))
+            h = f'<span class="progres"><i style="width:{pct:.0f}%"></i></span>{float(v):.0f} %'
+        elif c in longs:
+            h = f'<span class="long">{_cellule(v, c, fort, euros)}</span>'
+        elif c in pn:
+            h = f'<span class="pn">{_cellule(v, c, fort, euros)}</span>'
+        else:
+            h = _cellule(v, c, fort, euros)
+        return f'<td class="{classe(i, c)}"{style(i)}{dv}>{h}</td>'
+    # Colonne par colonne, chaque valeur distincte n'est mise en forme qu'une fois (statuts, catégories, zéros…) :
+    # plusieurs fois plus rapide sous Pyodide qu'une mise en forme cellule par cellule.
+    colonnes_html = []
+    for i, c in enumerate(cols):
+        deja, sortie = {}, []
+        for v in df[c].tolist():
+            try:
+                cle_v = (type(v), v)
+                h = deja.get(cle_v)
+            except TypeError:  # valeur non hachable
+                cle_v, h = None, None
+            if h is None:
+                h = cellule(i, c, v)
+                if cle_v is not None:
+                    deja[cle_v] = h
+            sortie.append(h)
+        colonnes_html.append(sortie)
+    marques = df[marque[0]].fillna(False).astype(bool).tolist() if marque and marque[0] in df.columns else [False] * len(df)
+    if marque and statut in cols:  # étiquette rouge sous le badge de statut
+        j, tag = cols.index(statut), f'<br><span class="s360-tag rouge">{ic("flag")}{escape(marque[1])}</span>'
+        colonnes_html[j] = [h.replace("</td>", tag + "</td>") if m else h for h, m in zip(colonnes_html[j], marques)]
+    statuts = [escape(str(v)) for v in df[statut].tolist()] if statut and statut in df.columns else None
+    lignes = [f"<tr{f' data-statut={chr(34)}{statuts[k]}{chr(34)}' if statuts else ''}{' class=' + chr(34) + 'marque' + chr(34) if marques[k] else ''}>"
+              f"{''.join(cellules)}</tr>" for k, cellules in enumerate(zip(*colonnes_html))]
+    pastilles = ""
+    if filtres and statut and statut in df.columns:
         compte = df[statut].value_counts()
         compte = compte.reindex([v for v in couleurs if v in compte.index] + [v for v in compte.index if v not in couleurs])
-        barre = (f'<div class="s360-filtres" data-table="s360t_{cle}"><button class="actif" data-f="">Tous <b>{len(df)}</b></button>'
-                 + "".join(f'<button data-f="{escape(str(v))}" style="--c:{couleurs.get(v, "#9AA5B1")}"><i></i>{escape(str(v))} <b>{n}</b></button>'
-                           for v, n in compte.items()) + "</div>")
-    st.markdown(f'{barre}<div class="s360-tableau{" groupes" if groupes else ""}" style="--h:{hauteur}"><table id="s360t_{cle}">'
-                f"<thead>{grp}<tr>{tete}</tr></thead><tbody>{''.join(lignes)}</tbody></table></div>", unsafe_allow_html=True)
+        pastilles = ('<div class="s360-filtres"><button class="actif" data-f="">Tous</button>'
+                     + "".join(f'<button data-f="{escape(str(v))}" style="--c:{couleurs.get(v, "#9AA5B1")}"><i></i>{escape(str(v))} <b>{n}</b></button>'
+                               for v, n in compte.items()) + "</div>")
+    coupe = (f'<p class="s360-tableau-note">{max_lignes} premières lignes sur {total} : '
+             "exportez en Excel pour tout voir.</p>") if total > max_lignes else ""
+    # Affichage par pages : les PAGE premières lignes sont dans le tableau, les autres attendent dans data-reste
+    # (JSON). Le navigateur n'a ainsi que quelques centaines de lignes à dessiner ; recherche, filtres et tri
+    # (JavaScript de build.py) portent sur toutes les lignes, « Afficher plus » ajoute la page suivante.
+    visibles, reste = lignes[:PAGE_TABLEAU], lignes[PAGE_TABLEAU:]
+    attr_reste = f' data-reste="{escape(json.dumps(reste, ensure_ascii=False))}"' if reste else ""
+    plus = (f'<div class="s360-plus" data-table="s360t_{cle}"><button type="button">Afficher {min(PAGE_TABLEAU, len(reste))} '
+            f'lignes de plus</button><span>{len(reste)} lignes non affichées</span></div>') if reste else ""
+    n = len(lignes)
+    compte = f"{n} ligne{'s' if n > 1 else ''}" + (f" · {len(visibles)} affichées" if reste else "")
+    # st.html et non st.markdown : le HTML est inséré tel quel (st.markdown le fait passer par l'analyseur Markdown,
+    # qui fige la page plusieurs secondes sur un grand tableau).
+    st.html(f'<div class="s360-outils" data-table="s360t_{cle}" data-total="{n}">{pastilles}'
+            f'<span class="s360-nb-lignes">{compte}</span></div>'
+            f'<div class="s360-tableau{" groupes" if groupes else ""}" style="--h:{hauteur}"><table id="s360t_{cle}" class="s360-filtrable"{attr_reste}>'
+            f"<thead>{grp}<tr>{tete}</tr></thead><tbody>{''.join(visibles)}</tbody></table></div>{plus}{coupe}")
 
 
 # --------------------------------------------------------------------------

@@ -293,12 +293,12 @@ def _forecast(ev, synth, long, today) -> int:
         t = synth.assign(**{"Besoin": synth[f"Besoin {h} mois"], "À commander": synth[f"À commander {h} mois"],
                             "Valeur (€)": synth[f"Valeur {h} mois (€)"]})
         t = t.sort_values("Valeur (€)", ascending=False)
-        cols = {"PN": "PN", "Désignation": "Désignation", "Classes": "Classe", "Composant": "Élément", "Flottes": "Flottes",
+        cols = {"PN": "PN", "CCN": "CCN", "Désignation": "Désignation", "Classes": "Classe", "Composant": "Élément", "Flottes": "Flottes",
                 "Fournisseur": "Fournisseur", "Prix unitaire (€)": "Prix (€)", "Stock": "Stock", "En commande": "En commande",
                 "Stock de sécurité": "Stock de sécurité", "Besoin": "Besoin", "À commander": "À commander", "Valeur (€)": "Valeur (€)",
                 "À avancer (commandes en cours)": "À avancer", "À avancer avant": "Avant", "Rupture sans commande": "Rupture sans commande"}
         st.markdown(f"**Par PN** · horizon {h} mois")
-        ui.tableau(t[list(cols)].rename(columns=cols), column_config=CFG, height=min(38 + 35 * len(t), 420))
+        ui.tableau(t[[c for c in cols if c in t]].rename(columns=cols), column_config=CFG, height=min(38 + 35 * len(t), 420))
     return h
 
 

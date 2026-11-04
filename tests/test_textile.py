@@ -306,3 +306,23 @@ def test_surstock_dormant_3_ans():
     assert e["G"] == "Sans conso"              # consommé en 2023 : dans les 3 dernières années civiles
     assert e["H"] == "Sans conso"              # dormant mais sans stock : rien à écouler
     assert e["I"] == tx.DORMANT                # surstock même avec une commande en cours
+
+
+def test_croisement_par_ccn():
+    """Une pièce peut avoir un PN différent d'un fichier à l'autre : le CCN fait le lien (catalogue, commandes)."""
+    s_l, _ = sio.lire_etat_stock(octets("etat_stock.xlsx"))
+    c_l, _ = sio.lire_commandes_sap(octets("commandes_sap.xlsx"))
+    cat, _ = sio.lire_references_textile(octets("references_textile.xlsx"))
+    # catalogue : FX-1003 écrit autrement, mais même CCN que dans l'État du stock
+    ccn_1003 = s_l.loc[s_l["PN"] == "FX-1003", "CCN"].iloc[0]
+    cat = cat[cat["PN"] != "FX-1003"]
+    cat = pd.concat([cat, pd.DataFrame({"PN": ["FX1003-ALT"], "Equipement": ["HOUSSE"], "Description": ["Tablette"], "CCN": [ccn_1003]})])
+    # commande : la ligne de FX-1004 porte un autre PN, avec le CCN de FX-1004
+    i = c_l.index[c_l["PN"] == "FX-1004"][0]
+    c_l.loc[i, "PN"] = "PN-FOURNISSEUR-1004"
+    pbi, o = tx.construire_tables(s_l, c_l, cat, TODAY, True)
+    assert "FX-1003" in set(pbi["PNR"])                                   # reconnu textile par son CCN
+    assert pbi.set_index("PNR").loc["FX-1003", "REF_Equipement"] == "HOUSSE"
+    ligne = o[o["PN commandé"] == "PN-FOURNISSEUR-1004"]
+    assert len(ligne) == 1 and ligne["PNR"].iloc[0] == "FX-1004"          # rattachée au PN du stock par le CCN
+    assert tx.cle_ccn(pd.Series([12.0, " ab 1", None, "nan"])).tolist()[:2] == ["12", "AB1"]

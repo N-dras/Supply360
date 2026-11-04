@@ -42,10 +42,10 @@ COLONNES_ATTENDUES = {
                ("CSV ou Excel", "ex. textile_all_parts", False)],
 }
 
-COL_RELANCES = {"Statut commande": "Statut", "Fournisseur": "Fournisseur", "Commande": "Commande", "PNR": "PN",
+COL_RELANCES = {"Statut commande": "Statut", "Fournisseur": "Fournisseur", "Commande": "Commande", "PNR": "PN", "CCN": "CCN",
                 "REF_Equipement": "Catégorie", "Date livraison demandee": "Demandée", "Date livraison promise": "Promise",
                 "Jours de retard": "Retard (j)", "Qte restante": "Reste à livrer", "Code acheteur": "Acheteur"}
-COL_PREV = {"PNR": "PN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Statut prévision": "Statut",
+COL_PREV = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Statut prévision": "Statut",
             "Qté à commander maintenant": "À commander", "Date 1ère commande": "1re commande", "QTE SUR ÉTAGÈRE": "Stock",
             "QTE EN CDE": "En commande", "Besoin minimum (qté)": "Stock minimum", "Délai (mois)": "Délai (mois)",
             "Source délai": "Source délai", "Commandes recommandées sur l'horizon (qté)": "À commander (horizon)",
@@ -108,6 +108,7 @@ def _prevision(cle_tables: tuple, pieces: tuple, params: pv.Params, regles: tupl
     """
     s_all, o_all = _tables(*cle_tables)
     parts, fleet, _ = _pieces(*pieces, params)
+    parts = pv.rattacher_pieces(parts, s_all)  # PN différent du stock mais même CCN : même pièce
     rules = pd.DataFrame(list(regles), columns=["Equipement", "Classe", "Composant", "Cycle PE (ans)"])
     return pv.run_policy(s_all, o_all, parts, fleet, None, rules, params, pd.Timestamp(cle_tables[3]))
 
@@ -493,7 +494,7 @@ def _pn_dormants(s):
     if d.empty:
         return
     with st.popover(f"PN dormants ({len(d)})", width="stretch"):
-        cols = {"PNR": "PN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "QTE SUR ÉTAGÈRE": "Stock",
+        cols = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "QTE SUR ÉTAGÈRE": "Stock",
                 "Valeur stock (€)": "Valeur stock (€)", "DATE DERNIERE CONSO": "Dernière conso", "Motif activité": "Motif"}
         ui.tableau(d[[c for c in cols if c in d.columns]].rename(columns=cols), column_config=CFG, width=1000, height=420)
 
@@ -560,7 +561,8 @@ def _commandes(s, o, today, cat):
 def _lignes(o):
     with ui.section(f"{TAB_ID}_lignes", "Toutes les lignes", "Cliquez sur un titre de colonne pour trier ou filtrer"):
         d = o
-        _relances_html(d, "lignes", _avec_stock({**COL_RELANCES, "Date emission commande": "Émise", "Classe de retard": "Classe de retard"}),
+        pn_cmd = {"PN commandé": "PN commandé"} if "PN commandé" in d and (d["PN commandé"] != d["PNR"]).any() else {}
+        _relances_html(d, "lignes", _avec_stock({**COL_RELANCES, **pn_cmd, "Date emission commande": "Émise", "Classe de retard": "Classe de retard"}),
                        "30rem")
 
 

@@ -138,6 +138,20 @@ def preparer_pieces(raw: pd.DataFrame, p: Params):
     return d.reset_index(drop=True), fleet, no_pn
 
 
+def rattacher_pieces(parts: pd.DataFrame, pbi: pd.DataFrame) -> pd.DataFrame:
+    """Pièces par avion dont le PN n'existe pas sous ce nom dans l'État du stock : rattachées au PN du stock de même
+    CCN (celui qui a le plus de stock). Sans effet si le PN est déjà connu ou si le CCN est inconnu."""
+    if not len(parts) or "CCN" not in pbi or "ccn" not in parts:
+        return parts
+    par_ccn = (pbi.assign(_c=tx.cle_ccn(pbi["CCN"]), _s=pd.to_numeric(pbi["QTE SUR ÉTAGÈRE"], errors="coerce").fillna(0))
+               .dropna(subset=["_c"]).sort_values("_s", ascending=False, kind="stable").drop_duplicates("_c").set_index("_c")["PNR"])
+    inconnu = ~parts["pn"].isin(set(pbi["PNR"]))
+    via = tx.cle_ccn(parts["ccn"].replace("", np.nan)).map(par_ccn)
+    parts = parts.copy()
+    parts.loc[inconnu & via.notna(), "pn"] = via[inconnu & via.notna()]
+    return parts
+
+
 def registration_parts(parts):
     """Quantité par immatriculation (un avion présent dans deux groupes n'est compté qu'une fois)."""
     base = parts.drop_duplicates(["equipment", "registration", "area", "ccn", "pn", "description", "qty_per_ac"])

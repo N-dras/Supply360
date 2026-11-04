@@ -171,14 +171,57 @@ def ajouter_consommation(pbi: pd.DataFrame) -> pd.DataFrame:
     return pbi
 
 
+def cle_ccn(serie: pd.Series) -> pd.Series:
+    """CCN comparable d'un fichier à l'autre : texte, majuscules, sans espaces ni « .0 » (vide → NaN)."""
+    s = serie.astype(object).where(serie.notna())
+    s = s.map(lambda v: str(int(v)) if isinstance(v, float) and v.is_integer() else str(v), na_action="ignore").astype(object)
+    if not s.notna().any():
+        return pd.Series(np.nan, index=serie.index, dtype=object)
+    s = s.str.upper().str.replace(r"\s+", "", regex=True)
+    return s.where(~s.isin(["", "NAN", "NONE"]))
+
+
+def _completer_par_ccn(t: pd.DataFrame, catalogue: pd.DataFrame) -> pd.DataFrame:
+    """Catégorie et libellé du catalogue repris par le CCN quand le PN n'y figure pas sous ce nom."""
+    if "CCN" not in t or "CCN" not in catalogue or not len(catalogue):
+        return t
+    cat = catalogue.assign(_c=cle_ccn(catalogue["CCN"])).dropna(subset=["_c"]).drop_duplicates("_c").set_index("_c")
+    c = cle_ccn(t["CCN"])
+    t = t.copy()
+    t["REF_Equipement"] = t["REF_Equipement"].fillna(c.map(cat["Equipement"]))
+    t["REF_Description"] = t["REF_Description"].fillna(c.map(cat["Description"]))
+    return t
+
+
+def rattacher_commandes(o: pd.DataFrame, pbi: pd.DataFrame) -> pd.DataFrame:
+    """Chaque ligne de commande est rattachée à un PN de l'État du stock : le même PN, à défaut un PN du même CCN
+    (celui qui a le plus de stock). Le PN écrit sur la commande reste visible (« PN commandé »)."""
+    o = o.copy()
+    o["PN commandé"] = o["PNR"]
+    if not len(o) or "CCN" not in pbi:
+        return o
+    connus = set(pbi["PNR"])
+    par_ccn = (pbi.assign(_c=cle_ccn(pbi["CCN"]), _s=pd.to_numeric(pbi["QTE SUR ÉTAGÈRE"], errors="coerce").fillna(0))
+               .dropna(subset=["_c"]).sort_values("_s", ascending=False, kind="stable").drop_duplicates("_c").set_index("_c")["PNR"])
+    via_ccn = cle_ccn(o["CCN"]).map(par_ccn)
+    o["PNR"] = o["PNR"].where(o["PNR"].isin(connus), via_ccn.fillna(o["PNR"]))
+    return o
+
+
 def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | None, catalogue: pd.DataFrame | None,
                       today, seulement_textile=True):
     """(pbi, commandes) : 1 ligne par PNR du stock (avec commandes et références), 1 ligne par ligne de commande."""
+    # CROISEMENT PAR CCN : une même pièce peut porter des PN différents d'un fichier à l'autre (commandes, catalogue,
+    # État du stock). Une ligne est reconnue par son PN, à défaut par son CCN.
+    ccn_stock = cle_ccn(stock_lignes["CCN"]) if "CCN" in stock_lignes else pd.Series(np.nan, index=stock_lignes.index)
     if seulement_textile and catalogue is not None and len(catalogue):
         # Filtre en amont (calculs PN par PN : même résultat, beaucoup plus rapide sur un gros État du stock).
-        pns = set(catalogue["PN"])
-        stock_lignes = stock_lignes[stock_lignes["PN"].isin(pns)]
-        cmd_lignes = cmd_lignes[cmd_lignes["PN"].isin(pns)] if cmd_lignes is not None else None
+        pns, ccns = set(catalogue["PN"]), set(cle_ccn(catalogue["CCN"]).dropna()) if "CCN" in catalogue else set()
+        garde = stock_lignes["PN"].isin(pns) | ccn_stock.isin(ccns)
+        stock_lignes, ccn_stock = stock_lignes[garde], ccn_stock[garde]
+        if cmd_lignes is not None:
+            ccn_cmd = cle_ccn(cmd_lignes["CCN_cmd"]) if "CCN_cmd" in cmd_lignes else pd.Series(np.nan, index=cmd_lignes.index)
+            cmd_lignes = cmd_lignes[cmd_lignes["PN"].isin(pns | set(stock_lignes["PN"])) | ccn_cmd.isin(ccns | set(ccn_stock.dropna()))]
     pbi = stock_lignes.rename(columns=STOCK_RENOMMAGE)
     garder = ["PNR", "CCN", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", *WINDOW_COLUMNS, "TDD 6M", "TDD 12M",
               *[f"QTE CONSO {a}" for a in annees_conso(pbi)], "QTE COUVERTURE", "QTE SAR", "Stock réservé", "B/O",
@@ -189,10 +232,12 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
     catalogue = catalogue if catalogue is not None else pd.DataFrame(columns=["PN", "Equipement", "Description", "CCN"])
     ref = catalogue.rename(columns={"PN": "PNR", "Equipement": "REF_Equipement", "Description": "REF_Description"})
     pbi = pbi.merge(ref[["PNR", "REF_Equipement", "REF_Description"]], on="PNR", how="left")
+    pbi = _completer_par_ccn(pbi, catalogue)
 
     o = preparer_commandes(cmd_lignes) if cmd_lignes is not None and len(cmd_lignes) else \
         preparer_commandes(pd.DataFrame(columns=["PN", "Commande", "Code_acheteur", "CCN_cmd", "Code_fournisseur_cmd", "Fournisseur",
                                                  "Date_emission", "Date_demandee", "PSD", "Qty_restant"]))
+    o = rattacher_commandes(o, pbi)
     if len(o):
         g = o.groupby("PNR")
         agg = pd.DataFrame({
@@ -213,6 +258,8 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
     stock_pn = pbi.drop_duplicates("PNR").set_index("PNR")["QTE SUR ÉTAGÈRE"]
     o = o.assign(**{"QTE SUR ÉTAGÈRE": o["PNR"].map(stock_pn)})  # stock du PN, à côté de chaque ligne de commande
     o = o.merge(ref[["PNR", "REF_Equipement", "REF_Description"]], on="PNR", how="left")
+    o = _completer_par_ccn(o, catalogue)
+    o["CCN"] = o["CCN"].fillna(o["PNR"].map(pbi.drop_duplicates("PNR").set_index("PNR")["CCN"])) if "CCN" in pbi else o["CCN"]
     o = ajouter_metriques_commandes(o, today)
     if seulement_textile and len(catalogue):
         pbi = pbi[pbi["REF_Equipement"].notna()]

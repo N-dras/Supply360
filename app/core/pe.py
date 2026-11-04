@@ -329,8 +329,9 @@ def forecast(ev: pd.DataFrame, articles: pd.DataFrame, livraisons_cmd: pd.DataFr
 def catalogue_mousses(parts: pd.DataFrame) -> pd.DataFrame:
     """PN de mousse au format du catalogue textile : sert à filtrer État du stock et commandes sur ces PN."""
     m = parts[parts["equipment"].str.upper() == "MOUSSE"].drop_duplicates("pn")
+    ccn = m["ccn"].replace("", np.nan).to_numpy() if "ccn" in m else np.nan
     return pd.DataFrame({"PN": m["pn"].to_numpy(), "Equipement": "MOUSSE", "Description": m["description"].to_numpy(),
-                         "CCN": np.nan})
+                         "CCN": ccn})  # CCN : les PN écrits autrement dans l'État du stock sont aussi retrouvés
 
 
 def completer_fournisseurs(art: pd.DataFrame, stock_lignes: pd.DataFrame | None, pns) -> pd.DataFrame:
@@ -411,6 +412,9 @@ def planning_pe(lignes: pd.DataFrame, date_ref: date, parts: pd.DataFrame, artic
     ev, sans_pn = evenements(cal, mousses, today, p.horizon_mois)
     ss = stock_securite(cal, mousses, p)
     long, synth = forecast(ev, articles, livraisons_commandes(o, today), ss, today, p.horizon_mois)
+    if len(synth) and "ccn" in parts:  # CCN à côté du PN dans les tableaux
+        ccn = parts.assign(_c=parts["ccn"].replace("", np.nan)).dropna(subset=["_c"]).drop_duplicates("pn").set_index("pn")["_c"]
+        synth.insert(1, "CCN", synth["PN"].map(ccn))
     infos = ev.groupby("PN").agg(**{"Désignation": ("Désignation", "first"), "Composant": ("Composant", "first"),
                                     "Classes": ("Classe", lambda s: " / ".join(sorted(set(s)))),
                                     "Flottes": ("Flotte", lambda s: " / ".join(sorted(set(map(str, s))))),

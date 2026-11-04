@@ -25,10 +25,10 @@ from modules import _planning_pe as vue_pe
 TAB_ID = "pe_mousses"
 TAB_LABEL = "PE mousses"
 TAB_ICON = "🪑"
-TAB_DESCRIPTION = "Politique d'entretien des mousses : avions faisables cette année, CCN à commander, avancement et forecast."
+TAB_DESCRIPTION = "Politique d'entretien des mousses : avions faisables cette année, CCN à commander, avancement et prévision."
 
 K = f"{TAB_ID}__"
-SECTIONS = ["Synthèse", "Avions faisables", "CCN et commandes", "Avancement PE", "Forecast"]
+SECTIONS = ["Synthèse", "Avions faisables", "CCN et commandes", "Avancement PE", "Prévision"]
 
 # Dossier Textile : règles de nommage prioritaires (sans accents ni majuscules), puis reconnaissance par le contenu.
 # Dossier Textile partagé avec Textile cabine : « Résultat … PE » = État du stock de cet onglet (le plus récent) ;
@@ -165,7 +165,7 @@ def _bloc_import():
             t_gen, t_an, t_pe = st.tabs(["Général", "Année (Besoin Prod)", "Planning PE"])
             with t_gen:
                 today = st.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date",
-                                      persist_state="page", help="Statuts PE, retards et début du forecast.")
+                                      persist_state="page", help="Statuts PE, retards et début de la prévision.")
             with t_an:
                 mode = st.radio("Avions restant à traiter", list(RESTANT_LIBELLES), format_func=RESTANT_LIBELLES.get,
                                 key=K + "restant", persist_state="page",
@@ -188,7 +188,7 @@ def render() -> None:
             ("Avions restants", "NB_AC PE RESTANT" if mode == p26.RESTANT_FICHIER else "Calculés (PE mousses)", "")))
     with st.container(key="s360barre"):
         section = ui.sous_onglets(K + "section", SECTIONS)
-    if section in ("Avancement PE", "Forecast"):
+    if section in ("Avancement PE", "Prévision"):
         _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today)
         return
     if not (f_besoin and f_stock):
@@ -218,7 +218,7 @@ def _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today)
     if not f_pe:
         with ui.section(f"{TAB_ID}_pe_vide", "Planning PE des mousses"):
             ui.empty_state(f"Importez le fichier {pe.FICHIER_PE}", "Le fichier mensuel PE_MOUSSE (feuilles BOTTOM FOAM et "
-                           "BACKREST FOAM), tel que vous le recevez. textile_all_parts et l'État du stock ajoutent le forecast "
+                           "BACKREST FOAM), tel que vous le recevez. textile_all_parts et l'État du stock ajoutent la prévision "
                            "des mousses à commander.",
                            [(pe.FICHIER_PE, False), (pv.FICHIER_PIECES, bool(f_pieces)), (sio.FICHIER_STOCK, bool(f_stock))],
                            icon="📅")
@@ -232,7 +232,7 @@ def _section_planning(section, f_stock, f_cmd, f_pe, f_pieces, params_pe, today)
     if pe.date_extraction(f_pe[0]) is None:
         ui.callout("Date des âges introuvable dans le nom du fichier (ex. PE_MOUSSE_29092026) : la date de référence est utilisée.",
                    "warn", "⚠️")
-    if section == "Forecast" and not f_stock:
+    if section == "Prévision" and not f_stock:
         ui.callout("Ajoutez l'<b>État du stock</b> pour déduire le stock des mousses à commander.", "warn", "⚠️")
     vue_pe.render(res, today, bool(f_pieces), "avancement" if section == "Avancement PE" else "forecast")
 

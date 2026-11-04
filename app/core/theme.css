@@ -410,6 +410,15 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-plot .bz { position: absolute; left: 50%; width: min(60%, 3.5rem); transform: translateX(-50%); border-radius: 3px; }
 .s360-plot .pv { position: absolute; left: -50%; right: -50%; text-align: center; font-size: .75rem; font-weight: 700; color: var(--text);
   white-space: nowrap; }
+/* « ? » d'aide (components.aide) : précision affichée au survol, sans encombrer la page */
+.s360-aide { position: relative; display: inline-grid; place-items: center; width: 1.15rem; height: 1.15rem; margin-left: .45rem;
+  border-radius: 50%; background: #E8EEF7; color: var(--navy-2); font-size: .72rem; font-weight: 800; cursor: help;
+  vertical-align: middle; letter-spacing: 0; text-transform: none; }
+.s360-aide:hover, .s360-aide:focus { background: var(--navy-2); color: #fff; outline: none; }
+.s360-aide[data-tip]:hover::after, .s360-aide[data-tip]:focus::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px);
+  left: 50%; transform: translateX(-50%); width: max-content; max-width: 22rem; white-space: normal; z-index: 60; padding: .5rem .7rem;
+  border-radius: 8px; background: rgba(0, 33, 87, .96); color: #fff; font-size: .8125rem; font-weight: 600; line-height: 1.45;
+  text-align: left; box-shadow: 0 6px 18px rgba(0, 20, 60, .25); pointer-events: none; }
 /* Infobulle au survol (texte dans data-tip, une ligne par valeur) */
 [data-tip]:hover::after {
   content: attr(data-tip); position: absolute; z-index: 20; pointer-events: none;

@@ -89,14 +89,20 @@ def hero(icone: str, titre: str, sous_titre: str = "", surtitre: str = "", conte
                 f'<div>{sur}<h1>{escape(titre)}</h1>{sub}</div></div>{contexte_html}</div>', unsafe_allow_html=True)
 
 
-def _tete(title: str, subtitle: str, tag: str) -> str:
+def aide(texte: str) -> str:
+    """Petit « ? » : le texte s'affiche au survol de la souris (infobulle). Pour les précisions qu'on ne veut pas
+    afficher en permanence. Texte court : une à trois phrases."""
+    return f'<span class="s360-aide" tabindex="0" data-tip="{escape(texte)}">?</span>' if texte else ""
+
+
+def _tete(title: str, subtitle: str, tag: str, info: str = "") -> str:
     sub = f"<p>{escape(subtitle)}</p>" if subtitle else ""
     tg = f'<span class="tag">{escape(tag)}</span>' if tag else ""
-    return f'<div class="s360-section-head"><div><h3>{escape(title)}{tg}</h3>{sub}</div></div>'
+    return f'<div class="s360-section-head"><div><h3>{escape(title)}{tg}{aide(info)}</h3>{sub}</div></div>'
 
 
 @contextmanager
-def section(key: str, title: str, subtitle: str = "", tag: str = "", export=None, carte: bool = True):
+def section(key: str, title: str, subtitle: str = "", tag: str = "", export=None, carte: bool = True, info: str = ""):
     """Bloc : titre, sous-titre et compteur (`tag`) ; carte blanche, ou bloc sans fond (`carte=False`, ex. tuiles).
     `export` = (fonction, nom de fichier, clé) : bouton « Exporter (Excel) » à droite du titre. `key` unique (TAB_ID)."""
     box = st.container(key=f"{'s360sec' if carte else 's360bloc'}_{key}")
@@ -108,7 +114,7 @@ def section(key: str, title: str, subtitle: str = "", tag: str = "", export=None
                 with b:
                     telecharger(*export)
         elif title or subtitle:
-            st.html(_tete(title, subtitle, tag))
+            st.html(_tete(title, subtitle, tag, info))
         yield box
 
 
@@ -129,10 +135,10 @@ def en_developpement(icone: str, titre: str, points: list[str]) -> None:
 # --------------------------------------------------------------------------
 # Indicateurs
 # --------------------------------------------------------------------------
-def kpi_card(label: str, value, sub: str = "", tone: str = "navy", icone: str | None = None, note: str = "") -> str:
-    """HTML d'une tuile KPI (à passer à `kpi_grid`) : icône teintée, libellé, chiffre coloré, précision."""
+def kpi_card(label: str, value, sub: str = "", tone: str = "navy", icone: str | None = None, note: str = "", info: str = "") -> str:
+    """HTML d'une tuile KPI (à passer à `kpi_grid`) : icône teintée, libellé, chiffre coloré, précision ; `info` = « ? »."""
     sub_html = f'<div class="sub">{escape(str(sub))}</div>' if sub else ""
-    note_html = f'<span class="note">{escape(note)}</span>' if note else ""
+    note_html = (f'<span class="note">{escape(note)}</span>' if note else "") + aide(info)
     return (f'<div class="s360-kpi" style="{_vars(tone)}"><div class="t"><span class="pastille">{_icone(icone or ICONE_TON.get(tone, "layers"))}'
             f'</span><span>{escape(str(label))}</span>{note_html}</div><div class="val">{escape(str(value))}</div>{sub_html}</div>')
 

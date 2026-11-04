@@ -105,7 +105,7 @@ def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement"
         _calendrier(c, today)
         return
     if not avec_pieces or res["ev"].empty:
-        ui.callout("Ajoutez <b>textile_all_parts</b> (Pièces par avion) pour le forecast des mousses à commander.", "info", "📦")
+        ui.callout("Ajoutez <b>textile_all_parts</b> (Pièces par avion) pour la prévision des mousses à commander.", "info", "📦")
         return
     ev = res["ev"]
     ev = ev[ev["Flotte"].isin(flottes) & ev["Classe"].isin(classes) & ev["Composant"].isin(composants)]
@@ -116,11 +116,12 @@ def render(res: dict, today: date, avec_pieces: bool, partie: str = "avancement"
     _exports_controles(res, c, ev, synth, long, horizon)
 
 
-ELEMENT = "1 élément = la mousse d'une classe et d'une partie (assise ou dossier) d'un avion"
+CLASSE_INFO = ("Une classe = les mousses d'une classe (J, W ou Y) d'un avion, assise ou dossier. Exemple : l'A350 F-HTYA compte "
+               "4 classes suivies (assise J, dossier J, assise W, assise Y). Les dossiers W et Y ne sont jamais remplacés.")
 
 
 def _nom_element(classe, composant) -> pd.Series:
-    """« Assise J », « Dossier J »… (libellé lisible d'un élément)."""
+    """« Assise J », « Dossier J »… (libellé lisible d'une classe d'un avion)."""
     return composant.astype(str) + " " + classe.astype(str)
 
 
@@ -134,24 +135,18 @@ def _avancement(c: pd.DataFrame, date_ref, today):
     visites = c.loc[c["Prochaine visite"] <= auj + pd.DateOffset(months=3), "Immatriculation"].nunique()
     conformite = (1 - retard / n) * 100 if n else 100
     with ui.section("pe_mousses_pe_avancement", "Avancement de la PE mousses",
-                    f"Âges au {pd.Timestamp(date_ref):%d/%m/%Y} (fichier PE mousses) · statut au {auj:%d/%m/%Y}",
-                    tag=f"{nb_avions} avions suivis"):
-        exemple = c.groupby("Immatriculation").size()
-        st.html(f'<div class="s360-note"><b>Comment lire</b> : {ELEMENT}, soumise à la PE (dossiers W et Y : jamais remplacés). '
-                f'{nb_avions} avions du fichier PE mousses × leurs éléments = <b>{n} éléments suivis</b>'
-                + (f" (ex. {exemple.index[0]} : {int(exemple.iloc[0])} éléments)" if len(exemple) else "") + ". "
-                "Tous les avions du fichier, quelle que soit leur échéance (l'objectif de l'année, lui, vient du Besoin Prod)."
-                "</div>")
+                    f"{nb_avions} avions, {n} classes suivies · âges au {pd.Timestamp(date_ref):%d/%m/%Y} · statut au {auj:%d/%m/%Y}",
+                    info=CLASSE_INFO, carte=False):
         if retard:
-            ui.callout(f"<b>{retard} éléments en retard</b>, répartis sur <b>{avions_retard} avions</b> : à rattraper en priorité "
-                       f"(prévus dès ce mois-ci dans le forecast).", "ko", "🔴")
+            ui.callout(f"<b>{retard} classes en retard</b> sur <b>{avions_retard} avions</b> : à rattraper en priorité "
+                       "(prévues dès ce mois-ci dans la Prévision).", "ko", "🔴")
         ui.kpi_grid([
-            ui.kpi_card("Conformité PE", f"{conformite:.0f} %", f"{n - retard} éléments sur {n} ne sont pas en retard",
+            ui.kpi_card("Conformité PE", f"{conformite:.0f} %", f"{n - retard} classes sur {n} à l'heure",
                         "ok" if conformite >= 90 else "warn" if conformite >= 70 else "ko"),
-            ui.kpi_card("Éléments en retard", charts.entier(retard), "échéance + délai toléré dépassés", "ko"),
+            ui.kpi_card("Classes en retard", charts.entier(retard), "échéance et délai toléré dépassés", "ko"),
             ui.kpi_card("Avions avec un retard", charts.entier(avions_retard), f"sur {nb_avions} avions suivis", "ko"),
-            ui.kpi_card("Éléments en délai toléré", charts.entier(tolere), "échéance dépassée, encore dans la tolérance", "warn"),
-            ui.kpi_card("Éléments à faire < 3 mois", charts.entier(trois), "échéance dans les 3 prochains mois", "warn"),
+            ui.kpi_card("Classes en délai toléré", charts.entier(tolere), "échéance dépassée, encore tolérée", "warn"),
+            ui.kpi_card("Classes à faire < 3 mois", charts.entier(trois), "échéance dans les 3 prochains mois", "warn"),
             ui.kpi_card("Avions en visite < 3 mois", charts.entier(visites), "visite datée dans le fichier", "info"),
         ])
         a, b = st.columns(2, gap="large")
@@ -160,7 +155,7 @@ def _avancement(c: pd.DataFrame, date_ref, today):
             t = t.groupby(["L", "Statut"], observed=False).size().unstack(fill_value=0)
             t = t.reindex(columns=[s for s in pe.STATUTS if s in t.columns])
             t = t[t.sum(axis=1) > 0]
-            ui.graphe(charts.parts(t, pe.STATUT_COULEURS, "Statut par flotte et élément (nombre d'avions)"))
+            ui.graphe(charts.parts(t, pe.STATUT_COULEURS, "Statut par flotte et classe"), "Nombre d'avions dans chaque statut")
         with b:
             debut = auj.to_period("M").start_time
             mois = pd.date_range(debut, periods=12, freq="MS")
@@ -178,16 +173,16 @@ def _avancement(c: pd.DataFrame, date_ref, today):
                 series[f"{comp} {classe}"] = [int(retard_b.loc[x.index].sum())] + [int(cnt.get(m, 0)) for m in mois]
             couleurs = {f"{e.split(' · ')[1]} {e.split(' · ')[0]}": c_ for e, c_ in COULEURS_ELEMENTS.items()}
             ui.graphe(charts.barres(cats, series, couleurs, empile=True, hauteur=260,
-                                    titre="Éléments à remplacer : à rattraper (échéance dépassée), puis les 12 prochains mois")
+                                    titre="Classes à remplacer, mois par mois")
                       if series else charts.vide("Aucun remplacement prévu"))
 
 
 def _calendrier(c: pd.DataFrame, today):
     auj = pd.Timestamp(today)
     with ui.section("pe_mousses_pe_calendrier", "Calendrier des remplacements",
-                    "Une ligne par avion, une colonne par mois : nombre d'éléments à remplacer (ex. 2 = assise J + assise Y). "
-                    "Survolez une case pour voir lesquels. « À rattraper » = échéance déjà dépassée (en retard ou en délai "
-                    "toléré) ; sinon mois de la prochaine visite datée, à défaut de l'échéance PE"):
+                    "Une ligne par avion, une colonne par mois : nombre de classes à remplacer (survolez une case pour voir lesquelles)",
+                    info="« À rattraper » : échéance déjà dépassée. Sinon, le mois de la prochaine visite datée de l'avion, "
+                         "à défaut celui de l'échéance PE."):
         debut = auj.to_period("M").start_time
         mois = pd.date_range(debut, periods=24, freq="MS")
         d = c.copy()
@@ -203,17 +198,17 @@ def _calendrier(c: pd.DataFrame, today):
         else:
             ordre = x.groupby("Ligne")["Date prévue"].min().sort_values().index
             quoi = x.groupby(["Ligne", "Col"])["Élément"].agg(lambda s: ", ".join(sorted(s))).unstack()
-            ui.graphe(charts.chaleur(t.reindex(ordre), libelle="élément(s)", hauteur_max="34rem", details=quoi))
+            ui.graphe(charts.chaleur(t.reindex(ordre), libelle="classe(s)", hauteur_max="34rem", details=quoi))
         _detail_avions(c)
 
 
 @st.fragment
 def _detail_avions(c: pd.DataFrame):
-    with st.popover(f"Détail par avion et par élément ({len(c)})", width="content"):
+    with st.popover(f"Détail par avion et par classe ({len(c)})", width="content"):
         d = c
         t = pd.DataFrame({
             "Statut": d["Statut"].astype(str).map(ICONES_STATUT), "Immatriculation": d["Immatriculation"], "Flotte": d["Flotte"],
-            "Version": d["Version cabine"], "Classe": d["Classe"], "Élément": d["Composant"],
+            "Version": d["Version cabine"], "Classe": d["Classe"], "Assise / dossier": d["Composant"],
             "Âge (mois)": d["Âge aujourd'hui (mois)"].round(0), "Âge minimum ?": d["Âge"].map(lambda v: "oui" if v else ""),
             "Dernier remplacement": d["Dernier remplacement"], "Échéance": d["Échéance"], "Prochaine visite": d["Prochaine visite"],
             "Date prévue": d["Date prévue"], "Origine": d["Origine date prévue"], "Visite liée": d["Visite liée"],
@@ -228,56 +223,59 @@ def _horizon() -> int:
 
 
 def _forecast(ev, synth, long, today) -> int:
+    """Prévision des mousses à commander : chiffres clés, quand (par mois), puis le détail par PN."""
     debut = pd.Timestamp(today).to_period("M").start_time
-    with ui.section("pe_mousses_pe_forecast", "Forecast des mousses à commander",
-                    "À commander = besoin + stock de sécurité − stock − commandes en cours (déjà passées, toujours déduites), par PN"):
+    with ui.section("pe_mousses_pe_forecast", "Prévision des mousses à commander", carte=False,
+                    info="À commander = mousses à remplacer + stock de sécurité − stock − commandes déjà passées. "
+                         "Les commandes en cours sont toujours déduites."):
         a, _ = st.columns([1, 2])
         with a:
             h = _horizon()
         fin = debut + pd.DateOffset(months=h)
+        periode = f"{_mois_label(debut)} → {_mois_label(fin - pd.DateOffset(months=1))}"
         e = ev[ev["Mois"] < fin]
         lg = long[long["Mois"] < fin]
         besoin, rattrapage = e["Qté"].sum(), e.loc[e["Rattrapage du retard"], "Qté"].sum()
         a_cmd, valeur = lg["À livrer"].sum(), lg["Valeur à livrer (€)"].sum()
         fours = lg.loc[lg["À livrer"] > 0, "Fournisseur"].nunique()
+        ui.kpi_grid([
+            ui.kpi_card("Mousses à remplacer", charts.entier(besoin), f"{periode}, dont {charts.entier(rattrapage)} en retard", "navy", "layers"),
+            ui.kpi_card("À commander", charts.entier(a_cmd), "en plus du stock et des commandes en cours", "ko", "cart"),
+            ui.kpi_card("Valeur à commander", charts.euros(valeur), periode, "ko", "euro"),
+            ui.kpi_card("Déjà disponibles", charts.entier(synth["Stock"].sum() + synth["En commande"].sum()),
+                        f"{charts.entier(synth['Stock'].sum())} en stock + {charts.entier(synth['En commande'].sum())} en commande", "ok", "package"),
+            ui.kpi_card("Fournisseurs", charts.entier(fours), "à qui commander", "violet", "truck"),
+        ])
         avancer = synth[synth["À avancer (commandes en cours)"] > 0]
         if len(avancer):
-            ui.callout(f"<b>{charts.entier(avancer['À avancer (commandes en cours)'].sum())} pièces en commande à faire avancer</b> "
-                       f"sur {len(avancer)} PN : elles sont promises après le mois où elles sont nécessaires. "
-                       "Relancez les fournisseurs (colonnes « À avancer » et « Avant » du tableau par PN) plutôt que de recommander.",
+            ui.callout(f"<b>{charts.entier(avancer['À avancer (commandes en cours)'].sum())} mousses déjà commandées arriveront trop tard</b> "
+                       f"({len(avancer)} PN) : relancez le fournisseur plutôt que de recommander (colonne « À avancer » du tableau par PN).",
                        "warn", "📌")
-        ui.kpi_grid([
-            ui.kpi_card(f"Mousses à remplacer ({h} mois)", charts.entier(besoin), f"dont {charts.entier(rattrapage)} de retard à rattraper", "navy"),
-            ui.kpi_card("À commander", charts.entier(a_cmd), "besoin + sécurité − stock − en commande", "ko"),
-            ui.kpi_card("Valeur à commander", charts.euros(valeur), f"horizon {h} mois", "ko"),
-            ui.kpi_card("Stock disponible", charts.entier(synth["Stock"].sum()), f"+ {charts.entier(synth['En commande'].sum())} déjà en commande (déduits)", "info"),
-            ui.kpi_card("Fournisseurs", charts.entier(fours), "à solliciter", "violet"),
-        ])
-        mois = pd.date_range(debut, periods=h, freq="MS")
-        x = e.assign(E=_element(e["Classe"], e["Composant"])).groupby(["Mois", "E"])["Qté"].sum().unstack(fill_value=0)
-        x = x.reindex(index=mois, fill_value=0)
-        series = {k: x[k] for k in ELEMENTS if k in x.columns}
-        ui.graphe(charts.barres(mois, series, COULEURS_ELEMENTS, empile=True, temporel=True, hauteur=260,
-                                titre="Mousses à remplacer par mois (le 1er mois inclut le retard à rattraper)")
-                  if series else charts.vide())
-        a, b = st.columns([1.2, 1], gap="large")
-        with a:
+    mois = pd.date_range(debut, periods=h, freq="MS")
+    with ui.section("pe_mousses_pe_quand", "Mois par mois", f"{periode} · le 1er mois inclut les remplacements en retard", carte=False):
+        g1, g2 = st.columns(2, gap="medium")
+        with g1:
+            x = e.assign(E=_element(e["Classe"], e["Composant"])).groupby(["Mois", "E"])["Qté"].sum().unstack(fill_value=0)
+            x = x.reindex(index=mois, fill_value=0)
+            series = {f"{k.split(' · ')[1]} {k.split(' · ')[0]}": x[k] for k in ELEMENTS if k in x.columns}
+            couleurs = {f"{k.split(' · ')[1]} {k.split(' · ')[0]}": c_ for k, c_ in COULEURS_ELEMENTS.items()}
+            ui.graphe(charts.barres(mois, series, couleurs, empile=True, temporel=True, hauteur=240, titre="Mousses à remplacer")
+                      if series else charts.vide(), "Nombre de mousses à poser sur les avions, par classe")
+        with g2:
             liv = lg.groupby("Mois")["À livrer"].sum().reindex(mois, fill_value=0)
-            ui.graphe(charts.barres(mois, {"À livrer": liv}, {"À livrer": COLORS["ko"]}, temporel=True, hauteur=230,
-                                    titre="Livraisons à prévoir par mois (tous fournisseurs)"))
-        with b:
-            v = lg.groupby("Fournisseur")["Valeur à livrer (€)"].sum().sort_values(ascending=False)
-            v = v[v > 0]
-            ui.graphe(charts.barres_h([(f, val, charts.euros(val)) for f, val in v.items()], couleur=COLORS["navy_2"],
-                                      titre="Valeur à commander par fournisseur") if len(v) else charts.vide("Rien à commander"))
+            ui.graphe(charts.barres(mois, {"À recevoir": liv}, {"À recevoir": COLORS["ko"]}, temporel=True, hauteur=240,
+                                    titre="Mousses à recevoir des fournisseurs"),
+                      "Quantités à commander, au mois où elles doivent arriver (tous fournisseurs)")
+    with ui.section("pe_mousses_pe_pn", "Par PN", f"{periode} · la plus grosse valeur à commander en premier",
+                    info="Stock de sécurité : de quoi équiper 10 % des avions de chaque flotte (réglable dans Paramètres). "
+                         "« À avancer » : mousses déjà commandées mais promises après le mois où elles sont nécessaires."):
         t = synth.assign(**{"Besoin": synth[f"Besoin {h} mois"], "À commander": synth[f"À commander {h} mois"],
                             "Valeur (€)": synth[f"Valeur {h} mois (€)"]})
         t = t.sort_values("Valeur (€)", ascending=False)
-        cols = {"PN": "PN", "CCN": "CCN", "Désignation": "Désignation", "Classes": "Classe", "Composant": "Élément", "Flottes": "Flottes",
+        cols = {"PN": "PN", "CCN": "CCN", "Désignation": "Désignation", "Classes": "Classe", "Composant": "Assise / dossier", "Flottes": "Flottes",
                 "Fournisseur": "Fournisseur", "Prix unitaire (€)": "Prix (€)", "Stock": "Stock", "En commande": "En commande",
-                "Stock de sécurité": "Stock de sécurité", "Besoin": "Besoin", "À commander": "À commander", "Valeur (€)": "Valeur (€)",
+                "Stock de sécurité": "Stock de sécurité", "Besoin": "À remplacer", "À commander": "À commander", "Valeur (€)": "Valeur (€)",
                 "À avancer (commandes en cours)": "À avancer", "À avancer avant": "Avant", "Rupture sans commande": "Rupture sans commande"}
-        st.markdown(f"**Par PN** · horizon {h} mois")
         ui.tableau(t[[c for c in cols if c in t]].rename(columns=cols), column_config=CFG, height=min(38 + 35 * len(t), 420))
     return h
 
@@ -290,8 +288,8 @@ def _forecast_fournisseur(ev, synth, long, today, h):
     v = lg.groupby("Fournisseur")["Valeur à livrer (€)"].sum().sort_values(ascending=False)
     if v.empty:
         return
-    with ui.section("pe_mousses_pe_fournisseur", "Forecast par fournisseur",
-                    f"Ce que vous allez commander, par année et par mois, sur {h} mois : à partager avec chaque fournisseur"):
+    with ui.section("pe_mousses_pe_fournisseur", "Par fournisseur",
+                    f"Ce qu'il faut commander à chacun sur {h} mois, par année et par mois : à partager avec le fournisseur"):
         # Vue d'ensemble : tous les fournisseurs, par année
         qte_an = pe.par_annee(lg, mois, "Fournisseur").reindex(v.index)
         val_an = pe.par_annee(lg, mois, "Fournisseur", "Valeur à livrer (€)").reindex(v.index)
@@ -323,7 +321,7 @@ def _forecast_fournisseur(ev, synth, long, today, h):
         a_livrer = d[d["À livrer"] > 0]
         premier = a_livrer["Mois"].min()
         ui.kpi_grid([
-            ui.kpi_card("Commande globale", charts.entier(d["À livrer"].sum()), f"mousses sur {h} mois", "ko"),
+            ui.kpi_card("À commander", charts.entier(d["À livrer"].sum()), f"mousses sur {h} mois", "ko"),
             ui.kpi_card("Valeur", charts.euros(d["Valeur à livrer (€)"].sum()), "", "ko"),
             ui.kpi_card("PN", charts.entier(a_livrer["PN"].nunique()), "à livrer", "navy"),
             ui.kpi_card("Première livraison", f"{premier:%m/%Y}" if pd.notna(premier) else "—",
@@ -355,8 +353,8 @@ def _forecast_fournisseur(ev, synth, long, today, h):
         ui.tableau(tab, column_config=CFG, height="content" if len(tab) <= 8 else 320)
         par_mois = piv.copy()
         par_mois.columns = [m_.strftime("%m/%Y") for m_ in par_mois.columns]
-        ui.telecharger(lambda: _export_fournisseur(f, an, par_mois, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"forecast_{f}"),
-                       K + "export_fournisseur", label="Exporter le forecast fournisseur (Excel)")
+        ui.telecharger(lambda: _export_fournisseur(f, an, par_mois, ev[ev["PN"].isin(piv.index)], synth), _nom_fichier(f"prevision_{f}"),
+                       K + "export_fournisseur", label="Exporter la prévision du fournisseur (Excel)")
 
 
 def _nom_fichier(base: str) -> str:
@@ -406,7 +404,7 @@ def _exports_controles(res, c, ev, synth, long, h):
             liv = long[(long["À livrer"] > 0) & (long["Mois"] < debut + pd.DateOffset(months=h))]
             feuilles = {
                 "Avancement PE": c.drop(columns=["Âge exact"]).assign(Statut=c["Statut"].astype(str)),
-                f"Forecast PN {h} mois": synth,
+                f"Prévision PN {h} mois": synth,
                 "Livraisons à prévoir": liv[["Fournisseur", "PN", "Désignation", "Mois", "À livrer", "Valeur à livrer (€)"]],
                 "Besoins par avion": ev,
             }
@@ -418,10 +416,10 @@ def _exports_controles(res, c, ev, synth, long, h):
             nr, sans, absents = res["non_reconnues"], res["sans_pn"], res["pn_absents_stock"]
             age_min = int((~res["cal"]["Âge exact"]).sum())
             st.caption("Points à vérifier dans les fichiers importés.")
-            st.markdown(f"- **{age_min}** éléments dont l'âge n'est connu qu'en minimum (« > 60 », « > 108 » dans le fichier PE) : "
+            st.markdown(f"- **{age_min}** classes dont l'âge n'est connu qu'en minimum (« > 60 », « > 108 » dans le fichier PE) : "
                         "leur échéance est calculée au plus tôt.")
-            st.markdown(f"- **{len(sans)}** éléments sans référence de mousse dans textile_all_parts (immat, classe ou élément "
-                        "introuvable) : ils ne sont pas dans le forecast.")
+            st.markdown(f"- **{len(sans)}** classes sans référence de mousse dans textile_all_parts (immatriculation, classe ou "
+                        "introuvable) : elles ne sont pas dans la prévision.")
             if len(sans):
                 ui.tableau(sans.assign(Statut=sans["Statut"].astype(str)), height=200)
             st.markdown(f"- **{len(nr)}** lignes MOUSSE de textile_all_parts non reconnues (ni assise « FOAM BOTTOM / BOTT », "

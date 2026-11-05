@@ -260,7 +260,6 @@ def render() -> None:
         ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "x")
         return
 
-    m_scope = _perimetre(m_scope)
     s = tf.synthese_geav(m_scope)
     nom = sio.nom_export(TAB_ID)
 
@@ -314,35 +313,6 @@ def _detail(m, m_scope, export, gestions):
                        column_config=COLUMN_CONFIG, height=420, width=1100)
         with b3.popover("Règles de calcul", width="stretch"):
             _aide()
-
-
-TL_LIBELLES = {"0": "TL0 · consommable", "1": "TL1 · réparable"}
-
-
-def filtrer_perimetre(m_scope: pd.DataFrame, statuts: list, gestions: list, tls: list) -> pd.DataFrame:
-    """Références retenues par la barre « Périmètre » (listes vides = tout)."""
-    garde = pd.Series(True, index=m_scope.index)
-    if statuts:
-        garde &= m_scope["ACTION_CODE"].isin(statuts)
-    if gestions:
-        garde &= m_scope["GESTION"].map(lambda g: str(int(g)) if pd.notna(g) else "").isin(gestions)
-    if tls:
-        garde &= m_scope["TL"].astype(str).isin(tls)
-    return m_scope[garde]
-
-
-def _perimetre(m_scope: pd.DataFrame) -> pd.DataFrame:
-    """Barre « Périmètre » (même allure que Textile et PE mousses) : statut, code Gestion, tracking level."""
-    statuts = [c for c in tf.ACTION_ORDRE if c in set(m_scope["ACTION_CODE"])]
-    gestions = sorted({str(int(g)) for g in m_scope["GESTION"].dropna()}, key=int)
-    tls = sorted({str(v) for v in m_scope["TL"].dropna()} & set(TL_LIBELLES)) if "TL" in m_scope else []
-    with ui.barre_perimetre(TAB_ID):
-        a, b, c = st.columns([2.2, 1.4, 1.1], gap="medium")
-        sel_s = ui.choix_multiple(a, "Statut", statuts, K + "p_statut", "Tous", tf.ACTION_LABELS)
-        sel_g = ui.choix_multiple(b, "Code Gestion", gestions, K + "p_gestion", "Tous")
-        sel_t = ui.choix_multiple(c, "Tracking level", tls, K + "p_tl", "Tous", TL_LIBELLES) if tls else []
-    return filtrer_perimetre(m_scope, sel_s if len(sel_s) < len(statuts) else [], sel_g if len(sel_g) < len(gestions) else [],
-                             sel_t if tls and len(sel_t) < len(tls) else [])
 
 
 def _aide() -> None:

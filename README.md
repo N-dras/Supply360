@@ -90,8 +90,7 @@ périmètre (par défaut 245, 246, 247, 400, 401, 230).
 | État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `QTE SAR` (→ SAR), `Purchase Req.` (→ PR), `GESTION`, `CODE AGT APPRO` (→ Code agent), `CODE FOURNISSEUR`, `DERNIER FOURNISSEUR`, `CCN`, `CLASS CODE`, `TRACKING LEVEL` |
 | Commandes (SAP) — feuille « Toutes les commandes » de préférence | `PN` | `Commande`, `Gestion`, `Code fournisseur`, `Fournisseur`, `Date de livraison promise`, `Date de livraison demandée`, `Class code`, `CCN` |
 
-**Résultat** : barre **Statut · Code Gestion · Tracking level** (même allure que les autres onglets : « Tous » par
-défaut, un clic choisit une valeur, plusieurs choix possibles), synthèse, actions à lancer (classe 8/9 en tête, avec
+**Résultat** : synthèse, actions à lancer (classe 8/9 en tête, avec
 un drapeau), tableau filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx` (un seul bouton
 **Exporter (Excel)**, en haut de la synthèse).
 

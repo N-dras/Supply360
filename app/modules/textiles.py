@@ -58,9 +58,10 @@ COL_PN = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipeme
           "Statut prévision": "Statut", "Fournisseur": "Fournisseur",
           "Conso 12 mois": "Conso 12 mois", "Évolution conso (%)": "Évolution conso", "Conso prévue 12 mois (qté)": "Conso prévue 12 mois",
           "QTE SUR ÉTAGÈRE": "Stock", "QTE EN CDE": "En commande", "Stock à tenir (qté)": "Stock à tenir",
+          "Délai (mois)": "Délai (mois)", "Source délai": "Source délai",
           "Qté à commander maintenant": "Maintenant", "À commander 12 mois (qté)": "12 mois", "À commander 24 mois (qté)": "24 mois",
           "À commander 36 mois (qté)": "36 mois", "Valeur 12 mois (€)": "Valeur 12 mois (€)", "Valeur 36 mois (€)": "Valeur 36 mois (€)"}
-GROUPES_PN = [("Pièce", 7), ("Consommation", 3), ("Stock", 3), ("À commander (pièces)", 4), ("Valeur", 2)]
+GROUPES_PN = [("Pièce", 7), ("Consommation", 3), ("Stock", 3), ("Délai", 2), ("À commander (pièces)", 4), ("Valeur", 2)]
 COL_FOUR = {"Valeur maintenant (€)": "Maintenant (€)", "Qté 12 mois": "12 mois · qté", "Valeur 12 mois (€)": "12 mois · €",
             "Qté 24 mois": "24 mois · qté", "Valeur 24 mois (€)": "24 mois · €", "Qté 36 mois": "36 mois · qté",
             "Valeur 36 mois (€)": "36 mois · €"}
@@ -204,8 +205,10 @@ def _parametres() -> pv.Params:
                               help="95 % : la marge couvre 95 mois sur 100 sans rupture. Plus haut = plus de stock.")
     lt_def = a.number_input("Délai par défaut (jours)", 1, 730, d.lt_default, key=K + "ltdef", persist_state="page",
                             help="Quand ni le fournisseur ni le PN n'ont de délai.")
-    lt_basis = b.selectbox("Délai du fournisseur basé sur", ["observe", "promis"], key=K + "ltbasis", persist_state="page",
-                           format_func={"observe": "LT observé (historique 2 ans)", "promis": "Délais promis actuels"}.get)
+    lt_basis = b.selectbox("Délais basés sur", ["observe", "promis"], key=K + "ltbasis", persist_state="page",
+                           format_func={"observe": "LT observé (historique 2 ans)", "promis": "Délais promis des commandes"}.get,
+                           help="Délai du PN d'abord ; s'il n'en a pas, moyenne des PN de son fournisseur (code fournisseur "
+                                "du Résultat) ; sinon le délai par défaut.")
     bfe = a.number_input("Délai supposé si attente de BFE (mois)", 1, 36, d.bfe_delay_months, key=K + "bfe", persist_state="page",
                          help="Commandes datées 2049 (en attente de matière première) : délai de livraison supposé.")
     comp = b.selectbox("Assise ou dossier, si la description ne le dit pas", ["Assise", "Dossier"], key=K + "comp", persist_state="page")
@@ -729,8 +732,10 @@ pour les **12, 24 et 36 prochains mois** ({periode}), commandes de ce mois compr
    - **stock de sécurité** : une marge qui grandit avec le délai du fournisseur et avec l'irrégularité de la
      consommation d'une année sur l'autre, pour éviter la rupture {service} des mois.
 4. **Ce qui manque** = stock à tenir + consommation prévue − (stock en rayon + commandes déjà passées).
-5. **Quand commander ?** Assez tôt pour que la pièce arrive avant le manque, délai du fournisseur compris. Si c'est déjà
-   trop tard, la commande est à passer tout de suite et la quantité qui manquera en attendant est indiquée.
+5. **Quand commander ?** Assez tôt pour que la pièce arrive avant le manque. **Délai** : celui du PN (LT observé sur
+   2 ans, ou délais promis de ses commandes selon Paramètres) ; s'il n'en a pas, la moyenne des PN de son fournisseur
+   (au moins 3) ; sinon le délai par défaut (60 jours). Arrondi au mois supérieur : 45 jours → 2 mois.
+   Si c'est déjà trop tard, la commande est à passer tout de suite et la quantité qui manquera en attendant est indiquée.
 6. **Statuts** : **A commander** = à passer maintenant ; **A planifier** = plus tard sur la période ; **OK** = rien à faire.
 7. **Jamais de commande** pour les pièces dormantes (aucune sortie depuis 3 ans), inactives, obsolètes ou supprimées
    (classe code 3, 8 ou 9).

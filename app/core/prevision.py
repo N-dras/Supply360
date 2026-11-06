@@ -169,18 +169,37 @@ def regles_pe_defaut(parts) -> pd.DataFrame:
 # --------------------------------------------------------------------------
 # Délai fournisseur (repris de build_pbi_tables)
 # --------------------------------------------------------------------------
+def _delais_promis_pn(orders: pd.DataFrame) -> pd.Series:
+    """Délai promis moyen de chaque PN (émission → livraison promise, 1 à 730 jours ; dates fictives et BFE exclues)."""
+    if orders is None or len(orders) == 0 or "Date livraison promise" not in orders:
+        return pd.Series(dtype=float)
+    lt = (orders["Date livraison promise"] - orders["Date emission commande"]).dt.days
+    d = orders.assign(_lt=lt)[(lt >= 1) & (lt <= 730)]
+    return d.groupby("PNR")["_lt"].mean().round(0)
+
+
 def ajouter_delais(pbi: pd.DataFrame, orders: pd.DataFrame, p: Params) -> pd.DataFrame:
-    """« Délai fournisseur (j) » par fournisseur principal : délais promis ou LT observé (selon `lt_basis`)."""
-    pbi = pbi.drop(columns=[c for c in ["Délai fournisseur (j)", "Nb délais fournisseur"] if c in pbi.columns])
-    sup_lt = tx.delais_fournisseurs(orders).rename(columns={"Délai moyen promis (j)": "Délai fournisseur (j)",
-                                                             "Lignes avec délai": "Nb délais fournisseur"})
-    if p.lt_basis == "observe" and "LT observé moyen sur 2 ans" in pbi.columns:
-        obs = pbi[pbi["Fournisseur principal"].notna() & (pd.to_numeric(pbi["LT observé moyen sur 2 ans"], errors="coerce") > 0)]
-        sup_lt = obs.groupby("Fournisseur principal")["LT observé moyen sur 2 ans"].agg(["mean", "count"]).reset_index()
-        sup_lt.columns = ["Fournisseur", "Délai fournisseur (j)", "Nb délais fournisseur"]
-        sup_lt = sup_lt[sup_lt["Nb délais fournisseur"] >= 3]
-    return pbi.merge(sup_lt[["Fournisseur", "Délai fournisseur (j)", "Nb délais fournisseur"]]
-                     .rename(columns={"Fournisseur": "Fournisseur principal"}), on="Fournisseur principal", how="left")
+    """Délais du PN et de son fournisseur (CODE FOURNISSEUR du Résultat, `fournisseur_prevision`), selon `lt_basis` :
+    - « observe » : « Délai PN (j) » = LT observé moyen sur 2 ans du PN ; « Délai fournisseur (j) » = moyenne de ce LT
+      sur les PN du fournisseur (au moins 3) ;
+    - « promis » : délais promis des lignes de commande (émission → livraison promise), par PN, et par fournisseur
+      (au moins 3 lignes).
+    `lead_time_months` prend le délai du PN d'abord, la moyenne du fournisseur ensuite, le défaut en dernier."""
+    pbi = pbi.drop(columns=[c for c in ["Délai PN (j)", "Délai fournisseur (j)", "Nb délais fournisseur"] if c in pbi.columns])
+    four = fournisseur_prevision(pbi).replace(FOURNISSEUR_ABSENT, np.nan)
+    if p.lt_basis == "promis":
+        pbi["Délai PN (j)"] = pbi["PNR"].map(_delais_promis_pn(orders)).to_numpy()
+        sup = tx.delais_fournisseurs(orders).set_index("Fournisseur")
+        pbi["Délai fournisseur (j)"] = four.map(sup["Délai moyen promis (j)"]).to_numpy() if len(sup) else np.nan
+        pbi["Nb délais fournisseur"] = four.map(sup["Lignes avec délai"]).to_numpy() if len(sup) else np.nan
+        return pbi
+    obs = pd.to_numeric(pbi.get("LT observé moyen sur 2 ans", pd.Series(np.nan, index=pbi.index)), errors="coerce")
+    pbi["Délai PN (j)"] = obs.where(obs > 0)
+    g = pd.DataFrame({"f": four, "lt": obs.where(obs > 0)}).dropna().groupby("f")["lt"].agg(["mean", "count"])
+    g = g[g["count"] >= 3]
+    pbi["Délai fournisseur (j)"] = four.map(g["mean"].round(0)).to_numpy()
+    pbi["Nb délais fournisseur"] = four.map(g["count"]).to_numpy()
+    return pbi
 
 
 # --------------------------------------------------------------------------
@@ -313,10 +332,13 @@ def month_index(dates, today):
 # Délais et livraisons
 # --------------------------------------------------------------------------
 def lead_time_months(pbi, p):
-    sup = pd.to_numeric(pbi.get("Délai fournisseur (j)"), errors="coerce")
-    obs = pd.to_numeric(pbi.get("LT observé moyen sur 2 ans"), errors="coerce")
-    days = np.where(sup > 0, sup, np.where(obs > 0, obs, p.lt_default))
-    src = np.where(sup > 0, "Fournisseur", np.where(obs > 0, "PN (observé)", "Défaut"))
+    """Délai de chaque PN en mois (arrondi au-dessus, 1 à 24) : celui du PN, à défaut la moyenne de son fournisseur,
+    à défaut le délai par défaut. Renvoie (mois, jours, source)."""
+    vide = pd.Series(np.nan, index=pbi.index)
+    pn = pd.to_numeric(pbi.get("Délai PN (j)", vide), errors="coerce").to_numpy(float)
+    sup = pd.to_numeric(pbi.get("Délai fournisseur (j)", vide), errors="coerce").to_numpy(float)
+    days = np.where(pn > 0, pn, np.where(sup > 0, sup, p.lt_default))
+    src = np.where(pn > 0, "PN", np.where(sup > 0, "Fournisseur (moyenne)", "Défaut"))
     return np.clip(np.ceil(days / 30), 1, MAX_LT).astype(int), days, src
 
 
@@ -390,7 +412,7 @@ def project_orders(pbi, orders, p, today):
     t0 = pd.Period(today, "M")
     to_month = lambda k: pd.NaT if k < 0 else (t0 + int(k)).start_time  # noqa: E731
     out = pbi.copy()
-    out["Délai (mois)"], out["Source délai"] = lt_m, lt_src
+    out["Délai (mois)"], out["Délai retenu (j)"], out["Source délai"] = lt_m, np.round(lt_days, 0), lt_src
     out["Stock de sécurité (qté)"] = ss
     out["Stock à tenir (qté)"] = req
     out["Stock à tenir basé sur"] = np.where(req <= 0, "—", np.where(ss > stock_min, "Conso (sécurité)", "Flotte (minimum)"))

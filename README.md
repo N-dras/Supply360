@@ -163,8 +163,11 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
   au moins 1, additionné sur les groupes qui utilisent le PN ; nécessite « Pièces par avion ») et **stock de sécurité**
   statistique (irrégularité de la consommation d'une année civile sur l'autre × racine du délai fournisseur × coefficient
   du taux de service visé, 95 % par défaut) ;
-- **commande** pour que le stock reste au-dessus du stock à tenir malgré la consommation prévue, délai fournisseur
-  compris ; si le délai est trop long, la commande part maintenant ;
+- **commande** pour que le stock reste au-dessus du stock à tenir malgré la consommation prévue, délai compris ;
+  si le délai est trop long, la commande part maintenant ;
+- **délai** d'un PN : le sien (`LT observé moyen sur 2 ans`, ou délais promis de ses commandes selon Paramètres),
+  à défaut la moyenne des PN de son fournisseur (CODE FOURNISSEUR du Résultat, 3 PN au moins), à défaut 60 jours ;
+  arrondi au mois supérieur (colonnes « Délai (mois) » et « Source délai ») ;
 - les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés ;
 - chiffres donnés pour les **12, 24 et 36 prochains mois** (cumuls, commandes de ce mois comprises, période écrite en
   clair) : tuiles en tête, tableau **Prévision par PN** (conso 12 derniers mois, évolution, conso prévue sur les 12

@@ -383,3 +383,14 @@ def test_flottes_pn():
     f = pv.flottes_pn(gp, ["A320"])
     assert f.loc["P1", "Flottes"] == "A220 · A320" and f.loc["P1", "Part des flottes choisies (%)"] == 75
     assert f.loc["P2", "Part des flottes choisies (%)"] == 0
+
+
+def test_delai_pn_avant_fournisseur():
+    """Délai : celui du PN d'abord, la moyenne de son fournisseur (CODE FOURNISSEUR du Résultat, 3 PN au moins) ensuite,
+    le défaut en dernier ; arrondi au mois supérieur."""
+    d = pd.DataFrame({"PNR": ["A", "B", "C", "D", "E"], "CODE FOURNISSEUR": ["F1", "F1", "F1", "F1", "F2"],
+                      "LT observé moyen sur 2 ans": [120, 30, 45, np.nan, np.nan]})
+    x = pv.ajouter_delais(d, None, pv.Params())
+    mois, jours, src = pv.lead_time_months(x, pv.Params())
+    assert list(jours) == [120, 30, 45, 65, 60] and list(mois) == [4, 1, 2, 3, 2]
+    assert list(src) == ["PN", "PN", "PN", "Fournisseur (moyenne)", "Défaut"]

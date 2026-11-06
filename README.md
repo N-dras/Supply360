@@ -90,6 +90,9 @@ périmètre (par défaut 245, 246, 247, 400, 401, 230).
 | État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `QTE SAR` (→ SAR), `Purchase Req.` (→ PR), `GESTION`, `CODE AGT APPRO` (→ Code agent), `CODE FOURNISSEUR`, `DERNIER FOURNISSEUR`, `CCN`, `CLASS CODE`, `TRACKING LEVEL` |
 | Commandes (SAP) — feuille « Toutes les commandes » de préférence | `PN` | `Commande`, `Gestion`, `Code fournisseur`, `Fournisseur`, `Date de livraison promise`, `Date de livraison demandée`, `Class code`, `CCN` |
 
+**En-tête** : immatriculation, **type d'avion** (reconnu par la série d'immatriculation : F-HTY… / F-HUV… = A350, F-GZC… = A330,
+F-HZU… / F-HPN… = A220, famille A320, B777-200 / -300, B787) et son image, début du chantier (J-x), type d'étude.
+
 **Résultat** : synthèse, actions à lancer (classe 8/9 en tête, avec
 un drapeau), tableau filtrable, toutes les références, export `Supply360_stock_chantier_AAAAMMJJ.xlsx` (un seul bouton
 **Exporter (Excel)**, en haut de la synthèse).

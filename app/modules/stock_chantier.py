@@ -10,6 +10,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from core import avions
 from core import cache
 from core import components as ui
 from core import io as sio
@@ -228,7 +229,10 @@ def _contexte() -> str:
     d = st.session_state.get(K + "date", date.today())
     j = tf.jours_avant(d, date.today())
     statut = ui.badge(_statut_chantier(d), "info" if j > 0 else ("ok" if j == 0 else "muted"))
-    blocs = [("Chantier", st.session_state[K + "immat"], "")] if st.session_state.get(K + "immat") else []
+    immat = st.session_state.get(K + "immat")
+    blocs = [("Chantier", immat, "")] if immat else []
+    if immat and avions.type_avion(immat):
+        blocs += [("Avion", avions.type_avion(immat), "")]
     blocs += [("Début du chantier", f"{d:%d/%m/%Y}", statut), ("Étude", st.session_state.get(K + "etude", ETUDE_CLASSIQUE), "")]
     return ui.contexte(*blocs)
 
@@ -238,7 +242,7 @@ def render() -> None:
     etude, date_chantier, gestions, f_besoin, f_stock, f_cmd = _bloc_import()
     with entete:  # dessiné au-dessus de l'import, mais après lui : le contexte reflète le dossier qui vient d'être choisi
         ui.hero(TAB_ICON, "Stock par chantier", "Pièces à commander et fournisseurs à relancer avant le début du chantier (GEAV).",
-                "Supply Chain · Production", _contexte())
+                "Supply Chain · Production", _contexte(), avion=avions.famille(st.session_state.get(K + "immat")))
 
     nom_besoin = sio.FICHIER_BESOINS if etude == ETUDE_CLASSIQUE else sio.FICHIER_ASREQ
     if not (f_besoin and f_stock and f_cmd):

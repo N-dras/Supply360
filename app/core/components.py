@@ -80,14 +80,18 @@ def contexte(*blocs: tuple[str, str, str]) -> str:
     return f'<div class="s360-contexte">{html}</div>'
 
 
-def hero(icone: str, titre: str, sous_titre: str = "", surtitre: str = "", contexte_html: str = "") -> None:
+def hero(icone: str, titre: str, sous_titre: str = "", surtitre: str = "", contexte_html: str = "",
+         avion: str | None = None) -> None:
     """En-tête de page : bandeau léger à la couleur de l'onglet, icône, titre, et à droite un encadré de contexte
-    (chantier, date des données…). Couleur et icône : core/style.ONGLETS (onglet actif)."""
+    (chantier, date des données…). Couleur et icône : core/style.ONGLETS (onglet actif). `avion` : famille d'image
+    (core/avions.famille), affichée entre le titre et l'encadré."""
     couleur, nom_icone = ONGLETS.get(st.session_state.get("active_tab", ""), ("#1F4E9C", ""))
     sub = f'<p class="sous">{escape(sous_titre)}</p>' if sous_titre else ""
     sur = f'<p class="surtitre">{escape(surtitre)}</p>' if surtitre else ""
     st.markdown(f'<div class="s360-hero" style="--onglet:{couleur}"><div class="gauche"><div class="ico">{_icone(nom_icone or icone)}</div>'
-                f'<div>{sur}<h1>{escape(titre)}</h1>{sub}</div></div>{contexte_html}</div>', unsafe_allow_html=True)
+                f'<div>{sur}<h1>{escape(titre)}</h1>{sub}</div></div>'
+                + (f'<div class="s360-avion t-{escape(avion)}" role="img" aria-label="{escape(avion.upper())}"></div>' if avion else "")
+                + f'{contexte_html}</div>', unsafe_allow_html=True)
 
 
 def aide(texte: str) -> str:

@@ -53,6 +53,7 @@ supply360/
 ├── assets/
 │   ├── logo_afi.png          # logo Air France Industries (fourni par l'auteur, ne pas redessiner ; fond transparent)
 │   ├── avion_a350.webp       # avion Air France (écran de chargement, onglets en développement)
+│   ├── avions/               # une image par famille d'avion (<famille>.webp : a220, a320, a330, a350, b777-200, b777-300, b787), en-tête de Stock par chantier
 │   └── fonts/                # Manrope (woff2, licence OFL), embarquée dans le thème
 ├── app/
 │   ├── main.py               # point d'entrée : page_config, style, header, navigation
@@ -66,6 +67,7 @@ supply360/
 │   │   ├── xlsx.py           # écriture .xlsx mise en forme, bibliothèque standard
 │   │   ├── cache.py          # lectures communes mises en cache, partagées entre onglets
 │   │   ├── transforms.py     # fonctions de croisement réutilisables (stock × besoins × commandes)
+│   │   ├── avions.py         # type d'avion d'après la série d'immatriculation (F-HTY… = A350), famille d'image
 │   │   ├── dossiers.py       # import de dossier : regroupement par chantier, choix du fichier le plus récent
 │   │   ├── textile.py        # calculs de l'onglet Textile cabine
 │   │   ├── prevision.py      # prévision de commandes textile (stock minimum, PE, plan par fournisseur)
@@ -200,7 +202,10 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
   `nth-of-type` de theme.css, **à compléter quand un onglet est ajouté au registre**) + état du moteur (« Prêt ») et
   date. Barre animée et pastille « Calcul en cours… » quand Python travaille.
 - **En-tête de page** (`hero`) : bandeau dégradé à la couleur de l'onglet, icône, surtitre, titre, et à droite un
-  encadré de contexte (`contexte(...)` : chantier, début et J-x, date des données…).
+  encadré de contexte (`contexte(...)` : chantier, début et J-x, date des données…). Stock par chantier : **image de l'avion**
+  (`hero(..., avion=avions.famille(immat))`) et type dans l'encadré ; classes `.s360-avion.t-<famille>` générées par
+  `style.css_complet` pour chaque fichier de `assets/avions/` (famille sans image : rien n'est affiché ; masquée sous 1 100 px).
+  Ajouter une image = déposer `assets/avions/<famille>.webp` (profil vers la droite, fond transparent, ~900 px).
 - **Bloc d'import compact** (`section(..., "")`) : boutons « Ouvrir <dossier> », pastilles d'état des fichiers,
   popover « Paramètres » ; import manuel replié.
 - **Sections** (`section`) : titre bleu marine, **sous-titre de quelques mots** (le détail va dans `info=`, un « ? »),

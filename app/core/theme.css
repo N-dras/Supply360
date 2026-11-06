@@ -191,6 +191,10 @@ header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecor
 .s360-hero .surtitre { margin: 0 0 .25rem; color: var(--onglet); font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .s360-hero h1 { margin: 0; padding: 0; color: var(--navy); font-size: 2.1rem; line-height: 1.15; font-weight: 800; letter-spacing: -.025em; }
 .s360-hero p.sous { margin: .35rem 0 0; color: var(--muted); font-size: 1.02rem; }
+/* Avion du chantier (image par famille, classes .t-<famille> ajoutées par style.css_complet) */
+.s360-avion { display: none; position: relative; z-index: 1; flex: 1 1 14rem; align-self: stretch; min-width: 12rem; max-width: 26rem; min-height: 5rem;
+  margin: -.6rem 0; background: center / contain no-repeat; filter: drop-shadow(0 10px 10px rgba(0, 33, 87, .16)); }
+@media (max-width: 1100px) { .s360-avion { display: none !important; } }
 .s360-contexte { position: relative; z-index: 1; display: flex; align-items: center; gap: 1.4rem; padding: .9rem 1.3rem; flex-wrap: wrap;
   background: #fff; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .s360-contexte .bloc { display: grid; gap: .15rem; }

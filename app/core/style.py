@@ -61,12 +61,18 @@ MIME = {".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg
 @lru_cache(maxsize=2)
 def css_complet(dossier_assets: Path) -> str:
     """CSS du thème avec les images `asset(nom)` remplacées par des data URI."""
-    def data_uri(m):
-        f = Path(dossier_assets) / m.group(1)
+    def data_uri(nom: str) -> str:
+        f = Path(dossier_assets) / nom
         b64 = base64.b64encode(f.read_bytes()).decode("ascii")
         return f'url("data:{MIME[f.suffix.lower()]};base64,{b64}")'
 
-    return re.sub(r"asset\(([^)]+)\)", data_uri, THEME.read_text(encoding="utf-8"))
+    css = re.sub(r"asset\(([^)]+)\)", lambda m: data_uri(m.group(1)), THEME.read_text(encoding="utf-8"))
+    # Une image par famille d'avion (assets/avions/<famille>.webp) → classe « .s360-avion.t-<famille> » ;
+    # famille sans image : bloc masqué (.s360-avion est en display: none)
+    for f in sorted((Path(dossier_assets) / "avions").glob("*.*")):
+        if f.suffix.lower() in MIME:
+            css += f'\n.s360-avion.t-{f.stem} {{ display: block; background-image: {data_uri("avions/" + f.name)}; }}'
+    return css
 
 
 def dans_le_navigateur() -> bool:

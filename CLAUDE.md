@@ -80,8 +80,8 @@ supply360/
 │       ├── textiles.py
 │       ├── pe_mousses.py     # PE mousses : année (Besoin Prod), avions faisables, CCN, avancement PE, forecast
 │       ├── _planning_pe.py   # rendu « Avancement PE » et « Forecast » de pe_mousses (« _ » : pas un onglet du registre)
-│       ├── fournisseurs.py   # en cours de développement
-│       └── alertes.py        # en cours de développement
+│       ├── fournisseurs.py   # en cours de développement : présentation (score pondéré, KPI, fiche, relances)
+│       └── alertes.py        # en cours de développement : présentation (alertes par gestionnaire, niveaux, aperçu fictif)
 ├── legacy/                   # scripts Streamlit d'origine à intégrer (référence, non buildés)
 ├── tests/
 │   ├── fixtures/             # données FICTIVES générées par script
@@ -213,6 +213,8 @@ brique). Exports Excel : mêmes colonnes, même ordre et mêmes teintes de statu
   premier bloc ; `carte=False` pour un bloc sans fond (tuiles).
 - **Tuiles KPI** (`kpi_card`) : liseré et icône à la couleur du ton, chiffre coloré ; `kpi_repartition` = grande
   tuile avec barre de répartition et légende chiffrée ; `valeurs` = bandeau de chiffres.
+- **Onglets à venir** (Fournisseurs, Alertes) : hero + `cartes_fonctions` (ce que l'onglet contiendra), `ponderation` (critères
+  d'un score et leur poids), `tableau_simple` (règles, niveaux), `apercu_alertes` (exemple **fictif**) ; aucune donnée.
 - **Badges de statut** (`badge`) : pastille de couleur + libellé. Chantiers : **Terminé / En cours / À venir**.
 - **Tableaux : un seul composant pour TOUS les tableaux** (`tableau_html` ; `tableau` l'appelle, plus aucun
   `st.dataframe`). Statut en badge, quantités à traiter en rouge, zéros atténués, « — » pour les vides, colonnes

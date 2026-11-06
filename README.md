@@ -272,7 +272,18 @@ grâce aux autres lignes du même PN ; à défaut, le code lui-même est affich�
 
 ### 🏭 Fournisseurs · 🔔 Alertes
 
-En cours de développement.
+En cours de développement. Chaque onglet présente déjà ce qu'il contiendra :
+
+- **Fournisseurs** (source : Commandes (SAP), fournisseur désigné par son code) : **score fournisseur pondéré** sur 100
+  (ponctualité OTD 30 %, livraison complète OTIF 20 %, promesses tenues 15 %, retards en cours 15 %, confirmation 10 %,
+  délai d'approvisionnement 10 % ; classes A ≥ 80, B 60–79, C < 60 ; poids réglables), indicateurs (OTD, OTIF, retard
+  moyen / maximal, lignes sans date promise ou en attente BFE, délai promis, valeur en commande), fiche fournisseur,
+  relances prêtes à envoyer, comparaisons par famille, risques (mono-source, délais qui s'allongent).
+  À valider : l'OTD / OTIF réels demandent la date de réception effective dans l'extraction SAP.
+- **Alertes** (aucun nouvel import : fichiers des autres onglets) : alertes **par gestionnaire** (code agent appro,
+  code Gestion ou acheteur, seuils personnels), infos urgentes du jour, **actions à lancer** (qui, quoi, avant quand ;
+  suivi à faire / en cours / fait), ruptures, chantiers à risque, retards fournisseurs, PE mousses, qualité des données ;
+  quatre niveaux : Urgent, À traiter, À surveiller, Info.
 
 ## Développement
 

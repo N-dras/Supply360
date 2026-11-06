@@ -137,6 +137,40 @@ def en_developpement(icone: str, titre: str, points: list[str]) -> None:
                 unsafe_allow_html=True)
 
 
+def cartes_fonctions(cartes: list[dict], couleur: str = "", colonnes: int = 3) -> None:
+    """Grille de cartes « ce que vous trouverez » (onglets à venir) : chaque carte = dict(icone, titre, texte, points) ;
+    `colonnes` par ligne sur grand écran (moins sur écran étroit)."""
+    html = ""
+    for c in cartes:
+        pts = "".join(f"<li>{escape(p)}</li>" for p in c.get("points", []))
+        html += (f'<div class="carte"><div class="tete"><span class="pastille">{_icone(c["icone"])}</span>'
+                 f'<h4>{escape(c["titre"])}</h4></div><p>{escape(c.get("texte", ""))}</p><ul>{pts}</ul></div>')
+    style = f' style="--cols:{colonnes};{f"--onglet:{couleur}" if couleur else ""}"'
+    st.markdown(f'<div class="s360-fonctions"{style}>{html}</div>', unsafe_allow_html=True)
+
+
+def ponderation(criteres: list[tuple[str, int, str]], couleur: str = "") -> None:
+    """Critères d'un score pondéré : (critère, poids en %, ce que ça mesure), avec une barre proportionnelle au poids."""
+    html = "".join(f'<div class="ligne"><span class="crit">{escape(c)}</span><span class="barre"><i style="width:{p}%"></i></span>'
+                   f'<b>{p} %</b><span class="desc">{escape(d)}</span></div>' for c, p, d in criteres)
+    style = f' style="--onglet:{couleur}"' if couleur else ""
+    st.markdown(f'<div class="s360-poids"{style}>{html}</div>', unsafe_allow_html=True)
+
+
+def tableau_simple(entetes: list[str], lignes: list[list[str]]) -> None:
+    """Petit tableau statique (règles, niveaux) ; les cellules sont du HTML de confiance (badges)."""
+    th = "".join(f"<th>{escape(h)}</th>" for h in entetes)
+    tr = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in l) + "</tr>" for l in lignes)
+    st.markdown(f'<table class="s360-simple"><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table>', unsafe_allow_html=True)
+
+
+def apercu_alertes(lignes: list[tuple[str, str, str, str]]) -> None:
+    """Aperçu de fil d'alertes : (niveau → ton du badge, libellé du niveau, message, action)."""
+    html = "".join(f'<div class="alerte" style="{_vars(ton)}">{badge(niv, ton)}<span class="msg">{escape(msg)}</span>'
+                   f'<span class="act">{escape(act)}</span></div>' for ton, niv, msg, act in lignes)
+    st.markdown(f'<div class="s360-fil">{html}</div>', unsafe_allow_html=True)
+
+
 # --------------------------------------------------------------------------
 # Indicateurs
 # --------------------------------------------------------------------------

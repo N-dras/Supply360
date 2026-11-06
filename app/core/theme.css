@@ -692,3 +692,43 @@ table.s360-filtrable thead th:not(.fixe) { position: sticky; }
 
 @media (max-width: 900px) { .s360-hero h1 { font-size: 1.7rem; } }
 @media (max-width: 560px) { .s360-kpi.large { grid-column: auto; } }
+
+/* ---------------------------------------------------------------- onglets à venir : cartes, pondération, aperçu */
+.s360-fonctions { display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); gap: .9rem; }
+@media (max-width: 1250px) { .s360-fonctions { grid-template-columns: repeat(min(var(--cols, 3), 3), minmax(0, 1fr)); } }
+@media (max-width: 950px) { .s360-fonctions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .s360-fonctions { grid-template-columns: 1fr; } }
+.s360-fonctions .carte { display: grid; align-content: start; gap: .45rem; padding: 1rem 1.1rem 1.05rem; background: #fff;
+  border: 1px solid var(--line); border-top: 3px solid var(--onglet, var(--navy-2)); border-radius: var(--radius); box-shadow: var(--shadow); }
+.s360-fonctions .tete { display: flex; align-items: center; gap: .6rem; }
+.s360-fonctions .pastille { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 9px; flex: none;
+  background: color-mix(in srgb, var(--onglet, var(--navy-2)) 13%, white); color: var(--onglet, var(--navy-2)); }
+.s360-fonctions .pastille .s360-ic { width: 1.1rem; height: 1.1rem; }
+.s360-fonctions h4 { margin: 0; padding: 0; color: var(--navy); font-size: 1.05rem; font-weight: 800; }
+.s360-fonctions p { margin: 0; color: var(--muted); font-size: .92rem; line-height: 1.4; }
+.s360-fonctions ul { margin: .1rem 0 0; padding-left: 1.1rem; color: var(--text); font-size: .9rem; line-height: 1.45; }
+.s360-fonctions li { margin: .12rem 0; }
+.s360-fonctions li::marker { color: var(--onglet, var(--navy-2)); }
+
+.s360-poids { display: grid; gap: .55rem; }
+.s360-poids .ligne { display: grid; grid-template-columns: minmax(11rem, 14rem) minmax(6rem, 12rem) 3.2rem 1fr; align-items: center; gap: .9rem; }
+.s360-poids .crit { font-weight: 800; color: var(--navy); }
+.s360-poids .barre { height: .6rem; border-radius: 99px; background: #EEF1F5; overflow: hidden; }
+.s360-poids .barre i { display: block; height: 100%; border-radius: 99px; background: var(--onglet, var(--navy-2)); }
+.s360-poids b { color: var(--navy); text-align: right; }
+.s360-poids .desc { color: var(--muted); font-size: .92rem; }
+@media (max-width: 900px) { .s360-poids .ligne { grid-template-columns: 1fr 3.2rem; } .s360-poids .barre { display: none; } }
+
+table.s360-simple { width: 100%; border-collapse: collapse; font-size: .93rem; border: 0 !important; }
+table.s360-simple th, table.s360-simple td { border-left: 0 !important; border-right: 0 !important; border-top: 0 !important; }
+table.s360-simple th { text-align: left; padding: .5rem .7rem; color: var(--muted); font-size: .76rem; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; border-bottom: 1px solid var(--line); }
+table.s360-simple td { padding: .6rem .7rem; border-bottom: 1px solid var(--line-2); vertical-align: top; color: var(--text); }
+table.s360-simple tr:last-child td { border-bottom: 0; }
+
+.s360-fil { display: grid; gap: .5rem; }
+.s360-fil .alerte { display: grid; grid-template-columns: 8.5rem 1fr auto; align-items: center; gap: .9rem; padding: .65rem .9rem;
+  background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 10px; }
+.s360-fil .msg { color: var(--text); font-weight: 600; }
+.s360-fil .act { color: var(--t); font-weight: 800; font-size: .9rem; white-space: nowrap; }
+@media (max-width: 760px) { .s360-fil .alerte { grid-template-columns: 1fr; gap: .3rem; } }

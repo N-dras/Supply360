@@ -154,7 +154,10 @@ def ajouter_consommation(pbi: pd.DataFrame) -> pd.DataFrame:
     pbi = pbi.copy()
     annees = annees_conso(pbi)
     c12, c24 = _num(pbi, "QTE CONSO 12M"), _num(pbi, "QTE CONSO 24M")
-    shelf, ordered, pu = _num(pbi, "QTE SUR ÉTAGÈRE"), _num(pbi, "QTE EN CDE"), _num(pbi, "Dernier PU (achat) Euros")
+    shelf, ordered = _num(pbi, "QTE SUR ÉTAGÈRE"), _num(pbi, "QTE EN CDE")
+    pbi[tf.PRIX] = tf.prix_unitaire(pbi)            # PMP, à défaut dernier prix d'achat
+    pbi["Prix basé sur"] = tf.source_prix(pbi)
+    pu = pbi[tf.PRIX].fillna(0)
     prev12 = (c24 - c12).clip(lower=0)
     pbi["Conso 12 mois précédents"] = prev12
     pbi["Evolution 12M vs 12M précédents (%)"] = np.where(prev12 > 0, (c12 / prev12.where(prev12 > 0) - 1) * 100, np.nan).round(0)
@@ -233,7 +236,7 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
     pbi = stock_lignes.rename(columns=STOCK_RENOMMAGE)
     garder = ["PNR", "CCN", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", *WINDOW_COLUMNS, *NETTE_COLUMNS, "TDD 6M", "TDD 12M",
               *[f"QTE CONSO {a}" for a in annees_conso(pbi)], "QTE COUVERTURE", "QTE SAR", "Stock réservé", "B/O",
-              "Dernier PU (achat) Euros", "RP", "EOQ", "LT observé moyen sur 2 ans", "DATE DERNIERE CONSO",
+              "PMP", "Dernier PU (achat) Euros", "RP", "EOQ", "LT observé moyen sur 2 ans", "DATE DERNIERE CONSO",
               "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CLASS CODE"]
     pbi = pbi[[c for c in garder if c in pbi.columns]].copy()
 

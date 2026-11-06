@@ -20,6 +20,7 @@ import pandas as pd
 
 from core import io as sio
 from core import textile as tx
+from core import transforms as tf
 
 MAX_LT = 24
 RAW_COLS = ["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description", "qty_per_ac"]
@@ -395,7 +396,7 @@ def project_orders(pbi, orders, p, today):
     stock_min = pbi["Besoin minimum (qté)"].fillna(0).to_numpy(float)
     req = np.maximum(stock_min, ss)  # stock à tenir
     stock0 = pbi["QTE SUR ÉTAGÈRE"].fillna(0).to_numpy(float)
-    pu = pd.to_numeric(pbi.get("Dernier PU (achat) Euros", pd.Series(0.0, index=pbi.index)), errors="coerce").fillna(0).to_numpy(float)
+    pu = (pbi[tf.PRIX] if tf.PRIX in pbi else tf.prix_unitaire(pbi)).fillna(0).to_numpy(float)  # PMP, à défaut dernier PU
     cum_pe, cum_dl = np.cumsum(pe, axis=1), np.cumsum(deliv, axis=1)
     supply = stock0[:, None] + cum_dl
     need = req[:, None] + cum_pe

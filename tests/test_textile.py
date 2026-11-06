@@ -72,7 +72,7 @@ def test_tables_textile(tables):
     assert tx.annees_conso(s) == [2021, 2022, 2023, 2024, 2025]
     st = s.set_index("PNR")["Statut activité"]
     assert st["FX-2001"] == "Dormant" and st["FX-2002"] == "Inactif" and st["FX-1003"] == "Actif"
-    assert s.set_index("PNR").loc["FX-2001", "Valeur stock dormant (€)"] == 720
+    assert s.set_index("PNR").loc["FX-2001", "Valeur stock dormant (€)"] == 792  # au PMP
     assert "Evolution 2025 vs 2024 (%)" in s.columns
     assert s.set_index("PNR").loc["FX-1015", "Commandes (liste)"] == "CMD-0151 ; CMD-0152"
 
@@ -406,3 +406,18 @@ def test_tendance_conso_nette():
     assert t["Évolution conso (%)"].iloc[0] == 30 and t["Tendance conso"].iloc[0] == "En hausse"  # 566 contre 434
     assert t["Conso prévue / mois"].iloc[1] == round(0.3 * 20 / 24, 2)                       # 12 mois négatif → 0
     assert t["Conso brute 12 mois (demandes)"].iloc[0] == 15904
+
+
+def test_prix_unitaire_pmp():
+    """Valorisation : PMP d'abord ; prix nul ou absent → dernier prix d'achat ; sinon pas de prix (jamais 0)."""
+    d = pd.DataFrame({"PMP": [12.5, 0, np.nan, 0], "Dernier PU (achat) Euros": [10, 8, 9, 0]})
+    assert tf.prix_unitaire(d).tolist()[:3] == [12.5, 8, 9] and pd.isna(tf.prix_unitaire(d).iloc[3])
+    assert tf.source_prix(d).tolist() == ["PMP", "Dernier PU", "Dernier PU", "Sans prix"]
+
+
+def test_valorisation_au_pmp(tables):
+    """Valeurs de stock calculées au PMP de l'État du stock."""
+    s, _ = tables
+    r = s.set_index("PNR")
+    assert r.loc["FX-1001", "Prix basé sur"] == "PMP" and r.loc["FX-1004", "Prix basé sur"] == "Dernier PU"
+    assert r.loc["FX-1001", "Valeur stock (€)"] == round(r.loc["FX-1001", "QTE SUR ÉTAGÈRE"] * r.loc["FX-1001", "PMP"])

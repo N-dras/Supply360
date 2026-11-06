@@ -113,7 +113,7 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 
 | Fichier | Colonnes obligatoires | Colonnes facultatives |
 |---|---|---|
-| État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `DESCRIPTION`, `QTE CONSO 12M / 18M / 24M`, `QTE CONSO <année>`, `Dernier PU (achat) Euros`, `DATE DERNIERE CONSO`, `B/O`, `RP`, `EOQ`, `TDD` |
+| État du stock | `PNR`, `QTE SUR ÉTAGÈRE` | `QTE EN CDE`, `DESCRIPTION`, `QTE CONSO 12M / 18M / 24M`, `QTE CONSO <année>`, `QTE CONSO NETTE REINT 12M / 24M`, `PMP`, `Dernier PU (achat) Euros`, `DATE DERNIERE CONSO`, `B/O`, `RP`, `EOQ`, `TDD` |
 | Commandes (SAP) | `PN`, `Commande` | `Fournisseur`, `Code fournisseur`, `Date d'émission de la commande`, `Date de livraison demandée / promise`, `Quantité restant à livrer` |
 | Références textile — feuille « PN Catalog » | `pn`, `equipment` | `description`, `ccn` |
 | Pièces par avion (textile_all_parts) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
@@ -196,7 +196,7 @@ l'avancement avion par avion et le forecast des années suivantes. Tous les fich
 | Fichier | Colonnes obligatoires | Colonnes facultatives |
 |---|---|---|
 | Besoin Prod mousses (« Besoin_Prod… », annuel) — feuille « QUOTE en euro » | `A/C` (type d'avion), `Area` (classe), `CCN`, `Qty per A/C`, `NB_AC` | `Flotte`, `NB_AC PE RESTANT`, `P/N OEM Seat Supplier`, `Seat Supplier`, `Description`, `P.U forecast PE` |
-| État du stock | `PNR`, `QTE SUR ÉTAGÈRE`, `CCN` | `QTE EN CDE`, `Dernier PU (achat) Euros` |
+| État du stock | `PNR`, `QTE SUR ÉTAGÈRE`, `CCN` | `QTE EN CDE`, `PMP`, `Dernier PU (achat) Euros` |
 | Commandes (SAP) | `PN`, `Commande` | `CCN` (sinon retrouvé par le PN), `Quantité restant à livrer`, `Date de livraison promise` |
 | PE mousses (PE_MOUSSE_JJMMAAAA, mensuel) | feuilles « … BOTTOM FOAM … » et « … BACKREST FOAM … » : FLEET, AIRCRAFT, AGE (month) par classe, PAST / NEXT EXECUTION | |
 | Pièces par avion (textile_all_parts) | `equipment`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
@@ -232,7 +232,7 @@ Règles de l'année (reprises du Streamlit « Pilotage Politique d'entretien Mou
   commandes SAP du CCN (sans fichier Commandes : QTE EN CDE) ;
 - à demander (PR) = besoin − stock − en commande (si positif). Action : PR à émettre (aucune commande), PR
   complémentaire (commandes insuffisantes), à réceptionner (couvert avec les commandes), couvert par le stock ;
-- prix = Dernier PU de l'État du stock, à défaut le prix du devis ; sans prix : CCN « à coter » ;
+- prix = PMP de l'État du stock (à défaut son dernier prix d'achat), à défaut le prix du devis ; sans prix : CCN « à coter » ;
 - **avions faisables** : un avion d'une classe est complet si tous ses CCN sont disponibles. Le stock d'un CCN commun
   à plusieurs types d'avion est **réparti** (l'avion suivant va au type le moins avancé) : le total ne compte jamais
   deux fois le même stock. Les colonnes MRI, PSD et capa du Besoin Prod ne sont pas utilisées.
@@ -277,6 +277,12 @@ entier, sans barre de défilement (un très grand graphe est affiché à la larg
 couleurs, graphe complet même s'il défile à l'écran), à partager par mail ou dans une présentation.
 
 Survol d'une colonne, d'une barre ou d'une case : infobulle avec toutes ses valeurs.
+
+### Prix de valorisation (tous les onglets)
+
+Toutes les valeurs en euros (stock, commandes, consommation, prévision, forecast fournisseur, PE mousses) sont au
+**PMP** (prix moyen pondéré) de l'État du stock, comme le forecast fournisseur du groupe. Si le PMP est absent ou à 0 :
+`Dernier PU (achat) Euros`. Un prix à 0 n'est jamais retenu. La colonne « Prix basé sur » indique le prix utilisé.
 
 ### Fournisseur = code fournisseur (Textile cabine, PE mousses)
 

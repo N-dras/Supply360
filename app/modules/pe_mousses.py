@@ -46,7 +46,7 @@ COLONNES_ATTENDUES = {
                     ("NB_AC PE RESTANT", "avions restants (par défaut) ; recalcul possible (Paramètres) avec PE mousses + textile_all_parts", False),
                     ("P/N OEM Seat Supplier, Seat Supplier, Description, P.U forecast PE", "", False)],
     "stock": [("PNR, QTE SUR ÉTAGÈRE", "", True), ("CCN", "clé du croisement avec le Besoin Prod", True),
-              ("QTE EN CDE, Dernier PU (achat) Euros", "", False)],
+              ("QTE EN CDE, PMP (à défaut Dernier PU (achat) Euros)", "valorisation", False)],
     "commandes": [("PN, Commande", "", True), ("CCN", "sinon retrouvé par le PN", False),
                   ("Quantité restant à livrer, Date de livraison promise, Fournisseur", "", False)],
     "pe": [("Feuille « … BOTTOM FOAM … »", "assises : âge par classe J / W / Y", True),

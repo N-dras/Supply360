@@ -101,6 +101,26 @@ def completer_fournisseurs(lignes: pd.DataFrame) -> pd.Series:
     return nom.astype(object)
 
 
+PRIX = "Prix unitaire (€)"
+
+
+def prix_unitaire(df: pd.DataFrame) -> pd.Series:
+    """Prix unitaire de valorisation (règle unique de Supply360) : **PMP** (prix moyen pondéré) de l'État du stock ;
+    à défaut (absent ou nul), « Dernier PU (achat) Euros » ; sinon vide. Un prix à 0 n'est jamais retenu."""
+    def col(c):
+        v = pd.to_numeric(df[c], errors="coerce") if c in df else pd.Series(np.nan, index=df.index)
+        return v.where(v > 0)
+    return col("PMP").fillna(col("Dernier PU (achat) Euros"))
+
+
+def source_prix(df: pd.DataFrame) -> pd.Series:
+    """« PMP », « Dernier PU » ou « Sans prix », selon le prix retenu par `prix_unitaire`."""
+    pmp = pd.to_numeric(df["PMP"], errors="coerce") if "PMP" in df else pd.Series(np.nan, index=df.index)
+    pu = pd.to_numeric(df["Dernier PU (achat) Euros"], errors="coerce") if "Dernier PU (achat) Euros" in df \
+        else pd.Series(np.nan, index=df.index)
+    return pd.Series(np.select([pmp > 0, pu > 0], ["PMP", "Dernier PU"], "Sans prix"), index=df.index)
+
+
 def vide(s: pd.Series) -> pd.Series:
     """Valeur absente : NaN, chaîne vide, « nan » / « None »."""
     return s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])

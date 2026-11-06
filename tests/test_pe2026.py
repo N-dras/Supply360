@@ -79,7 +79,7 @@ def test_analyse_par_ccn(calcul):
     assert y["Besoin"] == 266 * 6 + 300 * 3 and y["Stock"] == 300 and y["En commande"] == 150
     assert y["À demander (PR)"] == y["Besoin"] - 450 and y["Action"] == p26.ACTIONS[1] and y["Nb types"] == 2
     assert m.loc["7209", "À coter"] and m.loc["7209", "Action"] == p26.ACTIONS[0]   # ni stock, ni prix
-    assert m.loc["7104", "PU (€)"] == 45                                             # Dernier PU de l'État du stock
+    assert m.loc["7104", "PU (€)"] == 49.5                                           # PMP de l'État du stock
 
 
 def test_repartition_du_stock_commun():

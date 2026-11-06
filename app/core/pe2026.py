@@ -188,7 +188,8 @@ def analyse_ccn(b: pd.DataFrame, stock: pd.DataFrame, cmd: pd.DataFrame | None) 
 
     Stock par CCN = max de QTE SUR ÉTAGÈRE des lignes du CCN (niveau recopié sur chaque PNR, règle d'origine).
     En commande = reste à livrer des commandes (SAP) ; sans fichier Commandes : QTE EN CDE de l'État du stock.
-    Prix = Dernier PU (achat) de l'État du stock, à défaut le prix du devis (Besoin Prod) ; sans prix : « à coter ».
+    Prix = PMP de l'État du stock (à défaut son dernier prix d'achat), à défaut le prix du devis (Besoin Prod) ;
+    sans prix : « à coter ».
     """
     pv = b.groupby("CCN").agg(**{
         "PN": ("PN", _joindre), "Désignation": ("Désignation", "first"), "Fournisseur devis": ("Fournisseur", "first"),
@@ -198,8 +199,8 @@ def analyse_ccn(b: pd.DataFrame, stock: pd.DataFrame, cmd: pd.DataFrame | None) 
     s = stock.dropna(subset=["CCN"])
     st_ = s.groupby("CCN").agg(**{"Stock": ("QTY_STOCK", "max"), "En cde (stock)": ("QTY_CDE", "max"),
                                    "PNR stock": ("PN", _joindre)})
-    if "Dernier PU (achat) Euros" in s:
-        st_["PU stock (€)"] = s.groupby("CCN")["Dernier PU (achat) Euros"].max()
+    if "PMP" in s or "Dernier PU (achat) Euros" in s:
+        st_["PU stock (€)"] = s.assign(_p=tf.prix_unitaire(s)).groupby("CCN")["_p"].max()
     m = pv.merge(st_.reset_index(), on="CCN", how="left")
     m["Dans l'État du stock"] = m["CCN"].isin(set(s["CCN"]))
     c = ccn_commandes(cmd, stock, b)

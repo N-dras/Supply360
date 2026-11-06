@@ -526,6 +526,7 @@ STOCK_COMPLEMENTS = {
     "QTE CONSO NETTE REINT 12M": "qte_conso_nette_reint_12m", "QTE CONSO NETTE REINT 24M": "qte_conso_nette_reint_24m",
     "TDD 6M": "tdd_6m", "TDD 12M": "tdd_12m", "QTE COUVERTURE": "qte_couverture", "QTE SAR": "qte_sar",
     "Stock réservé": "stock_reserve", "B/O": "b/o", "Dernier PU (achat) Euros": "dernier_pu_(achat)_euros",
+    "PMP": "pmp",  # prix moyen pondéré : prix de valorisation de Supply360 (transforms.prix_unitaire)
     "RP": "rp", "EOQ": "eoq", "LT observé moyen sur 2 ans": "lt_observe_moyen_sur_2_ans",
     "Purchase Req.": "purchase_req.",  # quantité en demande d'achat (PR)
 }

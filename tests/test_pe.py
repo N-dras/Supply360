@@ -98,8 +98,8 @@ def test_forecast_mois_par_mois(planning):
     assert s0["À avancer (commandes en cours)"] == 150 and s0["À avancer avant"] == oct_
     s = planning["synth"].set_index("PN")
     assert s.loc["FM-1004", "À commander 12 mois"] == pytest.approx(planning["long"].query("PN == 'FM-1004'")["À livrer"].head(12).sum())
-    assert s.loc["FM-1004", "Fournisseur"] == "F031" and s.loc["FM-1004", "Prix unitaire (€)"] == 45
-    assert s.loc["FM-1004", "Valeur 12 mois (€)"] == s.loc["FM-1004", "À commander 12 mois"] * 45
+    assert s.loc["FM-1004", "Fournisseur"] == "F031" and s.loc["FM-1004", "Prix unitaire (€)"] == 49.5  # PMP
+    assert s.loc["FM-1004", "Valeur 12 mois (€)"] == s.loc["FM-1004", "À commander 12 mois"] * 49.5
 
 
 def test_vue_par_annee(planning):

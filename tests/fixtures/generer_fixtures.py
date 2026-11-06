@@ -165,7 +165,7 @@ def stock():
               "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CCN", "CLASS CODE",
               "QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M", "QTE CONSO 2021", "QTE CONSO 2022", "QTE CONSO 2023",
               "QTE CONSO 2024", "QTE CONSO 2025", "Dernier PU (achat) Euros", "B/O", "DATE DERNIERE CONSO", "TRACKING LEVEL",
-              "QTE SAR", "Purchase Req.", "QTE CONSO NETTE REINT 12M", "QTE CONSO NETTE REINT 24M"]
+              "QTE SAR", "Purchase Req.", "QTE CONSO NETTE REINT 12M", "QTE CONSO NETTE REINT 24M", "PMP"]
     lignes = [
             ["FX-1001", "Coussin assise", 10, 0, 245, "AG01", "F001", "Fournisseur Alpha", 11, 1],
             ["FX-1002", "Housse dossier", 1, 0, 245, "AG01", "F002", "Fournisseur Bravo", 12, 1],
@@ -191,6 +191,8 @@ def stock():
         ligne += [1 if ligne[0] == "FX-1003" else 0, 2 if ligne[0] == "FX-1002" else 0]  # QTE SAR, Purchase Req. (fictifs)
         c12, c24 = ligne[10], ligne[12]  # conso nette (fictive) : ~60 % des demandes, réintégrations déduites
         ligne += [round(0.6 * c12) if c12 else 0, round(0.6 * c24) if c24 else 0]
+        pu = ligne[18]  # PMP (fictif) : 10 % au-dessus du dernier PU ; FX-1004 sans PMP (repli sur le dernier PU)
+        ligne.append(0 if ligne[0] == "FX-1004" else round(pu * 1.1, 2) if pu else 0)
     _feuille(wb, "Export", entete, lignes)
     wb.save(ICI / "etat_stock.xlsx")
 

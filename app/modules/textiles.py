@@ -17,6 +17,7 @@ from core import components as ui
 from core import io as sio
 from core import prevision as pv
 from core import textile as tx
+from core import transforms as tf
 from core import style
 from core.style import CATEGORIES, COLORS
 
@@ -32,7 +33,7 @@ TOUTES = "Toutes"
 COLONNES_ATTENDUES = {
     "stock": [("PNR", "", True), ("QTE SUR ÉTAGÈRE", "", True), ("QTE EN CDE", "", False), ("DESCRIPTION, CCN", "", False),
               ("QTE CONSO 12M / 18M / 24M", "consommation glissante", False), ("QTE CONSO <année>", "ex. 2021 à 2025", False),
-              ("Dernier PU (achat) Euros", "valorisation", False), ("DATE DERNIERE CONSO", "2001 = jamais consommé", False),
+              ("PMP, Dernier PU (achat) Euros", "valorisation au PMP, à défaut dernier prix d'achat", False), ("DATE DERNIERE CONSO", "2001 = jamais consommé", False),
               ("CODE FOURNISSEUR, DERNIER FOURNISSEUR", "fournisseur des PN sans commande", False),
               ("LT observé moyen sur 2 ans, B/O, RP, EOQ", "", False)],
     "commandes": [("PN", "", True), ("Commande", "", True), ("Code fournisseur, Fournisseur", "fournisseur identifié par son code", False),
@@ -661,12 +662,12 @@ def _consommation(s, o, today, cat):
     recent, avant = _periode(fin), _periode(fin - pd.DateOffset(months=12))
     c12 = s["QTE CONSO 12M"].fillna(0) if "QTE CONSO 12M" in s else pd.Series(0.0, index=s.index)
     c_av = s["Conso 12 mois précédents"].fillna(0) if "Conso 12 mois précédents" in s else pd.Series(0.0, index=s.index)
-    pu = pd.to_numeric(s.get("Dernier PU (achat) Euros", pd.Series(0.0, index=s.index)), errors="coerce").fillna(0)
+    pu = (s[tf.PRIX] if tf.PRIX in s else tf.prix_unitaire(s)).fillna(0)
     evol = (c12.sum() / c_av.sum() - 1) * 100 if c_av.sum() > 0 else None
     with ui.section(f"{TAB_ID}_conso", "Consommation", "Pièces sorties du stock", carte=False, export=_export_btn("export_conso__btn")):
         ui.kpi_grid([
             ui.kpi_card("Sorties sur 12 mois", charts.entier(c12.sum()), recent, "navy", "trend"),
-            ui.kpi_card("Valeur sortie", charts.euros((c12 * pu).sum()), "au dernier prix d'achat", "teal", "euro"),
+            ui.kpi_card("Valeur sortie", charts.euros((c12 * pu).sum()), "au PMP", "teal", "euro"),
             ui.kpi_card("Les 12 mois d'avant", charts.entier(c_av.sum()), avant, "info", "calendar"),
             ui.kpi_card("Tendance", "—" if evol is None else f"{evol:+.0f} %".replace("-", "−"),
                         "par rapport aux 12 mois d'avant", "ok" if evol is None or evol <= 0 else "orange", "gauge"),
@@ -984,12 +985,12 @@ def _export_forecast_fournisseur(f, d, pm, lignes, today) -> bytes:
     par_pn = d[[c for c in ["PNR", "CCN", "DESCRIPTION", "REF_Equipement", "Conso brute 12 mois (demandes)", "Conso 12 mois", "Conso 12 mois d'avant",
                             "Évolution conso (%)", "Conso prévue 12 mois (qté)", "QTE SUR ÉTAGÈRE", "QTE EN CDE",
                             "Qté à commander maintenant", "À commander 12 mois (qté)", "À commander 24 mois (qté)",
-                            "À commander 36 mois (qté)", "Dernier PU (achat) Euros", "Valeur 12 mois (€)", "Valeur 24 mois (€)",
+                            "À commander 36 mois (qté)", "Prix unitaire (€)", "Prix basé sur", "Valeur 12 mois (€)", "Valeur 24 mois (€)",
                             "Valeur 36 mois (€)"] if c in d.columns]].rename(columns={
         "PNR": "PN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "QTE SUR ÉTAGÈRE": "Stock",
         "Conso brute 12 mois (demandes)": "Demandes 12 mois (brut)", "Conso 12 mois": "Conso nette 12 mois",
         "Conso 12 mois d'avant": "Conso nette 12 mois d'avant",
-        "QTE EN CDE": "En commande", "Qté à commander maintenant": "Maintenant", "Dernier PU (achat) Euros": "Prix unitaire (€)"})
+        "QTE EN CDE": "En commande", "Qté à commander maintenant": "Maintenant", "Prix unitaire (€)": "Prix unitaire PMP (€)"})
     mois = pv.plan_par_mois(pm, today).reset_index().rename(columns={"PNR": "PN"}) if len(pm) else pd.DataFrame()
     feuilles = {"Synthèse": synth, "Par PN": par_pn, "Par mois (pièces)": mois}
     if lignes is not None and len(lignes):

@@ -32,6 +32,7 @@ import numpy as np
 import pandas as pd
 
 from core import io as sio
+from core import transforms as tf
 
 FICHIER_PE = "PE mousses"
 CLASSES = ["J", "W", "Y"]
@@ -369,7 +370,7 @@ def articles(pbi: pd.DataFrame) -> pd.DataFrame:
     if pbi.empty:
         return pd.DataFrame(columns=["Stock", "Prix", "Fournisseur"])
     a = pd.DataFrame({"Stock": pd.to_numeric(pbi["QTE SUR ÉTAGÈRE"], errors="coerce").to_numpy(),
-                      "Prix": pd.to_numeric(pbi.get("Dernier PU (achat) Euros", pd.Series(np.nan, index=pbi.index)), errors="coerce").to_numpy(),
+                      "Prix": tf.prix_unitaire(pbi).to_numpy(),  # PMP, à défaut dernier prix d'achat
                       "Fournisseur": fournisseur_prevision(pbi).to_numpy()}, index=pbi["PNR"].to_numpy())
     return a[~a.index.duplicated()]
 

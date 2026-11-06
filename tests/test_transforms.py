@@ -474,6 +474,6 @@ def test_type_avion_par_serie():
     """Type d'avion lu dans l'immatriculation (série de 3 lettres), quelle que soit l'écriture."""
     from core import avions
     assert avions.type_avion("F-HTYA") == "A350" and avions.famille("fhuvz") == "a350"
-    assert avions.type_avion("HZFM") == "A320" and avions.type_avion("F-HZUB") == "A220"
+    assert avions.type_avion("HZFM") == "A320" and avions.type_avion("F-HZUB") == "A220" == avions.type_avion("F-HOZA")
     assert avions.famille("F-GRHZ") == "a320" and avions.famille("F-GSQX") == "b777-300"
     assert avions.type_avion("F-XXXX") is None and avions.famille("") is None

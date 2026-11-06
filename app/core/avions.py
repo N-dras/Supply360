@@ -8,7 +8,7 @@ style.css_complet en tirent une classe CSS `s360-avion t-<famille>` (aucune imag
 import re
 
 SERIES = {
-    "HZU": "A220", "HPN": "A220",
+    "HZU": "A220", "HPN": "A220", "HOZ": "A220",
     "GUG": "A318", "GRH": "A319", "GRX": "A319",
     "GKX": "A320", "HEP": "A320", "HBN": "A320", "HZF": "A320",
     "GTA": "A321", "GMZ": "A321",

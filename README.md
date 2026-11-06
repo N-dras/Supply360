@@ -166,13 +166,19 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
 - **commande** pour que le stock reste au-dessus du stock à tenir malgré la consommation prévue, délai fournisseur
   compris ; si le délai est trop long, la commande part maintenant ;
 - les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés ;
-- **évolution de la consommation** par PN (tableau et plus fortes hausses) ;
+- chiffres donnés pour les **12, 24 et 36 prochains mois** (cumuls, commandes de ce mois comprises, période écrite en
+  clair) : tuiles en tête, vue globale (valeur à commander mois par mois et par équipement, année par année), tableau
+  **Prévision par PN** (à commander maintenant, 12, 24, 36 mois, valeur) ;
+- **évolution de la consommation** par PN, en % dans les tableaux : ▲ +67 % (hausse), ▼ −30 % (baisse), = (stable) ;
 - **flottes** : un PN monté sur plusieurs flottes apparaît sous chacune ; avec un filtre Flotte, « Part des flottes
   choisies » donne la part des pièces installées sur ces flottes (la quantité à commander reste celle du PN) ;
-- vue **par fournisseur** : PN à commander, valeur maintenant et sur la période, détail d'un fournisseur.
+- **forecast par fournisseur** : quantité et valeur à commander sur 12, 24 et 36 mois, année par année, PN en hausse /
+  en baisse ; **forecast d'un fournisseur** : chiffres 12 / 24 / 36 mois, commandes mois par mois, PN, et bouton
+  **Exporter le forecast du fournisseur (Excel)** à lui envoyer (Synthèse 12/24/36 mois, Par PN, Par mois, Commandes
+  en cours) — fichier `Supply360_forecast_<code>_AAAAMMJJ.xlsx`.
   Fournisseur d'un PN : le **CODE FOURNISSEUR du Résultat**, à défaut le code des commandes.
 
-Les paramètres (avions d'avance, taux de service, période, délai par défaut…) sont dans « Paramètres » › Prévision.
+Les paramètres (avions d'avance, taux de service, délai par défaut…) sont dans « Paramètres » › Prévision.
 Le planning des PE mousses est dans l'onglet **PE mousses**.
 
 ### 🛠️ PE mousses

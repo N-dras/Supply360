@@ -35,6 +35,8 @@ TENDANCE_COLORS = {"En hausse": "#E8590C", "Nouveau": "#7B61C9", "Stable": "#1E8
                    "Sans conso": "#8A94A6", "Non mesurée": "#B5BDCB"}
 # Taux de service visé → coefficient de la loi normale (stock de sécurité)
 Z_SERVICE = {0.90: 1.28, 0.95: 1.65, 0.98: 2.05}
+# Prévision donnée pour les 12, 24 et 36 prochains mois (cumuls), à partir du mois en cours
+PERIODES = (12, 24, 36)
 BLOQUEE = "Commande bloquée (PN dormant, inactif ou obsolète) (qté)"
 GROUP_STATUS_ORDER = ["Sous l'objectif", "Couvert si commandes livrées", "Objectif atteint"]
 # Même code couleur que partout : vert = stock, bleu = à réception des commandes, rouge = à commander.
@@ -52,7 +54,7 @@ class Params:
     buffer_ratio: float = 0.10
     buffer_min: int = 1
     buffer_on_never: bool = True
-    horizon_months: int = 36
+    horizon_months: int = 36                  # = la plus longue des PERIODES (12, 24, 36 mois)
     lt_default: int = 60
     lt_basis: str = "observe"
     bfe_delay_months: int = 6
@@ -397,8 +399,11 @@ def project_orders(pbi, orders, p, today):
     out["Qté à commander maintenant"] = ord_now
     out["Valeur à commander maintenant (€)"] = (ord_now * pu).round(0)
     out["Date 1ère commande"] = [to_month(k) for k in first_ord]
-    out["Commandes recommandées sur l'horizon (qté)"] = ord_total
-    out["Valeur commandes recommandées (€)"] = (ord_total * pu).round(0)
+    for k in PERIODES:  # cumuls 12 / 24 / 36 prochains mois (mois en cours compris)
+        q = orders_m[:, :k].sum(axis=1)
+        out[f"À commander {k} mois (qté)"] = q
+        out[f"Valeur {k} mois (€)"] = (q * pu).round(0)
+        out[f"Conso prévue {k} mois (qté)"] = np.ceil(rythme * k - 1e-9)
     out["Manque avant livraison possible (qté)"] = np.where(shortfall_mask, 0.0, shortfall)
     out["Premier mois sous le minimum (sans commande)"] = [to_month(k) for k in first_short]
     out["Valeur stock hors groupe avion (€)"] = np.where(in_group, 0, out["Valeur stock (€)"].fillna(0))
@@ -486,18 +491,50 @@ def suivis(s: pd.DataFrame) -> pd.DataFrame:
 
 
 def par_fournisseur(s: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
-    """Une ligne par fournisseur (PN actifs de la prévision) : quoi commander, quand, pour combien."""
+    """Une ligne par fournisseur (PN actifs de la prévision) : à commander maintenant et sur les 12, 24 et 36 prochains
+    mois (quantité, valeur), PN dont la consommation monte ou baisse, prochaine commande."""
+    cols = ["Fournisseur", "PN suivis", "PN à commander", "Valeur maintenant (€)"]
+    for k in PERIODES:
+        cols += [f"Qté {k} mois", f"Valeur {k} mois (€)"]
+    cols += ["PN en hausse", "PN en baisse", "Prochaine commande", "Délai moyen (mois)"]
     cand = suivis(s)
     if cand.empty:
-        return pd.DataFrame(columns=["Fournisseur", "PN suivis", "PN à commander", "Qté à commander maintenant",
-                                     "Valeur maintenant (€)", "Valeur sur l'horizon (€)", "Prochaine commande", "Délai moyen (mois)"])
-    g = cand.assign(a_cmd=cand["Qté à commander maintenant"] > 0).groupby("Fournisseur").agg(
-        **{"PN suivis": ("PNR", "nunique"), "PN à commander": ("a_cmd", "sum"),
-           "Qté à commander maintenant": ("Qté à commander maintenant", "sum"),
-           "Valeur maintenant (€)": ("Valeur à commander maintenant (€)", "sum"),
-           "Valeur sur l'horizon (€)": ("Valeur commandes recommandées (€)", "sum"),
-           "Prochaine commande": ("Date 1ère commande", "min"), "Délai moyen (mois)": ("Délai (mois)", "mean")})
+        return pd.DataFrame(columns=cols)
+    agg = {"PN suivis": ("PNR", "nunique"), "PN à commander": ("a_cmd", "sum"),
+           "Valeur maintenant (€)": ("Valeur à commander maintenant (€)", "sum")}
+    for k in PERIODES:
+        agg[f"Qté {k} mois"] = (f"À commander {k} mois (qté)", "sum")
+        agg[f"Valeur {k} mois (€)"] = (f"Valeur {k} mois (€)", "sum")
+    agg.update({"PN en hausse": ("hausse", "sum"), "PN en baisse": ("baisse", "sum"),
+                "Prochaine commande": ("Date 1ère commande", "min"), "Délai moyen (mois)": ("Délai (mois)", "mean")})
+    tend = cand["Tendance conso"] if "Tendance conso" in cand else pd.Series("", index=cand.index)
+    g = cand.assign(a_cmd=cand["À commander 36 mois (qté)"] > 0, hausse=tend.isin(["En hausse", "Nouveau"]),
+                    baisse=tend.eq("En baisse")).groupby("Fournisseur").agg(**agg)
     g["Délai moyen (mois)"] = g["Délai moyen (mois)"].round(1)
-    g["PN à commander"] = g["PN à commander"].astype(int)
-    return g.reset_index().sort_values(["Valeur maintenant (€)", "Valeur sur l'horizon (€)"], ascending=False, kind="stable") \
-        .reset_index(drop=True)
+    for c in ["PN à commander", "PN en hausse", "PN en baisse"]:
+        g[c] = g[c].astype(int)
+    return g.reset_index().sort_values(["Valeur 12 mois (€)", "Valeur 36 mois (€)"], ascending=False, kind="stable") \
+        .reset_index(drop=True)[cols]
+
+
+def tranches(today) -> list[tuple[int, int, str]]:
+    """Années glissantes de la prévision : (premier mois, dernier mois exclu, libellé « Année 1 · nov. 2026 → oct. 2027 »)."""
+    mois = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
+    t0 = pd.Period(pd.Timestamp(today), "M")
+    out = []
+    for i, (a, b) in enumerate(zip((0, 12, 24), PERIODES), 1):
+        d, f = t0 + a, t0 + b - 1
+        out.append((a, b, f"Année {i} · {mois[d.month - 1]} {d.year} → {mois[f.month - 1]} {f.year}"))
+    return out
+
+
+def plan_par_mois(plan: pd.DataFrame, today, valeur: str = "Qté à commander", index: str = "PNR") -> pd.DataFrame:
+    """Tableau `index` × mois de commande (36 prochains mois, colonnes « 11/2026 »…) de `valeur`."""
+    t0 = pd.Period(pd.Timestamp(today), "M")
+    mois = [(t0 + k).start_time for k in range(PERIODES[-1])]
+    if plan is None or plan.empty:
+        return pd.DataFrame(columns=[m.strftime("%m/%Y") for m in mois])
+    t = plan.pivot_table(index=index, columns="Mois de commande", values=valeur, aggfunc="sum", fill_value=0)
+    t = t.reindex(columns=mois, fill_value=0)
+    t.columns = [m.strftime("%m/%Y") for m in mois]
+    return t

@@ -296,7 +296,7 @@ def test_prevision_sans_commande_classe_code_3_8_9(tables):
     pbi, res = pv.run_policy(s, o, parts, fleet, pv.regles_pe_defaut(parts), p, TODAY)
     r = pbi.set_index("PNR").loc["FX-1002"]
     assert r["Statut prévision"] == pv.OBSOLETE
-    assert r["Qté à commander maintenant"] == 0 and r["Commandes recommandées sur l'horizon (qté)"] == 0
+    assert r["Qté à commander maintenant"] == 0 and r["À commander 36 mois (qté)"] == 0
     assert r[pv.BLOQUEE] > 0 and r["Manque avant livraison possible (qté)"] == 0
     assert "FX-1002" not in set(res["plan"]["PNR"]) and "FX-1002" not in set(pv.suivis(pbi)["PNR"])
 
@@ -373,7 +373,7 @@ def test_prevision_suit_la_conso(prevision):
     assert (r["Stock à tenir (qté)"] >= r["Besoin minimum (qté)"]).all()
     assert (r["Stock à tenir (qté)"] >= r["Stock de sécurité (qté)"]).all()
     manque = r["Stock à tenir (qté)"] + r["Conso prévue sur la période (qté)"] - r["QTE SUR ÉTAGÈRE"].fillna(0) - r["QTE EN CDE"].fillna(0)
-    assert (r["Commandes recommandées sur l'horizon (qté)"] + 1 >= manque.clip(lower=0)).all()
+    assert (r["À commander 36 mois (qté)"] + 1 >= manque.clip(lower=0)).all()
 
 
 def test_flottes_pn():

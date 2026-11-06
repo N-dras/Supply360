@@ -335,7 +335,8 @@ PAGE_TABLEAU = 200  # lignes affichées d'emblée (puis « Afficher plus »)
 
 
 def _types_colonnes(df: pd.DataFrame, colonne_config, num: set, euros: set) -> dict:
-    """{colonne: (type, format, aide)} : type = num | euros | date | mois | progres | txt (filtres et rendu)."""
+    """{colonne: (type, format, aide)} : type = num | euros | date | mois | progres | evol | txt (filtres et rendu).
+    « evol » : colonne numérique dont le nom commence par « Évolution » (pourcentage : ▲ +67 % / ▼ −30 %)."""
     cfg = colonne_config or {}
     out = {}
     for c in df.columns:
@@ -345,6 +346,8 @@ def _types_colonnes(df: pd.DataFrame, colonne_config, num: set, euros: set) -> d
         serie = df[c]
         if tc.get("type") == "progress":
             typ = "progres"
+        elif str(c).startswith("Évolution") and pd.api.types.is_numeric_dtype(serie):
+            typ = "evol"
         elif c in euros or "€" in fmt or ("€" in str(c) and pd.api.types.is_numeric_dtype(serie)):
             typ = "euros"
         elif tc.get("type") == "date" or pd.api.types.is_datetime64_any_dtype(serie):
@@ -361,6 +364,15 @@ def _types_colonnes(df: pd.DataFrame, colonne_config, num: set, euros: set) -> d
     return out
 
 
+def evolution(pct: float, seuil: float = 20) -> str:
+    """Évolution en % lisible d'un coup d'œil : ▲ +67 % (hausse, orange), ▼ −30 % (baisse, bleu), = +5 % (stable)."""
+    if pct != pct:  # NaN
+        return '<span class="vide">—</span>'
+    signe = f"+{pct:.0f}" if pct > 0 else ("−" + f"{-pct:.0f}" if pct < 0 else "0")
+    cls, fl = ("hausse", "▲") if pct > seuil else (("baisse", "▼") if pct < -seuil else ("stable", "="))
+    return f'<span class="s360-evol {cls}">{fl} {signe} %</span>'
+
+
 def _brut(v, typ: str) -> str:
     """Valeur brute d'une cellule (attribut data-v) : tri et filtres dans la page."""
     if v is None or (not isinstance(v, str) and pd.isna(v)):
@@ -370,7 +382,7 @@ def _brut(v, typ: str) -> str:
             return f"{pd.Timestamp(v):%Y-%m-%d}"
         except (TypeError, ValueError):
             return ""
-    if typ in ("num", "euros", "progres"):
+    if typ in ("num", "euros", "progres", "evol"):
         try:
             return repr(float(v))
         except (TypeError, ValueError):
@@ -409,14 +421,14 @@ def tableau_html(df: pd.DataFrame, statut: str | None = None, couleurs: dict | N
         fixe_css.append((f"left:{gauche}rem;min-width:{w}rem;max-width:{w}rem", i == fixes - 1))
         gauche += w
     def classe(i, c):
-        k = ["num"] if types[c][0] in ("num", "euros", "progres") else []
+        k = ["num"] if types[c][0] in ("num", "euros", "progres", "evol") else []
         if i < len(fixe_css):
             k += ["fixe"] + (["dernier"] if fixe_css[i][1] else [])
         return " ".join(k)
     def style(i):
         return f' style="{fixe_css[i][0]}"' if i < len(fixe_css) else ""
     tete = "".join(
-        f'<th class="{classe(i, c)}{" cle" if c in fort else ""}"{style(i)} data-type="{"txt" if c == statut else types[c][0]}"'
+        f'<th class="{classe(i, c)}{" cle" if c in fort else ""}"{style(i)} data-type="{"txt" if c == statut else ("num" if types[c][0] == "evol" else types[c][0])}"'
         f'{f" title={chr(34)}{escape(types[c][2])}{chr(34)}" if types[c][2] else ""}>{escape(str(c))}</th>'
         for i, c in enumerate(cols))
     grp = ""
@@ -431,6 +443,8 @@ def tableau_html(df: pd.DataFrame, statut: str | None = None, couleurs: dict | N
             h = badge(txt, couleur=couleurs.get(txt, "#9AA5B1")) if txt else '<span class="vide">—</span>'
         elif typ == "mois" and brut:
             h = f"{pd.Timestamp(v):%m/%Y}"
+        elif typ == "evol" and brut:
+            h = evolution(float(v))
         elif typ == "progres" and brut:
             pct = max(0.0, min(100.0, float(v)))
             h = f'<span class="progres"><i style="width:{pct:.0f}%"></i></span>{float(v):.0f} %'

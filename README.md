@@ -167,13 +167,13 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
   compris ; si le délai est trop long, la commande part maintenant ;
 - les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés ;
 - chiffres donnés pour les **12, 24 et 36 prochains mois** (cumuls, commandes de ce mois comprises, période écrite en
-  clair) : tuiles en tête, vue globale (valeur à commander mois par mois et par équipement, année par année), tableau
-  **Prévision par PN** (à commander maintenant, 12, 24, 36 mois, valeur) ;
+  clair) : tuiles en tête, tableau **Prévision par PN** (conso 12 derniers mois, évolution, conso prévue sur les 12
+  prochains mois, à commander maintenant, 12, 24, 36 mois, valeur) ;
 - **évolution de la consommation** par PN, en % dans les tableaux : ▲ +67 % (hausse), ▼ −30 % (baisse), = (stable) ;
 - **flottes** : un PN monté sur plusieurs flottes apparaît sous chacune ; avec un filtre Flotte, « Part des flottes
   choisies » donne la part des pièces installées sur ces flottes (la quantité à commander reste celle du PN) ;
 - **forecast par fournisseur** : quantité et valeur à commander sur 12, 24 et 36 mois, année par année, PN en hausse /
-  en baisse ; **forecast d'un fournisseur** : chiffres 12 / 24 / 36 mois, commandes mois par mois, PN, et bouton
+  en baisse ; **forecast d'un fournisseur** : chiffres 12 / 24 / 36 mois, ses PN, et bouton
   **Exporter le forecast du fournisseur (Excel)** à lui envoyer (Synthèse 12/24/36 mois, Par PN, Par mois, Commandes
   en cours) — fichier `Supply360_forecast_<code>_AAAAMMJJ.xlsx`.
   Fournisseur d'un PN : le **CODE FOURNISSEUR du Résultat**, à défaut le code des commandes.

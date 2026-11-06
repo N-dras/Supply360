@@ -50,13 +50,13 @@ COL_RELANCES = {"Statut commande": "Statut", "Fournisseur": "Fournisseur", "Comm
 COL_PREV = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Flottes": "Flottes",
             "Part des flottes choisies (%)": "Part des flottes choisies (%)", "Statut prévision": "Statut",
             "Qté à commander maintenant": "À commander", "Date 1ère commande": "1re commande", "QTE SUR ÉTAGÈRE": "Stock",
-            "QTE EN CDE": "En commande", "Conso prévue / mois": "Conso prévue / mois", "Tendance conso": "Tendance",
+            "QTE EN CDE": "En commande", "Conso prévue 12 mois (qté)": "Conso prévue 12 mois", "Tendance conso": "Tendance",
             "Stock à tenir (qté)": "Stock à tenir", "Stock à tenir basé sur": "Basé sur", "Délai (mois)": "Délai (mois)",
             "À commander 36 mois (qté)": "À commander sur la période",
             "Valeur à commander maintenant (€)": "Valeur maintenant (€)", "Fournisseur": "Fournisseur"}
 COL_PN = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Flottes": "Flottes",
           "Statut prévision": "Statut", "Fournisseur": "Fournisseur",
-          "Conso 12 mois": "Conso 12 mois", "Évolution conso (%)": "Évolution conso", "Conso prévue / mois": "Prévu / mois",
+          "Conso 12 mois": "Conso 12 mois", "Évolution conso (%)": "Évolution conso", "Conso prévue 12 mois (qté)": "Conso prévue 12 mois",
           "QTE SUR ÉTAGÈRE": "Stock", "QTE EN CDE": "En commande", "Stock à tenir (qté)": "Stock à tenir",
           "Qté à commander maintenant": "Maintenant", "À commander 12 mois (qté)": "12 mois", "À commander 24 mois (qté)": "24 mois",
           "À commander 36 mois (qté)": "36 mois", "Valeur 12 mois (€)": "Valeur 12 mois (€)", "Valeur 36 mois (€)": "Valeur 36 mois (€)"}
@@ -68,7 +68,7 @@ GROUPES_FOUR = [("Fournisseur", 3), ("À commander", 7), ("Consommation", 2), ("
 COL_TENDANCE = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Flottes": "Flottes",
                 "Tendance conso": "Tendance", "Conso 12 mois d'avant": "12 mois d'avant", "Conso 12 mois": "12 derniers mois",
                 "Évolution conso (%)": "Évolution conso", "Conso 18 mois": "18 mois", "Conso 24 mois": "24 mois",
-                "Conso prévue / mois": "Conso prévue / mois", "QTE SUR ÉTAGÈRE": "Stock", "Fournisseur": "Fournisseur"}
+                "Conso prévue 12 mois (qté)": "Conso prévue 12 mois", "QTE SUR ÉTAGÈRE": "Stock", "Fournisseur": "Fournisseur"}
 CFG = {
     "Demandée": st.column_config.DateColumn("Demandée", format="DD/MM/YYYY"),
     "Promise": st.column_config.DateColumn("Promise", format="DD/MM/YYYY"),
@@ -720,7 +720,8 @@ pour les **12, 24 et 36 prochains mois** ({periode}), commandes de ce mois compr
 1. **Consommation prévue d'un PN** : on regarde ses sorties sur 12, 18 et 24 mois (Résultat). Le plus récent compte le
    plus : 50 % pour les 12 mois, 30 % pour les 18 mois, 20 % pour les 24 mois.
    Exemple : 120 sorties sur 12 mois (10 / mois), 162 sur 18 mois (9 / mois), 192 sur 24 mois (8 / mois)
-   → **9,3 pièces par mois** prévues.
+   → **9,3 pièces par mois**, soit **112 sur les 12 prochains mois** (colonne « Conso prévue 12 mois »). Elle diffère
+   de la conso des 12 derniers mois quand les 18 et 24 mois montrent un rythme différent.
 2. **Tendance** : les 12 derniers mois comparés aux 12 mois d'avant (24 mois − 12 mois).
    Exemple : 120 contre 72 → **+67 %, en hausse**. Entre −20 % et +20 % : **stable**.
 3. **Stock à tenir** = le plus grand des deux :
@@ -793,27 +794,6 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
         if flottes and communs:
             ui.callout(f"<b>{communs} PN</b> sont aussi montés sur d'autres flottes : la colonne « Part des flottes choisies » "
                        "indique la part qui revient aux flottes filtrées.", "info", "ℹ️")
-
-    # Vue globale : quand commander, et quoi, année par année
-    with ui.section(f"{TAB_ID}_prev_global", "Vue globale", periodes[36]):
-        a, b = st.columns([1.5, 1], gap="large")
-        with a:
-            pm = pv.plan_par_mois(plan.assign(c=plan["Catégorie"]), today or date.today(), "Valeur (€)", "c")
-            mois = [pd.Timestamp(f"{c[3:]}-{c[:2]}-01") for c in pm.columns]
-            ui.graphe(charts.barres(mois, {charts.aff(c): pm.loc[c].to_numpy() for c in tx.categories(s) if c in pm.index},
-                                    {charts.aff(c): tx.CATEGORY_COLORS.get(c, CATEGORIES[0]) for c in tx.categories(s)},
-                                    empile=True, fmt=charts.euros, temporel=True, hauteur=250, etiquettes=False,
-                                    titre="Valeur à commander, mois par mois") if len(plan) else charts.vide("Aucune commande prévue"),
-                      "Mois où la commande doit partir, par équipement (valeurs au survol)")
-        with b:
-            cats = [c for c in tx.categories(s)]
-            an = {lib.split(" · ")[0]: [s.loc[tx.categorie(s) == c, f"Valeur {k} mois (€)"].sum()
-                                        - (s.loc[tx.categorie(s) == c, f"Valeur {k - 12} mois (€)"].sum() if k > 12 else 0)
-                                        for c in cats] for (_, k, lib) in tr}
-            ui.graphe(charts.barres([charts.aff(c) for c in cats], an,
-                                    {lib.split(" · ")[0]: col for (_, _, lib), col in zip(tr, [COLORS["ko"], COLORS["warn"], COLORS["navy_2"]])},
-                                    empile=True, fmt=charts.euros, hauteur=250, titre="Par équipement, année par année"),
-                      " · ".join(lib for _, _, lib in tr))
 
     with ui.section(f"{TAB_ID}_prev_parpn", "Prévision par PN", "À commander sur 12, 24 et 36 mois, et évolution de la conso",
                     tag=str(int((suivis["À commander 36 mois (qté)"] > 0).sum())),
@@ -924,7 +904,7 @@ def _tableaux_prevision(s, plan, gs, res):
 
 @st.fragment
 def _vue_fournisseur_prev(s, o, fours, plan, today):
-    """Forecast d'un fournisseur sur 12, 24 et 36 mois : chiffres, commandes mois par mois, PN, export à lui envoyer."""
+    """Forecast d'un fournisseur sur 12, 24 et 36 mois : chiffres, PN, export à lui envoyer."""
     if fours.empty:
         return
     with ui.section(f"{TAB_ID}_prev_vf", "Forecast d'un fournisseur", "À envoyer au fournisseur : 12, 24 et 36 prochains mois"):
@@ -954,25 +934,7 @@ def _vue_fournisseur_prev(s, o, fours, plan, today):
             ui.kpi_card("Écart promis − demandé", f"{ec['Ecart promis vs demandé (j)'].mean():+.0f} j" if len(ec) else "—",
                         f"moyenne sur {len(ec)} ligne(s)" if len(ec) else "aucune date promise", "navy"),
         ])
-        a, b = st.columns([1.6, 1], gap="large")
-        with a:
-            pm = plan[plan["PNR"].isin(set(d["PNR"]))]
-            qm = pv.plan_par_mois(pm, today).sum(axis=0) if len(pm) else None
-            if qm is not None and qm.sum() > 0:
-                mois = [pd.Timestamp(f"{c[3:]}-{c[:2]}-01") for c in qm.index]
-                ui.graphe(charts.barres(mois, {"Pièces à commander": qm.to_numpy()}, {"Pièces à commander": COLORS["navy_2"]},
-                                        temporel=True, hauteur=230, etiquettes=False,
-                                        titre="Commandes à passer, mois par mois (pièces)"),
-                          " · ".join(lib for _, _, lib in tr))
-            else:
-                ui.graphe(charts.vide("Aucune commande à passer sur les 36 prochains mois"))
-        with b:
-            g = d[d["À commander 36 mois (qté)"] > 0].head(10)
-            ui.graphe(charts.barres_h([(r["PNR"], r["À commander 36 mois (qté)"],
-                                        f"{charts.entier(r['À commander 36 mois (qté)'])} pièces · "
-                                        + (f"conso {r['Évolution conso (%)']:+.0f} %" if pd.notna(r["Évolution conso (%)"]) else "nouveau"))
-                                       for _, r in g.iterrows()], couleur=COLORS["navy_2"], titre="PN à commander sur 36 mois",
-                                      max_lignes=10) if len(g) else charts.vide("Aucun PN à commander"))
+        pm = plan[plan["PNR"].isin(set(d["PNR"]))]
         cols, groupes = _colonnes_pn(d)
         cols.pop("Fournisseur", None)
         if groupes:
@@ -1008,7 +970,7 @@ def _export_forecast_fournisseur(f, d, pm, lignes, today) -> bytes:
                            "Pièces à commander": d[f"À commander {k} mois (qté)"].sum(), "PN": int((d[f"À commander {k} mois (qté)"] > 0).sum()),
                            "Valeur (€)": d[f"Valeur {k} mois (€)"].sum()} for i, k in enumerate(pv.PERIODES)])
     par_pn = d[[c for c in ["PNR", "CCN", "DESCRIPTION", "REF_Equipement", "Conso 12 mois", "Conso 12 mois d'avant",
-                            "Évolution conso (%)", "Conso prévue / mois", "QTE SUR ÉTAGÈRE", "QTE EN CDE",
+                            "Évolution conso (%)", "Conso prévue 12 mois (qté)", "QTE SUR ÉTAGÈRE", "QTE EN CDE",
                             "Qté à commander maintenant", "À commander 12 mois (qté)", "À commander 24 mois (qté)",
                             "À commander 36 mois (qté)", "Dernier PU (achat) Euros", "Valeur 12 mois (€)", "Valeur 24 mois (€)",
                             "Valeur 36 mois (€)"] if c in d.columns]].rename(columns={
@@ -1055,7 +1017,7 @@ def _detail_pn(s, res):
         ui.kpi_grid([
             ui.kpi_card("Stock étagère", charts.entier(r["QTE SUR ÉTAGÈRE"] or 0)),
             ui.kpi_card("En commande", charts.entier(r["QTE EN CDE"] or 0), "", "info"),
-            ui.kpi_card("Conso prévue", f"{r['Conso prévue / mois']:.1f} / mois".replace(".", ","),
+            ui.kpi_card("Conso prévue (12 mois)", charts.entier(r["Conso prévue 12 mois (qté)"]),
                         f"{r['Tendance conso']} · 12 mois : {charts.entier(r['Conso 12 mois'])}", TENDANCE_TONS.get(r["Tendance conso"], "navy"),
                         "trend"),
             ui.kpi_card("Stock à tenir", charts.entier(r["Stock à tenir (qté)"]),

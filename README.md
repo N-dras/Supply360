@@ -119,7 +119,7 @@ Stock, consommation, commandes et retards fournisseurs des ceintures, housses, m
 | Pièces par avion (textile_all_parts) — CSV ou Excel | `equipment`, `aircraft_type`, `group`, `registration`, `area`, `ccn`, `pn`, `description`, `qty_per_ac` | |
 
 Seul l'État du stock est indispensable ; les autres fichiers complètent l'analyse. La Prévision
-demande en plus le fichier Pièces par avion.
+fonctionne avec le seul État du stock (consommation) ; Pièces par avion y ajoute le stock minimum par flotte et le filtre Flotte.
 
 **Croisement par CCN** : une même pièce peut avoir un PN différent d'un fichier à l'autre. Elle est reconnue par son PN,
 à défaut par son **CCN** : une ligne de commande écrite avec un autre PN est rattachée au PN du stock de même CCN (le PN

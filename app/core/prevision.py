@@ -1,11 +1,14 @@
-"""Prévision de commandes textile, pilotée par la politique d'entretien (PE) et les groupes d'avions.
+"""Prévision de commandes textile, pilotée par la consommation réelle (État du stock « Résultat »).
 
-Logique reprise de textile_policy.py (dashboard Textile d'origine), sans la partie graphique :
-  1. chaque groupe d'avions (ex. « A320 Group 1 ») a une quantité de pièces par avion pour chaque PN ;
-  2. on veut toujours avoir en stock de quoi équiper N avions d'avance (buffer = ratio de la taille du groupe) ;
-  3. les PE planifiées (immatriculation + date) consomment du stock ; on commande, en tenant compte du délai
-     fournisseur, pour que le stock reste au-dessus du besoin (buffer + PE à venir).
-Ajout : `par_fournisseur` regroupe la prévision par fournisseur (nom, ou à défaut code fournisseur).
+  1. rythme de consommation de chaque PN : QTE CONSO 12M, 18M et 24M, le plus récent pesant le plus
+     (`tendance_conso`) ; évolution des 12 derniers mois par rapport aux 12 mois d'avant ;
+  2. stock à tenir = le plus grand de : stock minimum par flotte (de quoi équiper 10 % des avions de chaque groupe
+     d'avions, pièces par avion) et stock de sécurité statistique (selon l'irrégularité de la consommation et le délai
+     fournisseur, taux de service visé) ;
+  3. on commande, en tenant compte du délai fournisseur, pour que le stock reste au-dessus du stock à tenir alors que
+     la consommation prévue le fait baisser chaque mois.
+Pas de politique d'entretien (PE) ni de sortie de flotte : la PE n'existe pas pour tous les équipements textile.
+Fournisseur d'un PN : CODE FOURNISSEUR du Résultat (`fournisseur_prevision`).
 """
 
 import io
@@ -21,9 +24,17 @@ from core import textile as tx
 MAX_LT = 24
 RAW_COLS = ["equipment", "aircraft_type", "group", "registration", "area", "ccn", "pn", "description", "qty_per_ac"]
 OBSOLETE = "Obsolète / supprimé : pas de commande"  # classe code 3, 8 ou 9 (textile.fin_de_vie)
-STATUS_ORDER = ["A commander", "A planifier", "OK", "Dormant / inactif : pas de commande", OBSOLETE, "Hors groupe avion"]
+HORS = "Hors prévision (ni flotte ni conso)"
+STATUS_ORDER = ["A commander", "A planifier", "OK", "Dormant / inactif : pas de commande", OBSOLETE, HORS]
 STATUS_COLORS = {"A commander": "#A61B1B", "A planifier": "#DBA100", "OK": "#1E8E5A",
-                 "Dormant / inactif : pas de commande": "#7B61C9", OBSOLETE: "#5B6478", "Hors groupe avion": "#B5BDCB"}
+                 "Dormant / inactif : pas de commande": "#7B61C9", OBSOLETE: "#5B6478", HORS: "#B5BDCB"}
+# Tendance de consommation : 12 derniers mois comparés aux 12 mois d'avant (± 20 % = stable)
+SEUIL_TENDANCE = 0.20
+TENDANCES = ["En hausse", "Nouveau", "Stable", "En baisse", "Sans conso", "Non mesurée"]
+TENDANCE_COLORS = {"En hausse": "#E8590C", "Nouveau": "#7B61C9", "Stable": "#1E8E5A", "En baisse": "#2B6CB0",
+                   "Sans conso": "#8A94A6", "Non mesurée": "#B5BDCB"}
+# Taux de service visé → coefficient de la loi normale (stock de sécurité)
+Z_SERVICE = {0.90: 1.28, 0.95: 1.65, 0.98: 2.05}
 BLOQUEE = "Commande bloquée (PN dormant, inactif ou obsolète) (qté)"
 GROUP_STATUS_ORDER = ["Sous l'objectif", "Couvert si commandes livrées", "Objectif atteint"]
 # Même code couleur que partout : vert = stock, bleu = à réception des commandes, rouge = à commander.
@@ -34,7 +45,6 @@ DEFAULT_PE = {
     "MOUSSE": {(c, p): 3 for c in CLASS_ORDER for p in ("Assise", "Dossier")},
 }
 FICHIER_PIECES = "Pièces par avion"
-FICHIER_PLANNING = "Planning PE"
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,8 @@ class Params:
     assise_kw: str = "bott, btm, seat, cushion, ottoman, legrest, calfrest, footrest, base"
     dossier_kw: str = "back, headrest, head, neck"
     default_component: str = "Assise"
+    taux_service: float = 0.95                # stock de sécurité : 95 % des mois sans rupture
+    poids_conso: tuple = (0.5, 0.3, 0.2)      # poids des rythmes 12, 18 et 24 mois
 
 
 def _norm_str(v):
@@ -75,33 +87,6 @@ def lire_pieces(data: bytes, nom: str) -> pd.DataFrame:
             if set(RAW_COLS) <= set(df.columns):
                 return df
     raise sio.FichierIllisible(f"Fichier {FICHIER_PIECES} : aucune feuille avec les colonnes {', '.join(RAW_COLS)}.")
-
-
-def lire_planning(data: bytes, nom: str) -> pd.DataFrame:
-    bio = io.BytesIO(data)
-    df = pd.read_csv(bio, sep=None, engine="python") if nom.lower().endswith(".csv") else \
-        sio.ouvrir_excel(data, FICHIER_PLANNING).parse(0)
-    cols = {sio.normaliser(c).replace("_", ""): c for c in df.columns}
-
-    def pick(*alias):
-        for a in alias:
-            k = sio.normaliser(a).replace("_", "")
-            if k in cols:
-                return cols[k]
-        return None
-    reg, dte = pick("Immatriculation", "registration"), pick("Date prochaine PE", "date PE", "prochaine PE", "date")
-    if not reg or not dte:
-        raise sio.ColonneIntrouvable("Immatriculation / Date prochaine PE", FICHIER_PLANNING)
-    eq, cl, comp, cyc = pick("Equipement", "equipment"), pick("Classe", "area", "class"), pick("Composant", "component"), pick("Cycle PE (ans)", "cycle")
-    out = pd.DataFrame({
-        "registration": df[reg].map(_norm_str).str.upper(),
-        "date": pd.to_datetime(df[dte], errors="coerce", dayfirst=True),
-        "pl_equipment": df[eq].map(_norm_str).str.upper() if eq else "",
-        "pl_area": df[cl].map(_norm_str) if cl else "",
-        "pl_comp": df[comp].map(_norm_str).str.capitalize() if comp else "",
-        "pl_cycle": pd.to_numeric(df[cyc], errors="coerce").fillna(0) if cyc else 0.0,
-    })
-    return out.dropna(subset=["date"]).query("registration != ''").reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------
@@ -150,12 +135,6 @@ def rattacher_pieces(parts: pd.DataFrame, pbi: pd.DataFrame) -> pd.DataFrame:
     parts = parts.copy()
     parts.loc[inconnu & via.notna(), "pn"] = via[inconnu & via.notna()]
     return parts
-
-
-def registration_parts(parts):
-    """Quantité par immatriculation (un avion présent dans deux groupes n'est compté qu'une fois)."""
-    base = parts.drop_duplicates(["equipment", "registration", "area", "ccn", "pn", "description", "qty_per_ac"])
-    return base.groupby(["equipment", "aircraft_type", "registration", "area", "Composant", "pn"], as_index=False)["qty_per_ac"].sum()
 
 
 def group_pn_table(parts):
@@ -263,37 +242,69 @@ def pn_requirement(g):
 
 
 # --------------------------------------------------------------------------
-# Planning PE
+# Consommation : rythme, tendance, stock de sécurité
 # --------------------------------------------------------------------------
+def tendance_conso(pbi: pd.DataFrame, p: Params, today) -> pd.DataFrame:
+    """Par PN (même index que `pbi`) : consommations 12 / 18 / 24 mois, 12 mois d'avant, évolution, tendance, rythme
+    prévu par mois et irrégularité (écart type mensuel).
+
+    Rythme prévu = moyenne des rythmes mensuels 12, 18 et 24 mois pondérée par `p.poids_conso` (le plus récent pèse le
+    plus ; une fenêtre absente du fichier est ignorée). Irrégularité = écart entre les années civiles complètes
+    (3 dernières), ramené au mois ; au moins la racine du rythme (une conso régulière varie aussi d'un mois à l'autre).
+    """
+    num = lambda c: pd.to_numeric(pbi[c], errors="coerce") if c in pbi else pd.Series(np.nan, index=pbi.index)  # noqa: E731
+    c12, c18, c24 = num("QTE CONSO 12M"), num("QTE CONSO 18M"), num("QTE CONSO 24M")
+    haut = pd.Series(0.0, index=pbi.index)
+    bas = pd.Series(0.0, index=pbi.index)
+    for c, mois, w in zip((c12, c18, c24), (12, 18, 24), p.poids_conso):
+        ok = c.notna()
+        haut += (c.fillna(0) / mois * w).where(ok, 0.0)
+        bas += pd.Series(np.where(ok, w, 0.0), index=pbi.index)
+    rythme = (haut / bas.replace(0, np.nan)).fillna(0).clip(lower=0)
+    avant = (c24 - c12).clip(lower=0)
+    evol = ((c12 - avant) / avant.replace(0, np.nan))
+    sans = (c12.fillna(0) <= 0) & (avant.fillna(0) <= 0)
+    tendance = np.select([sans, c24.isna(), avant.fillna(0) <= 0, evol > SEUIL_TENDANCE, evol < -SEUIL_TENDANCE],
+                         ["Sans conso", "Non mesurée", "Nouveau", "En hausse", "En baisse"], "Stable")
+    annees = [a for a in tx.annees_conso(pbi) if a < pd.Timestamp(today).year][-3:]
+    if len(annees) >= 2:
+        sigma_an = pd.concat([num(f"QTE CONSO {a}") for a in annees], axis=1).std(axis=1, ddof=1).fillna(0)
+    else:
+        sigma_an = pd.Series(0.0, index=pbi.index)
+    sigma = np.maximum(np.sqrt(rythme), sigma_an / np.sqrt(12)).where(rythme > 0, 0.0)
+    return pd.DataFrame({
+        "Conso 12 mois": c12, "Conso 18 mois": c18, "Conso 24 mois": c24, "Conso 12 mois d'avant": avant,
+        "Évolution conso (%)": (evol * 100).round(0), "Tendance conso": tendance,
+        "Conso prévue / mois": rythme.round(2), "Irrégularité (pièces / mois)": sigma.round(2),
+    }, index=pbi.index)
+
+
+def stock_securite(rythme, sigma, delai_mois, taux_service: float) -> np.ndarray:
+    """Stock de sécurité = coefficient du taux de service × irrégularité mensuelle × racine du délai (en mois),
+    arrondi au-dessus ; 0 pour un PN sans consommation prévue."""
+    z = Z_SERVICE.get(round(float(taux_service), 2), 1.65)
+    ss = np.ceil(z * np.asarray(sigma, float) * np.sqrt(np.maximum(np.asarray(delai_mois, float), 1)) - 1e-9)
+    return np.where(np.asarray(rythme, float) > 0, np.maximum(ss, 0), 0.0)
+
+
+def flottes_pn(gp: pd.DataFrame, flottes=None) -> pd.DataFrame:
+    """Par PN : flottes qui l'utilisent (« A320 · A350 ») et, si `flottes` est donné, part des pièces installées sur
+    ces flottes (un PN commun à plusieurs flottes n'appartient pas qu'à la flotte filtrée)."""
+    if gp is None or gp.empty:
+        return pd.DataFrame(columns=["Flottes", "Part des flottes choisies (%)"])
+    d = gp.assign(_q=gp["qty_per_ac"] * gp.get("avions_avec_pn", 1))
+    par = d.groupby(["pn", "aircraft_type"])["_q"].sum()
+    out = pd.DataFrame({"Flottes": par.reset_index().groupby("pn")["aircraft_type"].agg(lambda s: " · ".join(sorted(set(map(str, s)))))})
+    if flottes:
+        tot = par.groupby(level=0).sum()
+        sel = par[par.index.get_level_values(1).isin(list(flottes))].groupby(level=0).sum()
+        out["Part des flottes choisies (%)"] = (sel.reindex(out.index).fillna(0) / tot.replace(0, np.nan) * 100).round(0)
+    return out
+
+
 def month_index(dates, today):
     t = pd.Timestamp(today)
     return ((dates.dt.year - t.year) * 12 + (dates.dt.month - t.month)).astype(int)
-
-
-def expand_events(planning, reg_parts, rules, today, horizon):
-    """Occurrences de PE (cycle répété) par PN : registration x composant x mois."""
-    cols = ["registration", "aircraft_type", "equipment", "area", "Composant", "pn", "qty", "idx", "overdue"]
-    if planning is None or planning.empty:
-        return pd.DataFrame(columns=cols)
-    m = planning.merge(reg_parts.rename(columns={"qty_per_ac": "qty"}), on="registration", how="inner")
-    for a, b in [("pl_equipment", "equipment"), ("pl_area", "area"), ("pl_comp", "Composant")]:
-        m = m[(m[a] == "") | (m[a] == m[b])]
-    m = m.merge(rules.rename(columns={"Equipement": "equipment", "Classe": "area"}), on=["equipment", "area", "Composant"], how="left")
-    m["cycle"] = np.where(m["pl_cycle"] > 0, m["pl_cycle"], m["Cycle PE (ans)"].fillna(0))
-    m["idx0"] = month_index(m["date"], today)
-    T = horizon + MAX_LT
-    step = np.round(m["cycle"] * 12).astype(int)
-    out = []
-    for k in range(0, 12):
-        idx = m["idx0"] + step * k
-        keep = (idx <= T - 1) & ((k == 0) | (step > 0)) & ((idx >= 0) | (k == 0))
-        if not keep.any():
-            continue
-        e = m[keep].copy()
-        e["idx"] = idx[keep].clip(lower=0)
-        e["overdue"] = (idx[keep] < 0)
-        out.append(e[cols])
-    return pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=cols)
 
 
 # --------------------------------------------------------------------------
@@ -329,8 +340,8 @@ def deliveries_matrix(orders, pns, today, p, T):
 # --------------------------------------------------------------------------
 # Projection et plan de commande
 # --------------------------------------------------------------------------
-def project_orders(pbi, orders, events, p, today):
-    """Pour chaque PN : stock projeté, PE à venir, commandes à passer (délai fournisseur inclus)."""
+def project_orders(pbi, orders, p, today):
+    """Pour chaque PN : stock projeté (consommation prévue chaque mois), commandes à passer (délai fournisseur inclus)."""
     H = p.horizon_months
     T = H + MAX_LT
     pns = pbi["PNR"].tolist()
@@ -338,11 +349,12 @@ def project_orders(pbi, orders, events, p, today):
     pos = {pn: i for i, pn in enumerate(pns)}
     lt_m, lt_days, lt_src = lead_time_months(pbi, p)
     deliv = deliveries_matrix(orders, pns, today, p, T)
-    pe = np.zeros((n, T))
-    if events is not None and len(events):
-        ev = events[events["pn"].isin(pos)]
-        np.add.at(pe, (ev["pn"].map(pos).to_numpy(), ev["idx"].to_numpy(int)), ev["qty"].to_numpy(float))
-    req = pbi["Besoin minimum (qté)"].fillna(0).to_numpy(float)
+    rythme = pbi["Conso prévue / mois"].fillna(0).to_numpy(float) if "Conso prévue / mois" in pbi else np.zeros(n)
+    pe = np.repeat(rythme[:, None], T, axis=1)  # consommation prévue, chaque mois
+    sigma = pbi["Irrégularité (pièces / mois)"].fillna(0).to_numpy(float) if "Irrégularité (pièces / mois)" in pbi else np.zeros(n)
+    ss = stock_securite(rythme, sigma, lt_m, p.taux_service)
+    stock_min = pbi["Besoin minimum (qté)"].fillna(0).to_numpy(float)
+    req = np.maximum(stock_min, ss)  # stock à tenir
     stock0 = pbi["QTE SUR ÉTAGÈRE"].fillna(0).to_numpy(float)
     pu = pd.to_numeric(pbi.get("Dernier PU (achat) Euros", pd.Series(0.0, index=pbi.index)), errors="coerce").fillna(0).to_numpy(float)
     cum_pe, cum_dl = np.cumsum(pe, axis=1), np.cumsum(deliv, axis=1)
@@ -368,7 +380,8 @@ def project_orders(pbi, orders, events, p, today):
     blocked_qty = np.where(inactive | obsolete, orders_m.sum(axis=1), 0.0)
     orders_m[inactive | obsolete] = 0.0
     shortfall_mask = obsolete  # PN qu'on ne réapprovisionne plus : pas de « manque avant livraison »
-    in_group = pbi["Nb groupes avions"].fillna(0).to_numpy() > 0
+    in_group = pbi["Dans la prévision"].fillna(False).to_numpy(bool) if "Dans la prévision" in pbi \
+        else pbi["Nb groupes avions"].fillna(0).to_numpy() > 0
     ord_now = orders_m[:, 0]
     ord_total = orders_m.sum(axis=1)
     first_ord = np.array([int(np.argmax(r > 0)) if r.any() else -1 for r in orders_m])
@@ -376,7 +389,10 @@ def project_orders(pbi, orders, events, p, today):
     to_month = lambda k: pd.NaT if k < 0 else (t0 + int(k)).start_time  # noqa: E731
     out = pbi.copy()
     out["Délai (mois)"], out["Source délai"] = lt_m, lt_src
-    out["PE planifiée sur l'horizon (qté)"] = pe[:, :H].sum(axis=1)
+    out["Stock de sécurité (qté)"] = ss
+    out["Stock à tenir (qté)"] = req
+    out["Stock à tenir basé sur"] = np.where(req <= 0, "—", np.where(ss > stock_min, "Conso (sécurité)", "Flotte (minimum)"))
+    out["Conso prévue sur la période (qté)"] = np.ceil(pe[:, :H].sum(axis=1) - 1e-9)
     out["Stock minimum respecté"] = np.where(in_group, stock0 >= req - 1e-9, np.nan)
     out["Qté à commander maintenant"] = ord_now
     out["Valeur à commander maintenant (€)"] = (ord_now * pu).round(0)
@@ -388,7 +404,7 @@ def project_orders(pbi, orders, events, p, today):
     out["Valeur stock hors groupe avion (€)"] = np.where(in_group, 0, out["Valeur stock (€)"].fillna(0))
     out["Statut prévision"] = np.select(
         [~in_group, obsolete, inactive, ord_now > 0, ord_total > 0],
-        ["Hors groupe avion", OBSOLETE, "Dormant / inactif : pas de commande", "A commander", "A planifier"], default="OK")
+        [HORS, OBSOLETE, "Dormant / inactif : pas de commande", "A commander", "A planifier"], default="OK")
     out[BLOQUEE] = blocked_qty
     out["Stock / besoin minimum (%)"] = np.where(req > 0, (stock0 / np.where(req > 0, req, 1) * 100).round(0), np.nan)
 
@@ -396,10 +412,10 @@ def project_orders(pbi, orders, events, p, today):
     rep = lambda a: a[:, :H].ravel()  # noqa: E731
     monthly = pd.DataFrame({
         "PNR": np.repeat(pns, H), "Catégorie": np.repeat(tx.categorie(pbi).to_numpy(), H), "Mois": np.tile(months, n),
-        "Livraisons attendues": rep(deliv), "PE planifiée (pièces)": rep(pe), "Commande à passer": orders_m.ravel(),
+        "Livraisons attendues": rep(deliv), "Conso prévue (pièces)": rep(pe), "Commande à passer": orders_m.ravel(),
         "Arrivée des commandes recommandées": rep(np.diff(add_cum, axis=1, prepend=0.0)),
         "Stock sans nouvelle commande": rep(supply - cum_pe), "Stock avec commandes recommandées": rep(supply + add_cum - cum_pe),
-        "Niveau à tenir (minimum + PE cumulée)": rep(need), "Stock minimum": np.repeat(req, H),
+        "Niveau à tenir (stock à tenir + conso cumulée)": rep(need), "Stock à tenir": np.repeat(req, H),
     })
     sel = np.argwhere(orders_m > 0)
     cat = tx.categorie(pbi).to_numpy()
@@ -414,8 +430,8 @@ def project_orders(pbi, orders, events, p, today):
     return out, monthly, plan
 
 
-def run_policy(pbi, orders, parts, fleet, planning, rules, p, today):
-    reg_parts = registration_parts(parts)
+def run_policy(pbi, orders, parts, fleet, rules, p, today):
+    """Prévision complète : stock minimum par flotte, tendance de consommation, plan de commande."""
     gp = group_pn_table(parts)
     pbi = ajouter_delais(pbi, orders, p)
     g = build_requirements(gp, fleet, rules, pbi, p)
@@ -423,20 +439,21 @@ def run_policy(pbi, orders, parts, fleet, planning, rules, p, today):
     pbi = pbi.merge(req, on="PNR", how="left")
     pbi["Dans un groupe avion"] = pbi["Nb groupes avions"].fillna(0) > 0
     pbi["Besoin minimum (qté)"] = pbi["Besoin minimum (qté)"].fillna(0)
-    events = expand_events(planning, reg_parts, rules, today, p.horizon_months)
-    pbi, monthly, plan = project_orders(pbi, orders, events, p, today)
+    pbi = pd.concat([pbi, tendance_conso(pbi, p, today)], axis=1)
+    pbi["Dans la prévision"] = pbi["Dans un groupe avion"] | (pbi["Conso prévue / mois"] > 0)
+    pbi, monthly, plan = project_orders(pbi, orders, p, today)
     pbi["Fournisseur"] = fournisseur_prevision(pbi)
     plan = plan.merge(pbi[["PNR", "Fournisseur"]].drop_duplicates("PNR"), on="PNR", how="left")
     gs = group_summary(g)
-    return pbi, {"gp": g, "gs": gs, "events": events, "monthly": monthly, "plan": plan, "reg_parts": reg_parts}
+    return pbi, {"gp": g, "gs": gs, "monthly": monthly, "plan": plan}
 
 
 def explain_pn(pn, gp):
     """Calcul détaillé d'un PN : groupes d'avions, objectif, besoin et stock réparti."""
-    d = gp[gp["pn"] == pn][["group", "area", "Composant", "qty_per_ac", "Avions du groupe", "Objectif avions d'avance", "Cycle PE (ans)",
+    d = gp[gp["pn"] == pn][["aircraft_type", "group", "area", "Composant", "qty_per_ac", "Avions du groupe", "Objectif avions d'avance",
                            "Besoin minimum (qté)", "Stock alloué", "Commandes allouées", "Avions équipables (stock)"]].copy()
-    d.columns = ["Groupe", "Classe", "Composant", "Qté par avion", "Avions du groupe", "Objectif avions d'avance", "Cycle PE (ans)",
-                 "Besoin minimum (qté)", "Stock alloué", "Commandes allouées", "Avions équipables (stock)"]
+    d.columns = ["Flotte", "Groupe", "Classe", "Composant", "Qté par avion", "Avions du groupe", "Objectif avions d'avance",
+                 "Stock minimum (qté)", "Stock alloué", "Commandes allouées", "Avions équipables (stock)"]
     return d.round(1)
 
 
@@ -447,30 +464,29 @@ FOURNISSEUR_ABSENT = "Fournisseur non renseigné"
 
 
 def fournisseur_prevision(pbi: pd.DataFrame) -> pd.Series:
-    """Fournisseur d'un PN, identifié par son CODE fournisseur (à défaut son nom) : un même fournisseur n'apparaît
-    qu'une fois dans les listes, même s'il est écrit de plusieurs façons.
+    """Fournisseur d'un PN, identifié par son CODE fournisseur : un même fournisseur n'apparaît qu'une fois.
 
-    Ordre : code habituel des commandes → CODE FOURNISSEUR de l'État du stock → nom habituel des commandes →
-    DERNIER FOURNISSEUR de l'État du stock → « Fournisseur non renseigné ».
+    Ordre : CODE FOURNISSEUR de l'État du stock (« Résultat », un code par PN) → code habituel des commandes →
+    nom habituel des commandes → DERNIER FOURNISSEUR de l'État du stock → « Fournisseur non renseigné ».
     """
     vide = lambda s: s.isna() | s.astype(str).str.strip().isin(["", "nan", "None"])  # noqa: E731
     col = lambda c: pbi[c].astype(object).where(~vide(pbi[c])) if c in pbi else pd.Series(np.nan, index=pbi.index, dtype=object)  # noqa: E731
     princ = col("Fournisseur principal")
     est_code = pbi["Fournisseur principal (code)"].eq(True) if "Fournisseur principal (code)" in pbi \
         else pd.Series(False, index=pbi.index)
-    f = princ.where(est_code)
-    f = f.fillna(col("CODE FOURNISSEUR"))
-    f = f.fillna(princ).fillna(col("DERNIER FOURNISSEUR"))
+    f = col("CODE FOURNISSEUR").astype(object)
+    f = f.fillna(princ.where(est_code)).fillna(princ).fillna(col("DERNIER FOURNISSEUR"))
     return f.fillna(FOURNISSEUR_ABSENT).astype(object)
 
 
 def suivis(s: pd.DataFrame) -> pd.DataFrame:
-    """PN réapprovisionnés : actifs, rattachés à un groupe d'avions, hors classe code 3 / 8 / 9."""
-    return s[s["Dans un groupe avion"] & (s["Statut activité"] == "Actif") & (s["Statut prévision"] != OBSOLETE)]
+    """PN réapprovisionnés : actifs, dans la prévision (flotte connue ou consommation), hors classe code 3 / 8 / 9."""
+    col = "Dans la prévision" if "Dans la prévision" in s else "Dans un groupe avion"
+    return s[s[col] & (s["Statut activité"] == "Actif") & (s["Statut prévision"] != OBSOLETE)]
 
 
 def par_fournisseur(s: pd.DataFrame, plan: pd.DataFrame) -> pd.DataFrame:
-    """Une ligne par fournisseur (PN actifs rattachés à un groupe d'avions) : quoi commander, quand, pour combien."""
+    """Une ligne par fournisseur (PN actifs de la prévision) : quoi commander, quand, pour combien."""
     cand = suivis(s)
     if cand.empty:
         return pd.DataFrame(columns=["Fournisseur", "PN suivis", "PN à commander", "Qté à commander maintenant",

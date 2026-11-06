@@ -166,8 +166,7 @@ def prevision(tables):
     s, o = tables
     p = pv.Params()
     parts, fleet, sans_pn = pv.preparer_pieces(pv.lire_pieces(octets("pieces_par_avion.csv"), "pieces_par_avion.csv"), p)
-    plan = pv.lire_planning(octets("planning_pe.xlsx"), "planning_pe.xlsx")
-    return pv.run_policy(s, o, parts, fleet, plan, pv.regles_pe_defaut(parts), p, TODAY)
+    return pv.run_policy(s, o, parts, fleet, pv.regles_pe_defaut(parts), p, TODAY)
 
 
 def test_prevision_besoin_et_statuts(prevision):
@@ -177,8 +176,7 @@ def test_prevision_besoin_et_statuts(prevision):
     assert r.loc["FX-1002", "Besoin minimum (qté)"] == 60
     assert r.loc["FX-1002", "Statut prévision"] == "A commander"
     assert r.loc["FX-2001", "Statut prévision"] == "Dormant / inactif : pas de commande"
-    assert r.loc["FX-1007", "Statut prévision"] == "Hors groupe avion"
-    assert res["events"]["registration"].nunique() == 3
+    assert r.loc["FX-1007", "Statut prévision"] in (pv.HORS, "A commander", "A planifier", "OK")  # sans flotte : conso seule
     assert set(res["gs"]["Statut groupe"]) <= set(pv.GROUP_STATUS_ORDER)
 
 
@@ -187,18 +185,18 @@ def test_prevision_par_fournisseur(prevision):
     f = pv.par_fournisseur(pbi, res["plan"]).set_index("Fournisseur")
     assert "F002" in f.index                       # PN sans commande : code fournisseur de l'État du stock
     assert not any(str(x).startswith("Fournisseur ") for x in f.index)  # uniquement des codes : aucun doublon nom / code
-    assert f["PN à commander"].sum() == ((pbi["Qté à commander maintenant"] > 0) & pbi["Dans un groupe avion"]
+    assert f["PN à commander"].sum() == ((pbi["Qté à commander maintenant"] > 0) & pbi["Dans la prévision"]
                                          & (pbi["Statut activité"] == "Actif")).sum()
     assert res["plan"]["Fournisseur"].notna().all()
 
 
 def test_fournisseur_prevision_ordre():
-    """Code des commandes → CODE FOURNISSEUR du stock → nom des commandes → DERNIER FOURNISSEUR → non renseigné."""
+    """CODE FOURNISSEUR du Résultat → code des commandes → nom des commandes → DERNIER FOURNISSEUR → non renseigné."""
     d = pd.DataFrame({"Fournisseur principal": ["F1", "Alpha", "Bravo", np.nan, np.nan, np.nan],
                       "Fournisseur principal (code)": [True, False, False, False, False, False],
                       "DERNIER FOURNISSEUR": ["Nom 1", "Nom A", np.nan, "Charlie", np.nan, np.nan],
                       "CODE FOURNISSEUR": ["F9", "F2", np.nan, np.nan, "F4", np.nan]})
-    assert pv.fournisseur_prevision(d).tolist() == ["F1", "F2", "Bravo", "Charlie", "F4", pv.FOURNISSEUR_ABSENT]
+    assert pv.fournisseur_prevision(d).tolist() == ["F9", "F2", "Bravo", "Charlie", "F4", pv.FOURNISSEUR_ABSENT]
 
 
 def test_commandes_fournisseur_par_code():
@@ -295,8 +293,7 @@ def test_prevision_sans_commande_classe_code_3_8_9(tables):
     s.loc[s["PNR"] == "FX-1002", "CLASS CODE"] = 9
     p = pv.Params()
     parts, fleet, _ = pv.preparer_pieces(pv.lire_pieces(octets("pieces_par_avion.csv"), "pieces_par_avion.csv"), p)
-    plan = pv.lire_planning(octets("planning_pe.xlsx"), "planning_pe.xlsx")
-    pbi, res = pv.run_policy(s, o, parts, fleet, plan, pv.regles_pe_defaut(parts), p, TODAY)
+    pbi, res = pv.run_policy(s, o, parts, fleet, pv.regles_pe_defaut(parts), p, TODAY)
     r = pbi.set_index("PNR").loc["FX-1002"]
     assert r["Statut prévision"] == pv.OBSOLETE
     assert r["Qté à commander maintenant"] == 0 and r["Commandes recommandées sur l'horizon (qté)"] == 0
@@ -350,3 +347,39 @@ def test_perimetre_flotte_et_equipement(tables):
     s3, _ = T._filtrer(s, o, (("HOUSSE",), None))
     assert set(tx.categorie(s3)) == {"HOUSSE"}
     assert T._cles_flottes(parts, ()) is None                    # aucune flotte choisie : tout
+
+
+def test_tendance_conso():
+    """Rythme pondéré 12 / 18 / 24 mois (50 / 30 / 20 %) et tendance des 12 derniers mois contre les 12 d'avant."""
+    d = pd.DataFrame({"QTE CONSO 12M": [120, 50, 0, 30, 0], "QTE CONSO 18M": [162, 90, 0, 30, 10],
+                      "QTE CONSO 24M": [192, 130, 0, 30, 40], "QTE CONSO 2024": [90, 80, 0, 0, 30], "QTE CONSO 2025": [110, 60, 0, 30, 10]})
+    t = pv.tendance_conso(d, pv.Params(), pd.Timestamp("2026-11-04"))
+    assert t["Conso prévue / mois"].round(1).tolist()[0] == 9.3            # 0,5 × 10 + 0,3 × 9 + 0,2 × 8
+    assert t["Tendance conso"].tolist() == ["En hausse", "En baisse", "Sans conso", "Nouveau", "En baisse"]
+    assert t["Évolution conso (%)"].iloc[0] == 67                          # 120 contre 72
+    assert t["Irrégularité (pièces / mois)"].iloc[2] == 0                  # pas de conso : pas d'irrégularité
+
+
+def test_stock_securite():
+    """Stock de sécurité = coefficient (95 % → 1,65) × irrégularité × racine du délai ; 0 sans conso prévue."""
+    ss = pv.stock_securite([10, 0], [4, 4], [4, 4], 0.95)
+    assert ss.tolist() == [14.0, 0.0]                                      # 1,65 × 4 × 2 = 13,2 → 14
+
+
+def test_prevision_suit_la_conso(prevision):
+    """La demande prévue est la consommation : commandes sur la période ≥ conso prévue − stock − commandes en cours."""
+    pbi, _ = prevision
+    r = pbi[pbi["Dans la prévision"] & (pbi["Statut activité"] == "Actif") & ~tx.fin_de_vie(pbi)]
+    assert (r["Stock à tenir (qté)"] >= r["Besoin minimum (qté)"]).all()
+    assert (r["Stock à tenir (qté)"] >= r["Stock de sécurité (qté)"]).all()
+    manque = r["Stock à tenir (qté)"] + r["Conso prévue sur la période (qté)"] - r["QTE SUR ÉTAGÈRE"].fillna(0) - r["QTE EN CDE"].fillna(0)
+    assert (r["Commandes recommandées sur l'horizon (qté)"] + 1 >= manque.clip(lower=0)).all()
+
+
+def test_flottes_pn():
+    """PN commun à deux flottes : il apparaît sous chacune ; part des pièces installées sur la flotte filtrée."""
+    gp = pd.DataFrame({"pn": ["P1", "P1", "P2"], "aircraft_type": ["A320", "A220", "A350"], "qty_per_ac": [10, 10, 4],
+                       "avions_avec_pn": [3, 1, 2]})
+    f = pv.flottes_pn(gp, ["A320"])
+    assert f.loc["P1", "Flottes"] == "A220 · A320" and f.loc["P1", "Part des flottes choisies (%)"] == 75
+    assert f.loc["P2", "Part des flottes choisies (%)"] == 0

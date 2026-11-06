@@ -153,18 +153,26 @@ et classe code. Règles et seuil dans le popover « Règles de calcul et seuil �
 2030 ou plus (ou vide) = sans date promise ; 2049 = en attente de BFE. PN **dormant** = du stock mais
 aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni commande.
 
-**Prévision de commandes** (détail dans « Comment c'est calculé ») :
+**Prévision de commandes** (détail dans « Comment c'est calculé ») — fondée sur la **consommation**, pas sur la PE
+(elle n'existe pas pour tous les équipements textile) ni sur les sorties de flotte :
 
-- **stock minimum** d'un PN = quantité par avion × objectif d'avance (10 % des avions du groupe, au
-  moins 1), additionné sur les groupes d'avions qui l'utilisent ;
-- **commande** au plus tard à la date de besoin moins le délai fournisseur ; si le délai est trop long,
-  la commande part maintenant ;
-- les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés (statut « Obsolète / supprimé : pas de commande » pour ces derniers) ;
-- vue **par fournisseur** : PN à commander, valeur maintenant et sur l'horizon, détail d'un fournisseur
-  (stock / en commande / à commander par PN, **écart promis − demandé par ligne de commande**).
-  Fournisseur d'un PN : désigné par son **code fournisseur** (voir « Fournisseur = code fournisseur » plus bas).
+- **consommation prévue** d'un PN par mois = moyenne des rythmes `QTE CONSO 12M`, `18M` et `24M` du Résultat, le plus
+  récent pesant le plus (50 / 30 / 20 %) ; **tendance** = 12 derniers mois comparés aux 12 mois d'avant (24M − 12M) :
+  en hausse (> +20 %), stable, en baisse (< −20 %), nouveau, sans conso ;
+- **stock à tenir** = le plus grand de : **stock minimum par flotte** (quantité par avion × 10 % des avions du groupe,
+  au moins 1, additionné sur les groupes qui utilisent le PN ; nécessite « Pièces par avion ») et **stock de sécurité**
+  statistique (irrégularité de la consommation d'une année civile sur l'autre × racine du délai fournisseur × coefficient
+  du taux de service visé, 95 % par défaut) ;
+- **commande** pour que le stock reste au-dessus du stock à tenir malgré la consommation prévue, délai fournisseur
+  compris ; si le délai est trop long, la commande part maintenant ;
+- les PN dormants, inactifs, obsolètes ou supprimés (classe code 3, 8 ou 9) ne sont jamais recommandés ;
+- **évolution de la consommation** par PN (tableau et plus fortes hausses) ;
+- **flottes** : un PN monté sur plusieurs flottes apparaît sous chacune ; avec un filtre Flotte, « Part des flottes
+  choisies » donne la part des pièces installées sur ces flottes (la quantité à commander reste celle du PN) ;
+- vue **par fournisseur** : PN à commander, valeur maintenant et sur la période, détail d'un fournisseur.
+  Fournisseur d'un PN : le **CODE FOURNISSEUR du Résultat**, à défaut le code des commandes.
 
-Les paramètres (objectif d'avance, horizon, délai par défaut…) sont dans « Paramètres » › Prévision.
+Les paramètres (avions d'avance, taux de service, période, délai par défaut…) sont dans « Paramètres » › Prévision.
 Le planning des PE mousses est dans l'onglet **PE mousses**.
 
 ### 🛠️ PE mousses
@@ -262,9 +270,9 @@ Survol d'une colonne, d'une barre ou d'une case : infobulle avec toutes ses vale
 
 Un même fournisseur peut être écrit de plusieurs façons (« ALPHA SAS », « Alpha ») ou n'avoir qu'un code sur
 certaines lignes : il est donc désigné par son **code fournisseur** dans toutes les listes, graphes et tableaux
-(choix d'un fournisseur, regroupements, filtres de colonne). Ordre : code de la ligne de commande, sinon code des
-autres commandes du même PN, sinon `CODE FOURNISSEUR` de l'État du stock ; le nom n'est utilisé que si aucun code
-n'existe. Dans le détail d'un fournisseur, son nom tel qu'écrit dans les commandes est rappelé sous la liste.
+(choix d'un fournisseur, regroupements, filtres de colonne). Lignes de commande : code de la ligne, sinon code des autres
+commandes du même PN. Fournisseur d'un PN (prévision, PE mousses) : `CODE FOURNISSEUR` de l'État du stock (Résultat),
+sinon code des commandes ; le nom n'est utilisé que si aucun code n'existe. Dans le détail d'un fournisseur, son nom tel qu'écrit dans les commandes est rappelé sous la liste.
 
 Stock par chantier garde ses deux colonnes `Fournisseur` et `Code fournisseur`. Quand la colonne `Fournisseur` est
 vide dans les Commandes (SAP), le nom est retrouvé grâce au `Code fournisseur` (autres lignes du même code), puis

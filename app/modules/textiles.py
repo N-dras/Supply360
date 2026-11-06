@@ -46,11 +46,17 @@ COLONNES_ATTENDUES = {
 COL_RELANCES = {"Statut commande": "Statut", "Fournisseur": "Fournisseur", "Commande": "Commande", "PNR": "PN", "CCN": "CCN",
                 "REF_Equipement": "Catégorie", "Date livraison demandee": "Demandée", "Date livraison promise": "Promise",
                 "Jours de retard": "Retard (j)", "Qte restante": "Reste à livrer", "Code acheteur": "Acheteur"}
-COL_PREV = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Statut prévision": "Statut",
+COL_PREV = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Flottes": "Flottes",
+            "Part des flottes choisies (%)": "Part des flottes choisies (%)", "Statut prévision": "Statut",
             "Qté à commander maintenant": "À commander", "Date 1ère commande": "1re commande", "QTE SUR ÉTAGÈRE": "Stock",
-            "QTE EN CDE": "En commande", "Besoin minimum (qté)": "Stock minimum", "Délai (mois)": "Délai (mois)",
-            "Source délai": "Source délai", "Commandes recommandées sur l'horizon (qté)": "À commander sur la période",
+            "QTE EN CDE": "En commande", "Conso prévue / mois": "Conso prévue / mois", "Tendance conso": "Tendance",
+            "Stock à tenir (qté)": "Stock à tenir", "Stock à tenir basé sur": "Basé sur", "Délai (mois)": "Délai (mois)",
+            "Commandes recommandées sur l'horizon (qté)": "À commander sur la période",
             "Valeur à commander maintenant (€)": "Valeur maintenant (€)", "Fournisseur": "Fournisseur"}
+COL_TENDANCE = {"PNR": "PN", "CCN": "CCN", "DESCRIPTION": "Description", "REF_Equipement": "Catégorie", "Flottes": "Flottes",
+                "Tendance conso": "Tendance", "Conso 12 mois d'avant": "12 mois d'avant", "Conso 12 mois": "12 derniers mois",
+                "Évolution conso (%)": "Évolution (%)", "Conso 18 mois": "18 mois", "Conso 24 mois": "24 mois",
+                "Conso prévue / mois": "Conso prévue / mois", "QTE SUR ÉTAGÈRE": "Stock", "Fournisseur": "Fournisseur"}
 CFG = {
     "Demandée": st.column_config.DateColumn("Demandée", format="DD/MM/YYYY"),
     "Promise": st.column_config.DateColumn("Promise", format="DD/MM/YYYY"),
@@ -102,16 +108,20 @@ def _pieces(data: bytes, nom: str, params: pv.Params):
 
 
 @st.cache_resource(show_spinner="Calcul de la prévision de commandes…", max_entries=4)
-def _prevision(cle_tables: tuple, pieces: tuple, params: pv.Params, regles: tuple):
-    """(pbi avec prévision, résultats) — clé = fichiers + paramètres + règles PE (n-uplets, pas de tables).
+def _prevision(cle_tables: tuple, pieces: tuple | None, params: pv.Params):
+    """(pbi avec prévision, résultats) — clé = fichiers + paramètres (n-uplets, pas de tables).
 
-    Le Planning PE n'est pas importé pour l'instant : la prévision couvre le stock minimum (avions d'avance).
+    Demande = consommation (QTE CONSO 12M / 18M / 24M du Résultat). Sans « Pièces par avion », pas de stock minimum par
+    flotte : seul le stock de sécurité statistique s'applique.
     """
     s_all, o_all = _tables(*cle_tables)
-    parts, fleet, _ = _pieces(*pieces, params)
-    parts = pv.rattacher_pieces(parts, s_all)  # PN différent du stock mais même CCN : même pièce
-    rules = pd.DataFrame(list(regles), columns=["Equipement", "Classe", "Composant", "Cycle PE (ans)"])
-    return pv.run_policy(s_all, o_all, parts, fleet, None, rules, params, pd.Timestamp(cle_tables[3]))
+    if pieces:
+        parts, fleet, _ = _pieces(*pieces, params)
+        parts = pv.rattacher_pieces(parts, s_all)  # PN différent du stock mais même CCN : même pièce
+    else:
+        parts = pd.DataFrame(columns=[*pv.RAW_COLS, "Composant"])
+        fleet = pd.DataFrame(columns=["equipment", "aircraft_type", "group", "Avions du groupe"])
+    return pv.run_policy(s_all, o_all, parts, fleet, pv.regles_pe_defaut(parts), params, pd.Timestamp(cle_tables[3]))
 
 
 def _dans_perimetre(df: pd.DataFrame, perim: tuple, pn: str = "PNR") -> pd.Series:
@@ -170,48 +180,32 @@ def _export(cle_tables: tuple, perim: tuple, cle_prev: tuple | None) -> bytes:
 # --------------------------------------------------------------------------
 # Rendu
 # --------------------------------------------------------------------------
-def _parametres(parts) -> tuple[pv.Params, tuple]:
-    """Paramètres du sous-onglet Prévision (buffer, délais, composants, politique d'entretien)."""
+def _parametres() -> pv.Params:
+    """Paramètres du sous-onglet Prévision (stock minimum par flotte, stock de sécurité, délais)."""
     d = pv.Params()
-    st.caption("Réglages du sous-onglet **Prévision** (stock d'avance à garder). Le planning de remplacement des mousses "
-               "est dans l'onglet **PE mousses**.")
-    if True:
-        a, b = st.columns(2)
-        ratio = a.slider("Avions d'avance (% du groupe)", 2, 40, int(d.buffer_ratio * 100), key=K + "ratio", persist_state="page",
-                         help="10 % : 10 avions → 1, 50 avions → 5.")
-        bmin = b.number_input("Minimum d'avions d'avance par groupe", 1, 10, d.buffer_min, key=K + "bmin", persist_state="page")
-        hz = a.slider("Période couverte par la prévision (mois)", 12, 60, d.horizon_months, key=K + "hz", persist_state="page")
-        never = b.checkbox("Stock d'avance aussi pour les pièces jamais remplacées (cycle 0)", value=d.buffer_on_never,
-                           key=K + "never", persist_state="page",
-                           help="Coché : toutes les pièces ont un stock d'avance. Décoché : seulement celles qui ont un cycle de remplacement.")
-        lt_def = a.number_input("Délai par défaut (jours)", 1, 730, d.lt_default, key=K + "ltdef", persist_state="page",
-                                help="Quand ni le fournisseur ni le PN n'ont de délai.")
-        lt_basis = b.selectbox("Délai du fournisseur basé sur", ["observe", "promis"], key=K + "ltbasis", persist_state="page",
-                               format_func={"observe": "LT observé (historique 2 ans)", "promis": "Délais promis actuels"}.get)
-        bfe = a.number_input("Délai supposé si attente de BFE (mois)", 1, 36, d.bfe_delay_months, key=K + "bfe", persist_state="page",
-                              help="Commandes datées 2049 (en attente de matière première) : délai de livraison supposé.")
-        comp = b.selectbox("Assise ou dossier, si la description ne le dit pas", ["Assise", "Dossier"], key=K + "comp", persist_state="page")
-        kw_dos = a.text_input("Mots qui désignent un dossier", d.dossier_kw, key=K + "kwdos", persist_state="page",
-                             help="Cherchés dans la description de la pièce, séparés par des virgules. Ils passent avant ceux de l'assise.")
-        kw_ass = b.text_input("Mots qui désignent une assise", d.assise_kw, key=K + "kwass", persist_state="page",
-                             help="Cherchés dans la description de la pièce, séparés par des virgules.")
-        p = pv.Params(buffer_ratio=ratio / 100, buffer_min=int(bmin), buffer_on_never=bool(never), horizon_months=int(hz),
-                      lt_default=int(lt_def), lt_basis=lt_basis, bfe_delay_months=int(bfe), assise_kw=kw_ass, dossier_kw=kw_dos,
-                      default_component=comp)
-        regles = None
-        if parts is not None:
-            # Grille de champs (et non st.data_editor : indisponible sous stlite, il dépend de pyarrow).
-            st.markdown("**Cycle de remplacement (en années)** · 0 = jamais remplacé. Sert seulement si la case "
-                        "« Stock d'avance aussi pour les pièces jamais remplacées » est décochée.")
-            base = pv.regles_pe_defaut(parts)
-            cols = st.columns(3)
-            cycles = []
-            for i, r in enumerate(base.itertuples(index=False)):
-                cle = f"{K}prev_pe__{pv.cle_regle(r.Equipement, r.Classe, r.Composant)}"
-                cycles.append(cols[i % 3].number_input(f"{r.Equipement} · {r.Classe} · {r.Composant}", 0.0, 20.0,
-                                                       float(r[3]), 0.5, key=cle, persist_state="page"))
-            regles = tuple((r.Equipement, r.Classe, r.Composant, float(c)) for r, c in zip(base.itertuples(index=False), cycles))
-    return p, regles
+    st.caption("Réglages du sous-onglet **Prévision**. La demande vient de la consommation (12, 18 et 24 mois du Résultat).")
+    a, b = st.columns(2)
+    ratio = a.slider("Stock minimum : avions d'avance (% du groupe)", 2, 40, int(d.buffer_ratio * 100), key=K + "ratio",
+                     persist_state="page", help="10 % : 10 avions → 1, 50 avions → 5. Nécessite « Pièces par avion ».")
+    bmin = b.number_input("Minimum d'avions d'avance par groupe", 1, 10, d.buffer_min, key=K + "bmin", persist_state="page")
+    service = a.select_slider("Stock de sécurité : taux de service visé", [0.90, 0.95, 0.98], value=d.taux_service,
+                              format_func=lambda v: f"{v:.0%}", key=K + "service", persist_state="page",
+                              help="95 % : la marge couvre 95 mois sur 100 sans rupture. Plus haut = plus de stock.")
+    hz = b.slider("Période couverte par la prévision (mois)", 12, 60, d.horizon_months, key=K + "hz", persist_state="page")
+    lt_def = a.number_input("Délai par défaut (jours)", 1, 730, d.lt_default, key=K + "ltdef", persist_state="page",
+                            help="Quand ni le fournisseur ni le PN n'ont de délai.")
+    lt_basis = b.selectbox("Délai du fournisseur basé sur", ["observe", "promis"], key=K + "ltbasis", persist_state="page",
+                           format_func={"observe": "LT observé (historique 2 ans)", "promis": "Délais promis actuels"}.get)
+    bfe = a.number_input("Délai supposé si attente de BFE (mois)", 1, 36, d.bfe_delay_months, key=K + "bfe", persist_state="page",
+                         help="Commandes datées 2049 (en attente de matière première) : délai de livraison supposé.")
+    comp = b.selectbox("Assise ou dossier, si la description ne le dit pas", ["Assise", "Dossier"], key=K + "comp", persist_state="page")
+    kw_dos = a.text_input("Mots qui désignent un dossier", d.dossier_kw, key=K + "kwdos", persist_state="page",
+                          help="Cherchés dans la description de la pièce, séparés par des virgules. Ils passent avant ceux de l'assise.")
+    kw_ass = b.text_input("Mots qui désignent une assise", d.assise_kw, key=K + "kwass", persist_state="page",
+                          help="Cherchés dans la description de la pièce, séparés par des virgules.")
+    return pv.Params(buffer_ratio=ratio / 100, buffer_min=int(bmin), horizon_months=int(hz), lt_default=int(lt_def),
+                     lt_basis=lt_basis, bfe_delay_months=int(bfe), assise_kw=kw_ass, dossier_kw=kw_dos, default_component=comp,
+                     taux_service=float(service))
 
 
 SHAREPOINT_TEXTILE = ("https://afkl.sharepoint.com/:f:/r/teams/MS-LGT1-Analystes/Shared%20Documents/Textile"
@@ -266,17 +260,17 @@ def _bloc_import():
             t_gen, t_prev = st.tabs(["Général", "Prévision"])
             with t_gen:
                 today = st.date_input("Date de référence", value=date.today(), format="DD/MM/YYYY", key=K + "date", persist_state="page",
-                                      help="Date des données : âge des commandes, retards, début de la prévision et du planning PE.")
+                                      help="Date des données : âge des commandes, retards, début de la prévision.")
                 seul = st.toggle("Uniquement les PN du catalogue textile", value=True, key=K + "seul", persist_state="page",
                                  help="Limite l'analyse aux PN du fichier Références textile.")
             with t_prev:
-                params, regles = _parametres(parts)
-    return f_stock, f_cmd, f_ref, f_pieces, today, seul, params, regles
+                params = _parametres()
+    return f_stock, f_cmd, f_ref, f_pieces, today, seul, params
 
 
 def render() -> None:
     entete = st.container()
-    f_stock, f_cmd, f_ref, f_pieces, today, seul, params, regles = _bloc_import()
+    f_stock, f_cmd, f_ref, f_pieces, today, seul, params = _bloc_import()
     with entete:
         ui.hero(TAB_ICON, "Textile cabine", TAB_DESCRIPTION, "Supply Chain · Achats",
                 ui.contexte(("Données au", f"{today:%d/%m/%Y}", "")))
@@ -289,7 +283,7 @@ def render() -> None:
     cle = (f_stock[1], f_cmd[1] if f_cmd else None, f_ref[1] if f_ref else None, today, seul)
     try:
         s_all, o_all = _tables(*cle)
-        cle_prev = (cle, (f_pieces[1], f_pieces[0]), params, regles) if f_pieces else None
+        cle_prev = (cle, (f_pieces[1], f_pieces[0]) if f_pieces else None, params)
     except ValueError as exc:
         ui.callout(f"<b>Import impossible.</b> {exc}", "ko", "⛔")
         return
@@ -709,39 +703,44 @@ def _conso_pn(s, annees):
 # Prévision de commandes
 # --------------------------------------------------------------------------
 EXPLICATION = """
-**L'idée** : toujours avoir assez de pièces pour équiper une partie des avions de chaque groupe (ex. « A320 Group 1 »).
-La prévision couvre la période **{periode}** (réglable dans Paramètres › Horizon).
+**L'idée** : commander à temps ce qui va être consommé, sans descendre sous un stock à tenir. La prévision couvre la
+période **{periode}** (réglable dans Paramètres › Prévision).
 
-1. **Combien d'avions d'avance ?** 10 % des avions du groupe, au moins 1 (réglable dans Paramètres).
-   Exemple : un groupe de 50 avions → 5 avions d'avance.
-2. **Stock minimum d'une pièce** = nombre de pièces par avion × avions d'avance, pour chaque groupe qui l'utilise.
-   Exemple : 30 housses par avion × 5 avions = **150 housses** à garder.
-3. **Remplacements prévus (PE)** : les pièces qui seront remplacées sur les avions augmentent le besoin le mois prévu.
-4. **Ce qui manque** = stock minimum + remplacements prévus − (stock en rayon + commandes déjà passées).
-5. **Quand commander ?** Assez tôt pour que la pièce arrive avant le manque, en tenant compte du délai du fournisseur.
-   Si c'est déjà trop tard, la commande est à passer tout de suite, et la quantité qui manquera en attendant la
-   livraison est indiquée.
-6. **Statuts** : **A commander** = déjà sous le minimum ; **A planifier** = passera sous le minimum plus tard ;
-   **OK** = rien à faire.
-7. **Jamais de commande proposée** pour les pièces dormantes (aucune sortie depuis 3 ans), inactives (ni stock, ni
-   sortie, ni commande), obsolètes ou supprimées (classe code 3, 8 ou 9). La quantité qui aurait été commandée est
-   affichée à part.
-8. **Fournisseur proposé** : celui des commandes habituelles de la pièce ; à défaut, celui de l'État du stock. Il est
-   désigné par son **code fournisseur** (son nom seulement s'il n'a pas de code) : un même fournisseur écrit de deux
-   façons n'apparaît qu'une fois.
+1. **Consommation prévue d'un PN** : on regarde ses sorties sur 12, 18 et 24 mois (Résultat). Le plus récent compte le
+   plus : 50 % pour les 12 mois, 30 % pour les 18 mois, 20 % pour les 24 mois.
+   Exemple : 120 sorties sur 12 mois (10 / mois), 162 sur 18 mois (9 / mois), 192 sur 24 mois (8 / mois)
+   → **9,3 pièces par mois** prévues.
+2. **Tendance** : les 12 derniers mois comparés aux 12 mois d'avant (24 mois − 12 mois).
+   Exemple : 120 contre 72 → **+67 %, en hausse**. Entre −20 % et +20 % : **stable**.
+3. **Stock à tenir** = le plus grand des deux :
+   - **stock minimum par flotte** : de quoi équiper {ratio} des avions de chaque groupe d'avions (pièces par avion) ;
+   - **stock de sécurité** : une marge qui grandit avec le délai du fournisseur et avec l'irrégularité de la
+     consommation d'une année sur l'autre, pour éviter la rupture {service} des mois.
+4. **Ce qui manque** = stock à tenir + consommation prévue − (stock en rayon + commandes déjà passées).
+5. **Quand commander ?** Assez tôt pour que la pièce arrive avant le manque, délai du fournisseur compris. Si c'est déjà
+   trop tard, la commande est à passer tout de suite et la quantité qui manquera en attendant est indiquée.
+6. **Statuts** : **A commander** = à passer maintenant ; **A planifier** = plus tard sur la période ; **OK** = rien à faire.
+7. **Jamais de commande** pour les pièces dormantes (aucune sortie depuis 3 ans), inactives, obsolètes ou supprimées
+   (classe code 3, 8 ou 9).
+8. **Fournisseur** : le **CODE FOURNISSEUR** du Résultat ; à défaut, celui des commandes.
+9. **Flottes** : un PN monté sur plusieurs flottes apparaît sous chacune d'elles. Avec un filtre Flotte, la colonne
+   « Part des flottes choisies » indique la part des pièces installées sur ces flottes ; la quantité à commander reste
+   celle du PN entier.
 """
+
+TENDANCE_TONS = {"En hausse": "orange", "Nouveau": "violet", "Stable": "ok", "En baisse": "info", "Sans conso": "muted", "Non mesurée": "muted"}
 
 
 def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=None):
     if prev is None:
-        with ui.section(f"{TAB_ID}_prev_vide", "Prévision de commandes"):
-            ui.empty_state(f"Importez le fichier {pv.FICHIER_PIECES}", "La prévision s'appuie sur les pièces par avion. "
-                           "Les paramètres sont réglables dans « Paramètres » › Prévision.",
-                           [(pv.FICHIER_PIECES, False)], icon="🧮")
         return
     params = params or pv.Params()
     pbi, res = prev
+    if res["gp"].empty:
+        ui.callout(f"Sans <b>{pv.FICHIER_PIECES}</b> (textile_all_parts), la prévision repose sur la consommation et le stock "
+                   "de sécurité seulement : pas de stock minimum par flotte, pas de filtre Flotte.", "info", "ℹ️")
     s = pbi[_dans_perimetre(pbi, perim)]
+    s = s.join(pv.flottes_pn(res["gp"], flottes), on="PNR")  # flottes du PN ; part des flottes filtrées
     plan = res["plan"][res["plan"]["PNR"].isin(set(s["PNR"]))]
     gs = res["gs"]
     if perim[0]:
@@ -756,24 +755,31 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
     v_now = now["Valeur à commander maintenant (€)"].sum()
     v_total = s["Valeur commandes recommandées (€)"].sum()
     plus_tard = s[(s["Commandes recommandées sur l'horizon (qté)"] > s["Qté à commander maintenant"])]
+    suivis = s[s["Dans la prévision"]] if "Dans la prévision" in s else s
+    hausse, baisse = (suivis["Tendance conso"] == "En hausse").sum(), (suivis["Tendance conso"] == "En baisse").sum()
+    communs = int(s["Flottes"].fillna("").str.contains("·").sum()) if "Flottes" in s else 0
     with ui.section(f"{TAB_ID}_prev", "Prévision de commandes",
                     f"{periode} ({params.horizon_months} mois)", carte=False, export=_export_btn("export_prev__btn"),
-                    info=f"Objectif : garder de quoi équiper {params.buffer_ratio:.0%} des avions de chaque groupe d'avions "
-                         "(réglable dans Paramètres › Prévision)."):
+                    info="Demande = consommation des 12, 18 et 24 derniers mois. Stock à tenir = stock minimum par flotte "
+                         "ou stock de sécurité, le plus grand des deux."):
         ui.kpi_grid([
             ui.kpi_card("À commander maintenant", charts.euros(v_now), f"{len(now)} PN, chez {now['Fournisseur'].nunique()} fournisseur(s)",
                         "ko", "cart"),
             ui.kpi_card("À commander plus tard", charts.euros(max(v_total - v_now, 0)),
                         f"{len(plus_tard)} PN, d'ici {MOIS_COURTS[fin.month - 1]} {fin.year}", "warn", "calendar"),
             ui.kpi_card("Total sur la période", charts.euros(v_total), periode, "navy", "euro"),
-            ui.kpi_card("Groupes d'avions sous l'objectif", charts.entier((gs["Statut groupe"] == "Sous l'objectif").sum()),
-                        f"sur {charts.entier(len(gs))} (groupe × classe × assise / dossier)", "accent", "plane"),
+            ui.kpi_card("Conso en hausse", charts.entier(hausse), f"PN · {charts.entier(baisse)} en baisse (12 mois vs 12 d'avant)",
+                        "orange", "trend", info="Hausse : plus de 20 % de sorties en plus sur les 12 derniers mois."),
             ui.kpi_card("Jamais commandés", charts.entier(s["Statut prévision"].isin(["Dormant / inactif : pas de commande", pv.OBSOLETE]).sum()),
                         "PN dormants, inactifs ou obsolètes", "violet", "x"),
         ])
         c1, c2, _ = st.columns([1, 1, 1])
         with c1.popover("Comment c'est calculé", width="stretch"):
-            st.markdown(EXPLICATION.replace("{periode}", periode))
+            st.markdown(EXPLICATION.replace("{periode}", periode).replace("{ratio}", f"{params.buffer_ratio:.0%}")
+                        .replace("{service}", f"{params.taux_service:.0%}"))
+        if flottes and communs:
+            ui.callout(f"<b>{communs} PN</b> sont aussi montés sur d'autres flottes : la colonne « Part des flottes choisies » "
+                       "indique la part qui revient aux flottes filtrées.", "info", "ℹ️")
         with c2.popover("Autres tableaux", width="stretch"):
             _tableaux_prevision(s, plan, gs, res)
 
@@ -786,6 +792,7 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
         else:
             ui.callout("Rien à commander maintenant.", "ok", "check-circle")
 
+    _tendance_pn(suivis)
     fours = pv.par_fournisseur(s, plan)
     with ui.section(f"{TAB_ID}_prev_four", "Par fournisseur", f"Maintenant et d'ici {periode.split(' → ')[1]}",
                     tag=str(len(fours))):
@@ -813,6 +820,33 @@ def _section_prevision(prev, cat, o, perim, flottes=None, params=None, today=Non
             else:
                 ui.graphe(charts.vide("Aucun groupe d'avions"))
     _detail_pn(s, res)
+
+
+def _tendance_pn(s):
+    """Évolution de la consommation par PN : répartition par tendance et tableau (hausse d'abord)."""
+    if s.empty or "Tendance conso" not in s:
+        return
+    with ui.section(f"{TAB_ID}_prev_tendance", "Évolution de la consommation", "12 derniers mois comparés aux 12 mois d'avant",
+                    tag=str(int((s["Tendance conso"] == "En hausse").sum())),
+                    info="Tendance : plus de 20 % de sorties en plus (hausse) ou en moins (baisse) sur les 12 derniers mois. "
+                         "« Nouveau » : aucune sortie les 12 mois d'avant."):
+        a, b = st.columns([1, 1.6], gap="large")
+        with a:
+            ct = s.assign(c=tx.categorie(s)).groupby(["c", "Tendance conso"]).size().unstack(fill_value=0)
+            ct = ct.reindex(columns=[t for t in pv.TENDANCES if t in ct.columns], fill_value=0)
+            ui.graphe(charts.parts(ct.reindex([c for c in tx.categories(s) if c in ct.index]), pv.TENDANCE_COLORS, "PN par tendance"))
+        with b:
+            top = s[s["Tendance conso"].isin(["En hausse", "Nouveau"])].assign(
+                _d=lambda d: d["Conso 12 mois"].fillna(0) - d["Conso 12 mois d'avant"].fillna(0)).nlargest(12, "_d")
+            ui.graphe(charts.barres_h([(r["PNR"], r["_d"], f"+{charts.entier(r['_d'])} pièces · "
+                                        + (f"{r['Évolution conso (%)']:+.0f} %" if pd.notna(r["Évolution conso (%)"]) else "nouveau"))
+                                       for _, r in top.iterrows()], couleur=pv.TENDANCE_COLORS["En hausse"],
+                                      titre="Plus fortes hausses (pièces en plus sur 12 mois)", max_lignes=12)
+                      if len(top) else charts.vide("Aucun PN en hausse"))
+        rang = {t: i for i, t in enumerate(pv.TENDANCES)}
+        d = s.assign(_r=s["Tendance conso"].map(rang)).sort_values(["_r", "Conso 12 mois"], ascending=[True, False])
+        t = d[[c for c in COL_TENDANCE if c in d.columns]].rename(columns=COL_TENDANCE)
+        ui.tableau(t, column_config=CFG, height=380, statut="Tendance", couleurs=pv.TENDANCE_COLORS)
 
 
 def _tableaux_prevision(s, plan, gs, res):
@@ -872,7 +906,7 @@ def _vue_fournisseur_prev(s, o, fours):
         ui.graphe(charts.barres(g["PNR"], {"En stock": g["QTE SUR ÉTAGÈRE"].fillna(0), "Déjà en commande": g["QTE EN CDE"].fillna(0),
                                            "À commander": g["Qté à commander maintenant"].fillna(0)},
                                 {"En stock": COLORS["navy_2"], "Déjà en commande": CATEGORIES[2], "À commander": COLORS["ko"]},
-                                empile=True, repere={"Stock minimum à tenir": g["Besoin minimum (qté)"]},
+                                empile=True, repere={"Stock à tenir": g["Stock à tenir (qté)"]},
                                 survol=list(g["DESCRIPTION"].fillna("").astype(str)) if "DESCRIPTION" in g else None,
                                 titre="Par PN : en stock, déjà en commande, à commander", hauteur=260)
                   if len(g) else charts.vide("Aucun PN actif suivi chez ce fournisseur"))
@@ -911,7 +945,7 @@ def _ecarts_lignes(ec, lignes):
 
 @st.fragment
 def _detail_pn(s, res):
-    pool = s[s["Dans un groupe avion"]].sort_values(["Statut prévision", "PNR"])
+    pool = s[s["Dans la prévision"]].sort_values(["Statut prévision", "PNR"])
     if pool.empty:
         return
     with ui.section(f"{TAB_ID}_prev_pn", "Détail du calcul pour un PN"):
@@ -922,12 +956,21 @@ def _detail_pn(s, res):
         ui.kpi_grid([
             ui.kpi_card("Stock étagère", charts.entier(r["QTE SUR ÉTAGÈRE"] or 0)),
             ui.kpi_card("En commande", charts.entier(r["QTE EN CDE"] or 0), "", "info"),
-            ui.kpi_card("Stock minimum", charts.entier(r["Besoin minimum (qté)"]), "avions d'avance", "warn"),
+            ui.kpi_card("Conso prévue", f"{r['Conso prévue / mois']:.1f} / mois".replace(".", ","),
+                        f"{r['Tendance conso']} · 12 mois : {charts.entier(r['Conso 12 mois'])}", TENDANCE_TONS.get(r["Tendance conso"], "navy"),
+                        "trend"),
+            ui.kpi_card("Stock à tenir", charts.entier(r["Stock à tenir (qté)"]),
+                        f"minimum flotte {charts.entier(r['Besoin minimum (qté)'])} · sécurité {charts.entier(r['Stock de sécurité (qté)'])}",
+                        "warn"),
             ui.kpi_card("Délai", f"{int(r['Délai (mois)'])} mois", r["Source délai"]),
             ui.kpi_card("À commander", charts.entier(r["Qté à commander maintenant"]),
                         charts.entier(r["Commandes recommandées sur l'horizon (qté)"]) + " sur l'horizon", "ko"),
         ])
-        st.caption(f"Fournisseur : **{r['Fournisseur']}** · statut : **{r['Statut prévision']}**")
-        st.markdown("**Groupes d'avions qui utilisent ce PN**")
+        c12, c18, c24, av = (r.get(k) for k in ("Conso 12 mois", "Conso 18 mois", "Conso 24 mois", "Conso 12 mois d'avant"))
+        st.caption(f"Fournisseur : **{r['Fournisseur']}** · statut : **{r['Statut prévision']}** · sorties : 12 mois "
+                   f"**{charts.entier(c12)}**, 18 mois **{charts.entier(c18)}**, 24 mois **{charts.entier(c24)}** "
+                   f"(12 mois d'avant : {charts.entier(av)})")
         detail = pv.explain_pn(pn, res["gp"])
-        ui.tableau(detail, height=min(38 + 35 * max(len(detail), 1), 300))
+        if len(detail):
+            st.markdown("**Flottes et groupes d'avions qui utilisent ce PN** (stock minimum)")
+            ui.tableau(detail, height=min(38 + 35 * max(len(detail), 1), 300))

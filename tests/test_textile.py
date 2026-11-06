@@ -185,7 +185,7 @@ def test_prevision_par_fournisseur(prevision):
     f = pv.par_fournisseur(pbi, res["plan"]).set_index("Fournisseur")
     assert "F002" in f.index                       # PN sans commande : code fournisseur de l'État du stock
     assert not any(str(x).startswith("Fournisseur ") for x in f.index)  # uniquement des codes : aucun doublon nom / code
-    assert f["PN à commander"].sum() == ((pbi["Qté à commander maintenant"] > 0) & pbi["Dans la prévision"]
+    assert f["PN à commander"].sum() == ((pbi["À commander 36 mois (qté)"] > 0) & pbi["Dans la prévision"]
                                          & (pbi["Statut activité"] == "Actif")).sum()
     assert res["plan"]["Fournisseur"].notna().all()
 
@@ -394,3 +394,15 @@ def test_delai_pn_avant_fournisseur():
     mois, jours, src = pv.lead_time_months(x, pv.Params())
     assert list(jours) == [120, 30, 45, 65, 60] and list(mois) == [4, 1, 2, 3, 2]
     assert list(src) == ["PN", "PN", "PN", "Fournisseur (moyenne)", "Défaut"]
+
+
+def test_tendance_conso_nette():
+    """Conso nette (réintégrations déduites) prioritaire : rythme 70 % 12 mois / 30 % 24 mois, négatif ramené à 0."""
+    d = pd.DataFrame({"QTE CONSO 12M": [15904, 100], "QTE CONSO 24M": [35485, 200],
+                      "QTE CONSO NETTE REINT 12M": [566, -40], "QTE CONSO NETTE REINT 24M": [1000, 20]})
+    t = pv.tendance_conso(d, pv.Params(), pd.Timestamp("2026-11-04"))
+    assert t["Base conso"].iloc[0] == "Nette (réintégrations déduites)"
+    assert t["Conso prévue / mois"].iloc[0] == round(0.7 * 566 / 12 + 0.3 * 1000 / 24, 2)   # 45,52 et non ~1 300
+    assert t["Évolution conso (%)"].iloc[0] == 30 and t["Tendance conso"].iloc[0] == "En hausse"  # 566 contre 434
+    assert t["Conso prévue / mois"].iloc[1] == round(0.3 * 20 / 24, 2)                       # 12 mois négatif → 0
+    assert t["Conso brute 12 mois (demandes)"].iloc[0] == 15904

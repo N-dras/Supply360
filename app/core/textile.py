@@ -26,6 +26,8 @@ DELAY_BUCKETS = [("1 à 20 j", 1, 20), ("21 à 50 j", 21, 50), ("51 à 150 j", 5
                  ("301 j et +", 301, None)]
 BUCKET_COLORS = ["#F3C2C2", "#E79494", "#D35E5E", "#B03030", "#7A1414"]  # une teinte, du plus clair au plus foncé
 WINDOW_COLUMNS = ["QTE CONSO 12M", "QTE CONSO 18M", "QTE CONSO 24M"]
+# Conso nette avec réintégrations (Résultat) : ce qui a vraiment été consommé, base de la prévision de commandes
+NETTE_COLUMNS = ["QTE CONSO NETTE REINT 12M", "QTE CONSO NETTE REINT 24M"]
 LATE_BUFFER_DAYS = 10  # tolérance avant de déclarer une ligne en retard
 
 # Noms de colonnes de l'État du stock tels qu'affichés dans l'onglet (et dans l'export).
@@ -229,7 +231,7 @@ def construire_tables(stock_lignes: pd.DataFrame, cmd_lignes: pd.DataFrame | Non
             ccn_cmd = cle_ccn(cmd_lignes["CCN_cmd"]) if "CCN_cmd" in cmd_lignes else pd.Series(np.nan, index=cmd_lignes.index)
             cmd_lignes = cmd_lignes[cmd_lignes["PN"].isin(pns | set(stock_lignes["PN"])) | ccn_cmd.isin(ccns | set(ccn_stock.dropna()))]
     pbi = stock_lignes.rename(columns=STOCK_RENOMMAGE)
-    garder = ["PNR", "CCN", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", *WINDOW_COLUMNS, "TDD 6M", "TDD 12M",
+    garder = ["PNR", "CCN", "DESCRIPTION", "QTE SUR ÉTAGÈRE", "QTE EN CDE", *WINDOW_COLUMNS, *NETTE_COLUMNS, "TDD 6M", "TDD 12M",
               *[f"QTE CONSO {a}" for a in annees_conso(pbi)], "QTE COUVERTURE", "QTE SAR", "Stock réservé", "B/O",
               "Dernier PU (achat) Euros", "RP", "EOQ", "LT observé moyen sur 2 ans", "DATE DERNIERE CONSO",
               "CODE FOURNISSEUR", "DERNIER FOURNISSEUR", "CLASS CODE"]

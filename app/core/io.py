@@ -522,6 +522,8 @@ def _code(serie: pd.Series) -> pd.Series:
 # Colonnes complémentaires de l'État du stock (consommation, valeur…), lues si présentes.
 STOCK_COMPLEMENTS = {
     "QTE CONSO 12M": "qte_conso_12m", "QTE CONSO 18M": "qte_conso_18m", "QTE CONSO 24M": "qte_conso_24m",
+    # Conso nette : demandes de la production moins les réintégrations (équipement remis sur étagère, non consommé)
+    "QTE CONSO NETTE REINT 12M": "qte_conso_nette_reint_12m", "QTE CONSO NETTE REINT 24M": "qte_conso_nette_reint_24m",
     "TDD 6M": "tdd_6m", "TDD 12M": "tdd_12m", "QTE COUVERTURE": "qte_couverture", "QTE SAR": "qte_sar",
     "Stock réservé": "stock_reserve", "B/O": "b/o", "Dernier PU (achat) Euros": "dernier_pu_(achat)_euros",
     "RP": "rp", "EOQ": "eoq", "LT observé moyen sur 2 ans": "lt_observe_moyen_sur_2_ans",

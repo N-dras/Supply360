@@ -265,36 +265,51 @@ def pn_requirement(g):
 # --------------------------------------------------------------------------
 # Consommation : rythme, tendance, stock de sécurité
 # --------------------------------------------------------------------------
+POIDS_NETTE = (0.7, 0.3)  # conso nette : poids des rythmes 12 et 24 mois (pas de 18 mois dans le Résultat)
+
+
 def tendance_conso(pbi: pd.DataFrame, p: Params, today) -> pd.DataFrame:
     """Par PN (même index que `pbi`) : consommations 12 / 18 / 24 mois, 12 mois d'avant, évolution, tendance, rythme
     prévu par mois et irrégularité (écart type mensuel).
 
-    Rythme prévu = moyenne des rythmes mensuels 12, 18 et 24 mois pondérée par `p.poids_conso` (le plus récent pèse le
-    plus ; une fenêtre absente du fichier est ignorée). Irrégularité = écart entre les années civiles complètes
-    (3 dernières), ramené au mois ; au moins la racine du rythme (une conso régulière varie aussi d'un mois à l'autre).
+    Base : **conso nette** (« QTE CONSO NETTE REINT 12M / 24M » : demandes de la production moins les réintégrations
+    d'équipements remis sur étagère) quand le Résultat la contient ; sinon conso brute (« QTE CONSO 12M / 18M / 24M »).
+    Rythme prévu = moyenne pondérée des rythmes mensuels (nette : 70 % 12 mois, 30 % 24 mois ; brute :
+    `p.poids_conso` sur 12 / 18 / 24 mois ; une fenêtre absente est ignorée). Irrégularité : nette = écart entre les
+    12 derniers mois et les 12 mois d'avant ; brute = écart entre les années civiles complètes (3 dernières). Ramenée
+    au mois, au moins la racine du rythme (une conso régulière varie aussi d'un mois à l'autre).
     """
     num = lambda c: pd.to_numeric(pbi[c], errors="coerce") if c in pbi else pd.Series(np.nan, index=pbi.index)  # noqa: E731
-    c12, c18, c24 = num("QTE CONSO 12M"), num("QTE CONSO 18M"), num("QTE CONSO 24M")
+    nette = "QTE CONSO NETTE REINT 12M" in pbi and pd.to_numeric(pbi["QTE CONSO NETTE REINT 12M"], errors="coerce").notna().any()
+    if nette:
+        c12, c18, c24 = num("QTE CONSO NETTE REINT 12M"), pd.Series(np.nan, index=pbi.index), num("QTE CONSO NETTE REINT 24M")
+        fenetres = [(c12, 12, POIDS_NETTE[0]), (c24, 24, POIDS_NETTE[1])]
+    else:
+        c12, c18, c24 = num("QTE CONSO 12M"), num("QTE CONSO 18M"), num("QTE CONSO 24M")
+        fenetres = list(zip((c12, c18, c24), (12, 18, 24), p.poids_conso))
     haut = pd.Series(0.0, index=pbi.index)
     bas = pd.Series(0.0, index=pbi.index)
-    for c, mois, w in zip((c12, c18, c24), (12, 18, 24), p.poids_conso):
+    for c, mois, w in fenetres:
         ok = c.notna()
-        haut += (c.fillna(0) / mois * w).where(ok, 0.0)
+        haut += (c.fillna(0).clip(lower=0) / mois * w).where(ok, 0.0)
         bas += pd.Series(np.where(ok, w, 0.0), index=pbi.index)
     rythme = (haut / bas.replace(0, np.nan)).fillna(0).clip(lower=0)
     avant = (c24 - c12).clip(lower=0)
-    evol = ((c12 - avant) / avant.replace(0, np.nan))
+    evol = ((c12.clip(lower=0) - avant) / avant.replace(0, np.nan))
     sans = (c12.fillna(0) <= 0) & (avant.fillna(0) <= 0)
     tendance = np.select([sans, c24.isna(), avant.fillna(0) <= 0, evol > SEUIL_TENDANCE, evol < -SEUIL_TENDANCE],
                          ["Sans conso", "Non mesurée", "Nouveau", "En hausse", "En baisse"], "Stable")
-    annees = [a for a in tx.annees_conso(pbi) if a < pd.Timestamp(today).year][-3:]
-    if len(annees) >= 2:
-        sigma_an = pd.concat([num(f"QTE CONSO {a}") for a in annees], axis=1).std(axis=1, ddof=1).fillna(0)
+    if nette:
+        sigma_an = ((c12.clip(lower=0) - avant).abs() / np.sqrt(2)).fillna(0)
     else:
-        sigma_an = pd.Series(0.0, index=pbi.index)
+        annees = [a for a in tx.annees_conso(pbi) if a < pd.Timestamp(today).year][-3:]
+        sigma_an = pd.concat([num(f"QTE CONSO {a}") for a in annees], axis=1).std(axis=1, ddof=1).fillna(0) \
+            if len(annees) >= 2 else pd.Series(0.0, index=pbi.index)
     sigma = np.maximum(np.sqrt(rythme), sigma_an / np.sqrt(12)).where(rythme > 0, 0.0)
     return pd.DataFrame({
         "Conso 12 mois": c12, "Conso 18 mois": c18, "Conso 24 mois": c24, "Conso 12 mois d'avant": avant,
+        "Conso brute 12 mois (demandes)": num("QTE CONSO 12M"),
+        "Base conso": "Nette (réintégrations déduites)" if nette else "Brute (demandes)",
         "Évolution conso (%)": (evol * 100).round(0), "Tendance conso": tendance,
         "Conso prévue / mois": rythme.round(2), "Irrégularité (pièces / mois)": sigma.round(2),
     }, index=pbi.index)

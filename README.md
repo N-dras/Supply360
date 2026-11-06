@@ -156,12 +156,15 @@ aucune consommation sur 3 ans ; **inactif** = ni stock, ni consommation, ni comm
 **Prévision de commandes** (détail dans « Comment c'est calculé ») — fondée sur la **consommation**, pas sur la PE
 (elle n'existe pas pour tous les équipements textile) ni sur les sorties de flotte :
 
-- **consommation prévue** d'un PN par mois = moyenne des rythmes `QTE CONSO 12M`, `18M` et `24M` du Résultat, le plus
-  récent pesant le plus (50 / 30 / 20 %) ; **tendance** = 12 derniers mois comparés aux 12 mois d'avant (24M − 12M) :
-  en hausse (> +20 %), stable, en baisse (< −20 %), nouveau, sans conso ;
+- **consommation prévue** d'un PN par mois = **conso nette** du Résultat (`QTE CONSO NETTE REINT 12M` et `24M` :
+  demandes de la production moins les équipements remis sur étagère, non consommés), le plus récent pesant le plus
+  (70 % 12 mois, 30 % 24 mois). Si le Résultat ne la contient pas : demandes brutes `QTE CONSO 12M`, `18M`, `24M`
+  (50 / 30 / 20 %), avec un avertissement (elles peuvent fortement surestimer). **Tendance** = conso nette des 12
+  derniers mois comparée aux 12 mois d'avant (24M − 12M) : en hausse (> +20 %), stable, en baisse (< −20 %), nouveau,
+  sans conso ;
 - **stock à tenir** = le plus grand de : **stock minimum par flotte** (quantité par avion × 10 % des avions du groupe,
   au moins 1, additionné sur les groupes qui utilisent le PN ; nécessite « Pièces par avion ») et **stock de sécurité**
-  statistique (irrégularité de la consommation d'une année civile sur l'autre × racine du délai fournisseur × coefficient
+  statistique (irrégularité de la consommation entre les 12 derniers mois et les 12 d'avant × racine du délai × coefficient
   du taux de service visé, 95 % par défaut) ;
 - **commande** pour que le stock reste au-dessus du stock à tenir malgré la consommation prévue, délai compris ;
   si le délai est trop long, la commande part maintenant ;
